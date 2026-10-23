@@ -1,0 +1,41 @@
+# --- Original game files: NEVER commit these ---
+# The project only ships its own code. Everyone brings their own APK.
+*.apk
+*.apks
+*.xapk
+*.obb
+apk/*
+!apk/README.md
+
+# Extracted / decompiled game content and build output
+work/
+build/
+dist/
+out/
+
+# Signing keys
+*.keystore
+*.jks
+*.p12
+*.pem
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Node
+node_modules/
+
+# Local config
+.env
+*.local.*
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
