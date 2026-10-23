@@ -52,6 +52,37 @@ tag
 If `<resource version>` is not newer than the client's own (`resv` header), no files are
 downloaded.
 
+### `GET <gateway>/servers/track_quest`
+
+Progress tracking: `udid`, `event` (e.g. `010_LaunchApplication`, `020_AutoUpdateSuccess`,
+`030_GameLoadingFinished`, `033_GameLoginFromStartButton`), optional `server_url`.
+Built as `gateway .. "/servers/..."`, so the path arrives as `//servers/track_quest`.
+Any 200 response is fine.
+
+### `GET <gateway>/servers.json`
+
+The world (server) list shown on the title screen. Mode `notencrypt`.
+
+```json
+{"server_list": [{
+  "server_id": 1, "server_name": "Supernova",
+  "server_root_url": "http://host:8000/world/1/",
+  "server_root_https_url": "optional, preferred over server_root_url",
+  "language": "all", "busy": 0, "is_local": false,
+  "status": "new", "is_recommended": true,
+  "merge_server_id": 2, "merge_server_name": "optional, for merged worlds"
+}]}
+```
+
+The chosen entry's `server_root_url` becomes the base URL for all game requests.
+
+## Login
+
+Pressing START as a guest sends `POST <world>/trials.json` with the body `username=`
+(empty for a new guest). The response goes to `GameUISplash.LoginSuccCallback` →
+`GameGlobalData:UpdateGameData(content)`, i.e. it must contain the full player state.
+Format still to be worked out.
+
 ## Game requests
 
 `GameUtils:SendMsg(path, params, ...)` → `ext.http.request` → `ExtHttpConnection`.
@@ -63,6 +94,7 @@ downloaded.
     (mode `normal`).
 - **Method:** `GET` by default, parameters as query string `k=v&k=v`. For `POST` the
   parameters go into the body as `application/x-www-form-urlencoded`.
+  Parameters are **not** encrypted (observed: `POST trials.json` with body `username=`).
 - **Cookies** set by the server are stored and sent back.
 - **gzip** response bodies are supported.
 
@@ -113,5 +145,4 @@ text is shown with the status code appended.
 
 - Login and registration flow: which endpoints, which fields.
 - `ENC1` / `ENC2`: exact algorithms (MD5? AES?) in case we want to validate requests.
-- Are request parameters encrypted in mode `normal` too? (Native code looks up
-  `aesDefaultEncrypt`; logcat prints `NetUtils src: ... key: ...` when it is called.)
+- The login response (`trials.json`) and the player state format.

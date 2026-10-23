@@ -3,8 +3,8 @@
 A fan-made effort to bring the discontinued mobile game **Galaxy Empire** (tap4fun) back to life
 with a reimplemented game server.
 
-> **Status: early research.** Nothing is playable yet. Right now we are taking the client apart
-> to understand how it talks to the server.
+> **Status: early development.** Not playable yet. A patched client already connects to our
+> server and reaches the title screen; the next step is the login and the player state.
 
 > **Disclaimer:** This is a non-commercial fan project. It is not affiliated with, endorsed by, or
 > connected to tap4fun or any rights holder. All trademarks belong to their respective owners.
@@ -37,7 +37,7 @@ original APK  ──►  patcher (this repo)  ──►  patched APK  ──► 
  (yours)            verify · patch · re-sign     (stays on your machine)
 ```
 
-What the patcher does (planned):
+What the patcher does:
 
 1. **Verify** that your APK is a supported version by comparing its SHA-256 hash.
 2. **Patch** the client so it connects to the server address you choose instead of the
@@ -55,12 +55,10 @@ own copy from their own original.
 
 ## Setup
 
-> Most of these steps describe the planned workflow. The tools do not exist yet.
-
 ### Requirements
 
 - [Git](https://git-scm.com/)
-- [Python](https://www.python.org/) 3.10 or newer (analysis tools and patcher)
+- [Python](https://www.python.org/) 3.10 or newer (tools, patcher and server)
 - [Java](https://adoptium.net/) 17 or newer (APK re-signing)
 - An Android device or emulator that can run **32-bit ARM** apps (`armeabi-v7a`).
   Real phones usually work. On PC, use an emulator with ARM translation,
@@ -78,17 +76,34 @@ cd galaxy-empire-supernova
 Copy your original APK into the [`apk/`](apk/) folder. That folder is ignored by git, so your
 file never gets committed by accident.
 
-### 3. Build the patched APK *(planned)*
+### 3. Run a server
+
+```sh
+cd server
+python -m venv .venv
+.venv/Scripts/activate          # Windows; on Linux/macOS: source .venv/bin/activate
+pip install -r requirements.txt
+python -m uvicorn supernova.app:app --host 0.0.0.0 --port 8000
+```
+
+The server reads the client's response key from your APK in `apk/` (or from the path in the
+`SUPERNOVA_APK` environment variable).
+
+### 4. Build the patched APK
 
 ```sh
 python tools/patch_apk.py apk/galaxy-empire-1-9-36.apk --server <host>:<port>
 ```
 
-The result is written to `build/`.
+`<host>:<port>` is the address of your server **as seen from the device**:
 
-### 4. Run a server *(planned)*
+| Device                              | Address |
+|-------------------------------------|---------|
+| Android emulator / BlueStacks on the same PC | `10.0.2.2:8000` |
+| Phone in the same Wi-Fi              | your PC's LAN IP, e.g. `192.168.0.10:8000` |
 
-Instructions will follow once the server exists.
+The patcher downloads [uber-apk-signer](https://github.com/patrickfav/uber-apk-signer) on first
+use to sign the APK. The result is `build/galaxy-empire-supernova.apk`.
 
 ### 5. Install and play
 
@@ -99,31 +114,33 @@ Uninstall any old copy of the original game first, because the signatures differ
 ## Roadmap
 
 - [x] Set up the repository
-- [ ] Understand the client's asset container format (`.pak`) and extract the Lua game scripts
-- [ ] Document the network protocol (connection, login, message format, encryption)
-- [ ] Redirect the client to a custom server
-- [ ] Patcher: verify → patch → re-sign
-- [ ] Minimal server: login and entering the game
+- [x] Understand the client's asset container format (`.pak`) and extract the Lua game scripts
+- [x] Document the network protocol (HTTP + JSON, response encryption)
+- [x] Redirect the client to a custom server
+- [x] Patcher: verify → patch → re-sign
+- [x] Minimal server: update check and world list (client reaches the title screen)
+- [ ] Login and player state
+- [ ] Support for 64-bit-only devices
 - [ ] Game logic: buildings, research, fleets, combat, alliances
 
 ## What we know so far
 
 - The game runs on tap4fun's own engine. Native code is in `libgalaxyempire.so`
   (32-bit ARM only), and the game logic is written in **Lua**.
-- The engine exposes `socket` (TCP), `http`, `json`, `AES` and `md5` modules to Lua.
-  That suggests a JSON-based protocol over TCP, possibly encrypted.
-- Game data ships in `assets/tap4fun.zip`, which contains `.pak` archives
-  (magic bytes `AB E2 7F 9D`), PNG textures, MP3 audio and localized text files.
+- All client/server traffic is **HTTP + JSON** against a Rails-style API (`users/<id>`,
+  `planets/<id>`, ...). Responses to game requests are AES-encrypted.
+- The Lua scripts ship as plain Lua 5.1 bytecode inside `.pak` archives and decompile cleanly.
 
-Detailed findings will be collected in [`docs/`](docs/).
+Details: [`docs/protocol.md`](docs/protocol.md), [`docs/file-formats.md`](docs/file-formats.md).
 
 ## Repository layout
 
 ```
 apk/      your original APK goes here (git-ignored)
-docs/     research notes: file formats, protocol, game data   (planned)
-tools/    analysis tools and the APK patcher                  (planned)
-server/   the reimplemented game server                       (planned)
+docs/     research notes: file formats, protocol, game data
+tools/    pak/Lua tools and the APK patcher
+server/   the reimplemented game server (Python, FastAPI)
+work/     local scratch space for extracted game files (git-ignored)
 ```
 
 ## Contributing
