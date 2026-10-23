@@ -135,3 +135,12 @@ Ground rules:
 
 - **Never commit original game files** (APKs, extracted assets, decompiled scripts).
 - Document what you find in `docs/` so others can build on it.
+
+## License
+
+The code in this repository is licensed under the
+[GNU Affero General Public License v3.0](LICENSE). If you run a modified version of the server
+for other people, you must make your source code available to them.
+
+The license covers only this project's own code. Galaxy Empire, its client and all of its assets
+remain the property of their respective owners and are not part of this repository.
