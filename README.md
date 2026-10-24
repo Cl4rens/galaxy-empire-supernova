@@ -6,7 +6,7 @@ with a reimplemented game server.
 > **Status: early development.** A patched client logs in as a guest, builds and upgrades
 > buildings, produces resources, researches technologies, builds ships and defense, and sees the
 > other players on the galaxy map, sends fleets on transport and espionage missions, and gets
-> reports and player mail in the mailbox. Combat and colonization are not there yet.
+> reports and player mail in the mailbox, and attacks other players. Colonization is not there yet.
 
 > **Disclaimer:** This is a non-commercial fan project. It is not affiliated with, endorsed by, or
 > connected to tap4fun or any rights holder. All trademarks belong to their respective owners.
@@ -151,7 +151,8 @@ Uninstall any old copy of the original game first, because the signatures differ
 - [x] Galaxy map and solar systems
 - [x] Fleet missions: transport, deploy, recall
 - [x] Mailbox and espionage
-- [ ] Combat, colonization, expeditions
+- [x] Combat: attacks, battle reports, loot, debris fields
+- [ ] Recycling, colonization, pirates, expeditions
 - [ ] Tutorial quests
 - [ ] Support for 64-bit-only devices
 - [ ] Game logic: buildings, research, fleets, combat, alliances

@@ -4,7 +4,7 @@ Flights are stored in the fleet_events table, not in the player state, because a
 change another player's planet. A background task in the server calls `process_due` every
 second, so missions also complete while their owner is offline.
 
-Implemented missions: transport, deploy and espionage. Arrivals and returns send reports to
+Implemented missions: transport, deploy, espionage and attack. Arrivals and returns send reports to
 the mailbox.
 """
 
@@ -12,7 +12,7 @@ import json
 import logging
 import time
 
-from . import db
+from . import combat, db
 from . import economy as eco
 from . import mails
 from . import planet as planet_rules
@@ -25,6 +25,7 @@ MISSION_NAMES = {
     EXPEDITION: "Expedition", COLONY: "Colonize", RECYCLE: "Recycle", TRANSPORT: "Transport",
     DEPLOY: "Deploy", ESPIONAGE: "Espionage", ATTACK: "Attack",
 }
+UNDER_ATTACK = 11  # how incoming attacks appear in the defender's flight list
 BE_ESPIONAGE, BE_TRANSPORT = 14, 15  # report types for the target's side
 ESPIONAGE_PROBE = 13
 RESOURCES = planet_rules.RESOURCES
@@ -86,8 +87,11 @@ def allowed_missions(player_id: int, origin: dict, target: tuple[int, int, int],
     missions = [TRANSPORT]
     if row["player_id"] == player_id:
         missions.append(DEPLOY)
-    elif ESPIONAGE_PROBE in ships:
-        missions.append(ESPIONAGE)
+    else:
+        if ESPIONAGE_PROBE in ships:
+            missions.append(ESPIONAGE)
+        if any(combat.STATS[t].weapon > 0 for t in ships):
+            missions.append(ATTACK)
     return missions
 
 
@@ -257,6 +261,105 @@ def _espionage(row, target_owner: int, state: dict) -> None:
                row["arrival_time"])
 
 
+def add_debris(galaxy: int, system: int, position: int, metal: int, crystal: int) -> None:
+    if metal <= 0 and crystal <= 0:
+        return
+    conn = db.connect()
+    with db.lock(), conn:
+        conn.execute(
+            "INSERT INTO debris (galaxy, system, position, metal, crystal) VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT (galaxy, system, position) DO UPDATE SET metal = metal + excluded.metal, "
+            "crystal = crystal + excluded.crystal", (galaxy, system, position, metal, crystal))
+
+
+def _tech_bonus(empire: dict) -> dict:
+    return {
+        "attack_bonus_percent": 10 * planet_rules.research_level(empire, eco.WEAPONS_TECH),
+        "shield_bonus_percent": 10 * planet_rules.research_level(empire, eco.SHIELDING_TECH),
+        "armour_bonus_percent": 10 * planet_rules.research_level(empire, eco.ARMOUR_TECH),
+    }
+
+
+def _side(name: str, empire: dict, units: dict[int, int]) -> combat.Side:
+    return combat.Side(name, units, planet_rules.research_level(empire, eco.WEAPONS_TECH),
+                       planet_rules.research_level(empire, eco.SHIELDING_TECH),
+                       planet_rules.research_level(empire, eco.ARMOUR_TECH))
+
+
+def _attack(row, target_owner: int, state: dict) -> str:
+    """Fight at the target planet. Returns the new status of the flight."""
+    planet = state["empire"]["main_planet"]
+    owner_state = db.load_state(row["owner_id"])
+    attacker_name, defender_name = _username(row["owner_id"]), _username(target_owner)
+    attack_units = _ships(row)
+    defend_units = {f["fleet_type"]: f["amount"] for f in planet["fleets"]
+                    if f["amount"] and f["fleet_type"] in combat.STATS}
+
+    result = combat.fight(_side(attacker_name, owner_state["empire"], attack_units),
+                          _side(defender_name, state["empire"], defend_units))
+    attack_lost = combat.losses(attack_units, result["attacker_left"])
+    defend_lost = combat.losses(defend_units, result["defender_left"])
+    rebuilt = combat.rebuild_defense(defend_lost)
+    for f in planet["fleets"]:
+        if f["fleet_type"] in defend_units:
+            f["amount"] = result["defender_left"].get(f["fleet_type"], 0) + rebuilt.get(f["fleet_type"], 0)
+
+    loot = {res: 0 for res in RESOURCES}
+    if result["winner"] == "attacker":
+        loot = combat.plunder(planet, eco.cargo_capacity(result["attacker_left"]))
+        for res in RESOURCES:
+            planet[res] -= loot[res]
+    # Destroyed ships of both sides; debris() ignores defense units.
+    debris = combat.debris({t: attack_lost.get(t, 0) + defend_lost.get(t, 0) for t in {*attack_lost, *defend_lost}})
+    add_debris(row["target_galaxy"], row["target_system"], row["target_position"],
+               debris["metal"], debris["crystal"])
+
+    rounds = list(result["rounds"])
+    if rebuilt:
+        rounds.append({"attack_recovered_fleets": [], "defend_recovered_fleets": combat._fleet_list(rebuilt),
+                       "attack_survived_fleets": [], "defend_survived_fleets": []})
+    win = {"attacker": "win", "defender": "lose", "draw": "draw"}[result["winner"]]
+    winner_name = {"attacker": attacker_name, "defender": defender_name}.get(result["winner"])
+    info = _event_info(row, row["arrival_time"])
+    loot_text = (f"Loot: {loot['metal']:,} metal, {loot['crystal']:,} crystal, {loot['deuterium']:,} deuterium"
+                 if result["winner"] == "attacker" else "")
+    a_bonus, d_bonus = _tech_bonus(owner_state["empire"]), _tech_bonus(state["empire"])
+    body = {
+        "mission_type": ATTACK,
+        "is_returning": False,
+        "event_info": info,
+        "notify_message": loot_text,
+        "attack_result": {
+            "attacker_name": attacker_name,
+            "defender_name": defender_name,
+            "win": win,
+            "winner_name": winner_name,
+            "attack_start_fleets_count": sum(attack_units.values()),
+            "attack_end_fleets_count": sum(result["attacker_left"].values()),
+            "defend_start_fleets_count": sum(defend_units.values()),
+            "defend_end_fleets_count": sum(result["defender_left"].values()) + sum(rebuilt.values()),
+            "attack_bonus_info": {"tech_bonus": a_bonus},
+            "defend_bonus_info": {"tech_bonus": d_bonus},
+            "attack_bonus": a_bonus,
+            "defend_bonus": d_bonus,
+            "round": rounds,
+            "debirs": debris,
+            "loot": loot,
+        },
+    }
+    subject = f"Battle report [{info['end_planet_pos']}]"
+    mails.send(row["owner_id"], mails.REPORT, mails.SENDER_FLEET, attacker_name, subject, body, row["arrival_time"])
+    mails.send(target_owner, mails.REPORT, mails.SENDER_FLEET, defender_name, subject, body, row["arrival_time"])
+
+    if not result["attacker_left"]:
+        return "done"
+    conn = db.connect()
+    with db.lock(), conn:
+        conn.execute("UPDATE fleet_events SET ships = ?, cargo = ? WHERE id = ?",
+                     (json.dumps({str(t): n for t, n in result["attacker_left"].items()}), json.dumps(loot), row["id"]))
+    return "returning"
+
+
 def _arrive(row) -> str:
     """Apply the mission at the target. Returns the new status of the flight."""
     cargo = json.loads(row["cargo"])
@@ -271,6 +374,8 @@ def _arrive(row) -> str:
         if row["mission"] == ESPIONAGE:
             _espionage(row, target_owner, state)
             return "returning"
+        if row["mission"] == ATTACK:
+            return _attack(row, target_owner, state)
         for res in RESOURCES:
             planet[res] += cargo[res]
         if row["mission"] == DEPLOY:
@@ -351,9 +456,20 @@ def _planet_label(planet_id: int | None, galaxy: int, system: int, position: int
     return name, f"{galaxy}:{system}:{position}"
 
 
-def events_view(player_id: int) -> list[dict]:
-    """The player's flights as `empire.fleet_hanging_events`."""
+def incoming_attacks(player_id: int) -> list:
+    return db.connect().execute(
+        "SELECT f.* FROM fleet_events f JOIN planets p ON p.id = f.target_planet_id "
+        "WHERE p.player_id = ? AND f.owner_id != ? AND f.mission = ? AND f.status = 'outbound' ORDER BY f.id",
+        (player_id, player_id, ATTACK)).fetchall()
+
+
+def events_view(player_id: int, include_incoming: bool = True) -> list[dict]:
+    """The player's flights as `empire.fleet_hanging_events`, plus attacks on the way to them
+    (mission 11, shown as "under attack")."""
     rows = db.connect().execute("SELECT * FROM fleet_events WHERE owner_id = ? ORDER BY id", (player_id,)).fetchall()
+    incoming = {r["id"] for r in incoming_attacks(player_id)} if include_incoming else set()
+    if incoming:
+        rows = list(rows) + list(incoming_attacks(player_id))
     events = []
     for row in rows:
         origin = db.connect().execute("SELECT * FROM planets WHERE id = ?", (row["origin_planet_id"],)).fetchone()
@@ -367,7 +483,7 @@ def events_view(player_id: int) -> list[dict]:
         events.append({
             "event_id": row["id"],
             "planet_id": row["origin_planet_id"],
-            "mission": row["mission"],
+            "mission": UNDER_ATTACK if row["id"] in incoming else row["mission"],
             "origin_mission": row["mission"],
             "mission_name": MISSION_NAMES.get(row["mission"], ""),
             "start_planet_name": start_name,

@@ -103,8 +103,11 @@ def heartbeat(player_id: int = Depends(current_player)):
     """Polled every few seconds. empire/planet = 1 makes the client reload that part.
 
     The client does not count resources up by itself, so it reloads the planet every time.
+    While an attack is on its way, the empire (with the flight list) is reloaded too.
     """
-    return encrypted_json({"heartBeatRate": HEARTBEAT_SECONDS, "empire": 0, "planet": 1, "refresh": {}})
+    under_attack = bool(fleets.incoming_attacks(player_id))
+    return encrypted_json({"heartBeatRate": HEARTBEAT_SECONDS, "empire": int(under_attack), "planet": 1,
+                           "refresh": {}})
 
 
 @router.get("/planets/{planet_id}")
@@ -117,6 +120,7 @@ def planet(planet_id: int, player_id: int = Depends(current_player)):
         view = planet_rules.client_view(state["empire"], now)
     # Shown as the number on the mail button; updatePlanet passes it on.
     view["new_message_count"] = mails.unread_count(player_id)
+    view["is_underattack"] = bool(fleets.incoming_attacks(player_id))
     return encrypted_json(view)
 
 
@@ -365,8 +369,9 @@ def fleet_info(planet_id: int, player_id: int = Depends(current_player)):
     with db.player_state(player_id) as state:
         planet_rules.tick(state["empire"], now)
         content = planet_rules.client_view(state["empire"], now)
-        content["fleet_hanging_events"] = fleets.events_view(player_id)
-        return encrypted_json(content)
+    content["fleet_hanging_events"] = fleets.events_view(player_id)
+    content["is_underattack"] = bool(fleets.incoming_attacks(player_id))
+    return encrypted_json(content)
 
 
 # --- Mailbox ---------------------------------------------------------------------------------

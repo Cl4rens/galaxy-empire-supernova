@@ -308,7 +308,7 @@ For reports `body` is an object; `body.mission_type` picks the layout:
 | 5 | deployed | `event_info` |
 | 6 | espionage | `event_info`, `probe_result` |
 | 14 | spied on | `event_info: {espionage_user, espionage_planet_pos, be_espionage_user, be_espionage_planet_pos}` |
-| 7 | battle | not documented yet |
+| 7 | battle | `event_info`, `notify_message`, `attack_result` (see below) |
 
 `event_info`: `{mission, mission_name, start_planet_name, start_planet_pos, end_planet_name,
 end_planet_pos, finish_time, resource_metal, resource_crystal, resource_deuterium,
@@ -319,6 +319,33 @@ fleets?, defenses?, buildings?, radar_able?, debris_*?}`. `pirate_krypton_level`
 (the client reads index 1); `fleets`/`defenses` are `[{fleet_type, fleet_name, amount}]`,
 `buildings` `[{building_type, building_name, building_level}]`. A `pirate_name` switches to the
 pirate layout.
+
+### Battle reports
+
+`body.attack_result`:
+
+```
+{attacker_name, defender_name, win ("win"/"lose"/"draw", from the attacker's view), winner_name,
+ attack_start_fleets_count, attack_end_fleets_count, defend_start_fleets_count, defend_end_fleets_count,
+ attack_bonus_info: {tech_bonus: {attack_bonus_percent, shield_bonus_percent, armour_bonus_percent}},
+ defend_bonus_info: {...}, attack_bonus: {...}, defend_bonus: {...},
+ round: [{attack_attack_count, attack_attack_value, attack_shield_absorb,
+          defend_attack_count, defend_attack_value, defend_shield_absorb,
+          attack_survived_fleets: [{fleet_type, amount}], defend_survived_fleets: [...]}],
+ debirs: {metal, crystal}}
+```
+
+- The mail's `to` must be the recipient's username: the client compares it with
+  `attacker_name` to decide whether to show VICTORY or DEFEAT.
+- A trailing round entry with `attack_recovered_fleets` / `defend_recovered_fleets` lists
+  repaired defense; it is not shown as a round.
+- `debirs` (sic) is the debris field.
+- With `attack_result.booty` the client switches to a detailed layout that also needs fleet
+  types 23–26, 28, 29 and 31 in the player's fleet list (missiles, special ships). Supernova does
+  not send `booty` and puts the loot into `notify_message` instead.
+
+Incoming attacks appear in the defender's `fleet_hanging_events` with `mission` 11; while one is
+on its way the heartbeat sets `empire: 1` and the planet has `is_underattack: true`.
 
 ### Errors
 

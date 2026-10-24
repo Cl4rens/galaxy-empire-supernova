@@ -108,6 +108,12 @@ def _slot(galaxy: int, system: int, position: int, name: str = "", planet_id: in
     }
 
 
+def _debris_in(galaxy: int, system: int) -> dict[int, tuple[int, int]]:
+    rows = db.connect().execute("SELECT position, metal, crystal FROM debris WHERE galaxy = ? AND system = ?",
+                                (galaxy, system)).fetchall()
+    return {r["position"]: (r["metal"], r["crystal"]) for r in rows if r["metal"] or r["crystal"]}
+
+
 def system_view(galaxy: int, system: int) -> dict:
     """One solar system: 15 planet positions, the expedition point and 5 pirate bases."""
     occupied = {row["position"]: row for row in _planets_in(galaxy, system)}
@@ -118,6 +124,12 @@ def system_view(galaxy: int, system: int) -> dict:
             planets.append(_slot(galaxy, system, position, row["name"], row["id"], row["player_id"], row["username"]))
         else:
             planets.append(_slot(galaxy, system, position))
+    debris = _debris_in(galaxy, system)
+    for slot in planets:
+        if slot["planet_position"] in debris:
+            metal, crystal = debris[slot["planet_position"]]
+            slot["has_debris"] = True
+            slot["debris_desc"] = f"Debris: {metal:,} metal, {crystal:,} crystal"
     planets.append(_slot(galaxy, system, EXPEDITION_POSITION, "Expedition"))
     # Pirate bases (NPC planets). Shown so the client has all 21 slots; not attackable yet.
     for level, position in enumerate(PIRATE_POSITIONS, start=1):
@@ -136,6 +148,9 @@ def galaxy_map(galaxy: int, x: int, y: int) -> dict:
     """The systems around map tile (x, y), with their number of players."""
     counts = dict(db.connect().execute(
         "SELECT system, COUNT(DISTINCT player_id) FROM planets WHERE galaxy = ? GROUP BY system", (galaxy,)).fetchall())
+    debris = dict(db.connect().execute(
+        "SELECT system, COUNT(*) FROM debris WHERE galaxy = ? AND (metal > 0 OR crystal > 0) GROUP BY system",
+        (galaxy,)).fetchall())
     systems = []
     for ty in range(max(0, y - MAP_RADIUS), y + MAP_RADIUS + 1):
         for tx in range(max(0, x - MAP_RADIUS), min(MAP_WIDTH, x + MAP_RADIUS + 1)):
@@ -150,7 +165,7 @@ def galaxy_map(galaxy: int, x: int, y: int) -> dict:
                 "system_position": system,
                 "user_count": counts.get(system, 0),
                 "lord_info": {"lord_name": "", "lord_level": 0},
-                "debris_planets": 0,
+                "debris_planets": debris.get(system, 0),
                 "strong_planets": 0,
                 "weak_planets": 0,
                 "active_planets": 0,

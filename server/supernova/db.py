@@ -58,6 +58,14 @@ CREATE TABLE IF NOT EXISTS mails (
     delivered      INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS mails_new ON mails (recipient_id, delivered);
+CREATE TABLE IF NOT EXISTS debris (
+    galaxy   INTEGER NOT NULL,
+    system   INTEGER NOT NULL,
+    position INTEGER NOT NULL,
+    metal    INTEGER NOT NULL,
+    crystal  INTEGER NOT NULL,
+    PRIMARY KEY (galaxy, system, position)
+);
 CREATE TABLE IF NOT EXISTS sessions (
     token      TEXT PRIMARY KEY,
     player_id  INTEGER NOT NULL REFERENCES players(id),

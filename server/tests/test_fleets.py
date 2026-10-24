@@ -46,7 +46,7 @@ def test_transport_delivers_and_returns():
     now = 2_000_000_000.0
     with db.player_state(sender) as state:
         info = fleets.plan(state["empire"], sender, {9: 1}, position(receiver))
-        assert info["missions"] == [fleets.TRANSPORT]
+        assert info["missions"] == [fleets.TRANSPORT, fleets.ATTACK]
         assert info["empty_cargobays"] == 5000
         fleets.send(sender, state, send_params(sender, position(receiver), {"metal": 3000}), now)
         p = state["empire"]["main_planet"]

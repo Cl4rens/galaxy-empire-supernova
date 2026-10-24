@@ -155,6 +155,7 @@ Ships fly between planets; defense units and solar satellites cannot fly. Implem
 - **Transport:** delivers the cargo to any player's planet, then returns.
 - **Deploy:** moves ships and cargo to another planet of your own; they stay there.
 - **Espionage:** needs at least one espionage probe; probes return after the report.
+- **Attack:** needs armed ships; fights the planet's ships and defense (see Combat).
 
 Every arrival and return sends a report to the mailbox; the target of a transport or of
 espionage is notified too.
@@ -201,3 +202,47 @@ hyperspace drive at Hyperspace Drive 8.
 | Colony Ship | 2,500 | 7,500 | 1,000 | Impulse |
 | Recycler | 2,000 | 20,000 | 300 | Combustion |
 | Espionage Probe | 100,000,000 | 5 | 1 | Combustion |
+
+## Combat
+
+Battles follow OGame (`server/supernova/combat.py`):
+
+- At most 6 rounds. Every round, every unit fires at a random enemy unit. Shields are restored
+  at the start of each round; a shot weaker than 1 % of the target's shield is absorbed.
+- Damage hits the shield first, then the hull. A unit whose hull drops below 70 % explodes with
+  a probability of 1 − hull / initial hull.
+- Rapid fire: some units fire again at certain targets (e.g. cruisers at light fighters 6,
+  battlecruisers at battleships 7, deathstars at almost everything).
+- Weapons, Shielding and Armour Technology each add 10 % per level.
+- Hull = (metal + crystal) / 10 of the unit's cost.
+- If the attacker wins, it takes up to half of each resource, limited by the cargo space of
+  its surviving ships.
+- 70 % of destroyed defense units are repaired after the battle.
+- 30 % of the metal and crystal of all destroyed ships (both sides) becomes a debris field at
+  the target's position.
+- Both sides get a battle report; the defender sees the attack coming in its flight list.
+
+| Unit | Weapon | Shield | Hull |
+|------|-------:|-------:|-----:|
+| Light Fighter | 50 | 10 | 400 |
+| Heavy Fighter | 150 | 25 | 1,000 |
+| Cruiser | 400 | 50 | 2,700 |
+| Battleship | 1,000 | 200 | 6,000 |
+| Battlecruiser | 700 | 400 | 7,000 |
+| Bomber | 1,000 | 500 | 7,500 |
+| Destroyer | 2,000 | 500 | 11,000 |
+| Deathstar | 200,000 | 50,000 | 900,000 |
+| Small Cargo | 5 | 10 | 400 |
+| Large Cargo | 5 | 25 | 1,200 |
+| Colony Ship | 50 | 100 | 3,000 |
+| Recycler | 1 | 10 | 1,600 |
+| Espionage Probe | 0 | 0 | 100 |
+| Solar Satellite | 1 | 1 | 200 |
+| Rocket Launcher | 80 | 20 | 200 |
+| Light Laser | 100 | 25 | 200 |
+| Heavy Laser | 250 | 100 | 800 |
+| Gauss Cannon | 1,100 | 200 | 3,500 |
+| Ion Cannon | 150 | 500 | 800 |
+| Plasma Cannon | 3,000 | 300 | 10,000 |
+| Small Shield Dome | 1 | 2,000 | 2,000 |
+| Large Shield Dome | 1 | 10,000 | 10,000 |
