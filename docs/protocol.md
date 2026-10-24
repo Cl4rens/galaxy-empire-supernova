@@ -371,6 +371,20 @@ auto_explore}`.
 
 Colonization report: `body.mission_type` 2 with `event_info`.
 
+### Rankings
+
+`GET ranks?do=<kind>&user_id=<id>` answers `{"rank": [...]}`.
+
+| `do` | List | Entry fields |
+|------|------|--------------|
+| `top_users` / `my_rank` | points | `id, rank, username, alliance_name, score` |
+| `top_fight_score` / `my_fight_score` | strength | `id, rank, username, alliance_name, score` |
+| `top_fight_users` / `my_fight_rank` | battle statistics | `id, fight_rank, username, alliance_name, fight_win_count, fight_lose_count, fight_draw_count` |
+| `top_alliances` / `my_alliance` | alliances | `id, rank, alliance_name, president_name, score` |
+
+`my_*` lists show the entries around the player. `empire.rank` and `empire.score` appear in the
+top bar.
+
 ### Errors
 
 For a status other than 200 the client shows the response body **as text** (or the `<title>` of

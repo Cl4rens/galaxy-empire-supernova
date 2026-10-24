@@ -77,6 +77,12 @@ CREATE TABLE IF NOT EXISTS expeditions (
     player_id  INTEGER NOT NULL,
     started_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS battle_stats (
+    player_id INTEGER PRIMARY KEY,
+    wins      INTEGER NOT NULL DEFAULT 0,
+    losses    INTEGER NOT NULL DEFAULT 0,
+    draws     INTEGER NOT NULL DEFAULT 0
+);
 CREATE TABLE IF NOT EXISTS sessions (
     token      TEXT PRIMARY KEY,
     player_id  INTEGER NOT NULL REFERENCES players(id),

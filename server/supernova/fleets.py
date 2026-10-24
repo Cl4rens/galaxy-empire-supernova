@@ -13,7 +13,7 @@ import json
 import logging
 import time
 
-from . import combat, db
+from . import combat, db, ranking
 from . import economy as eco
 from . import mails, npc
 from . import planet as planet_rules
@@ -387,6 +387,9 @@ def _attack(row, target_owner: int, state: dict, planet: dict) -> str:
     add_debris(row["target_galaxy"], row["target_system"], row["target_position"],
                result["debris"]["metal"], result["debris"]["crystal"])
 
+    win = result["report"]["win"]
+    ranking.record_battle(row["owner_id"], win)
+    ranking.record_battle(target_owner, {"win": "lose", "lose": "win"}.get(win, "draw"))
     info = _event_info(row, row["arrival_time"])
     body = {"mission_type": ATTACK, "is_returning": False, "event_info": info,
             "notify_message": _loot_text(loot) if result["winner"] == "attacker" else "",

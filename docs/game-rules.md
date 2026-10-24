@@ -279,3 +279,13 @@ spied on and leave debris like any battle.
 | 12 % | pirate ambush (a battle) |
 | 29 % | nothing |
 | 1 % | black hole: the fleet is lost |
+
+## Rankings
+
+- **Points:** one point per 1,000 resources spent on buildings, research, ships and defense
+  (all planets), as in OGame.
+- **Strength:** the same for ships and defense only.
+- **Statistics:** battles won, lost and drawn against other players.
+
+Rankings are computed on request from all players' states; fine for community servers with
+up to a few hundred players.

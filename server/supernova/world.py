@@ -12,7 +12,7 @@ from urllib.parse import parse_qs
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse, Response
 
-from . import crypto, db, fleets, mails, player
+from . import crypto, db, fleets, mails, player, ranking
 from . import planet as planet_rules
 from . import universe
 
@@ -413,6 +413,14 @@ def fleet_info(planet_id: int, player_id: int = Depends(current_player)):
     content["fleet_hanging_events"] = fleets.events_view(player_id)
     content["is_underattack"] = bool(fleets.incoming_attacks(player_id))
     return encrypted_json(content)
+
+
+# --- Rankings ---------------------------------------------------------------------------------
+
+
+@router.get("/ranks")
+def ranks(player_id: int = Depends(current_player), do: str = "top_users"):
+    return encrypted_json({"rank": ranking.ranking(do, player_id)})
 
 
 # --- Mailbox ---------------------------------------------------------------------------------

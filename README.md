@@ -156,6 +156,7 @@ Uninstall any old copy of the original game first, because the signatures differ
 - [x] Recycling debris fields
 - [x] Colonization: several planets per player
 - [x] Pirate bases and expeditions
+- [x] Rankings
 - [ ] Tutorial quests
 - [ ] Support for 64-bit-only devices
 - [ ] Game logic: buildings, research, fleets, combat, alliances
