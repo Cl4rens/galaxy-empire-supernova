@@ -210,3 +210,77 @@ def unit_seconds(utype: int, shipyard: int, nanite: int) -> int:
     metal, crystal, _ = unit_cost(utype)
     hours = (metal + crystal) / (2500 * (1 + shipyard) * 2 ** nanite)
     return max(1, math.floor(hours * 3600 / config.SPEED))
+
+
+# --- Flying -------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ShipStats:
+    speed: int
+    cargo: int
+    fuel: int  # deuterium consumption factor
+    drive: int  # research type of the drive
+
+
+# OGame values. Defense units and solar satellites cannot fly.
+SHIPS: dict[int, ShipStats] = {
+    1: ShipStats(12500, 50, 20, COMBUSTION_DRIVE),
+    2: ShipStats(10000, 100, 75, IMPULSE_DRIVE),
+    3: ShipStats(15000, 800, 300, IMPULSE_DRIVE),
+    4: ShipStats(10000, 1500, 500, HYPERSPACE_DRIVE),
+    5: ShipStats(10000, 750, 250, HYPERSPACE_DRIVE),
+    6: ShipStats(4000, 500, 1000, IMPULSE_DRIVE),
+    7: ShipStats(5000, 2000, 1000, HYPERSPACE_DRIVE),
+    8: ShipStats(100, 1000000, 1, HYPERSPACE_DRIVE),
+    9: ShipStats(5000, 5000, 10, COMBUSTION_DRIVE),
+    10: ShipStats(7500, 25000, 50, COMBUSTION_DRIVE),
+    11: ShipStats(2500, 7500, 1000, IMPULSE_DRIVE),
+    12: ShipStats(2000, 20000, 300, COMBUSTION_DRIVE),
+    13: ShipStats(100000000, 5, 1, COMBUSTION_DRIVE),
+    23: ShipStats(12500, 50, 20, COMBUSTION_DRIVE),  # interceptor: krypton shop, like a light fighter
+    24: ShipStats(5000, 2000, 1000, HYPERSPACE_DRIVE),  # behemoth: unknown, like a destroyer
+}
+
+# Drive upgrades: (ship, research, level) -> (new drive, new speed)
+DRIVE_UPGRADES = {
+    9: (IMPULSE_DRIVE, 5, 10000),
+    6: (HYPERSPACE_DRIVE, 8, 5000),
+}
+
+DRIVE_BONUS = {COMBUSTION_DRIVE: 0.1, IMPULSE_DRIVE: 0.2, HYPERSPACE_DRIVE: 0.3}
+
+
+def ship_speed(ftype: int, research_levels: dict[int, int]) -> int:
+    stats = SHIPS[ftype]
+    drive, speed = stats.drive, stats.speed
+    if ftype in DRIVE_UPGRADES:
+        upgraded_drive, needed, upgraded_speed = DRIVE_UPGRADES[ftype]
+        if research_levels.get(upgraded_drive, 0) >= needed:
+            drive, speed = upgraded_drive, upgraded_speed
+    return int(speed * (1 + DRIVE_BONUS[drive] * research_levels.get(drive, 0)))
+
+
+def distance(start: tuple[int, int, int], end: tuple[int, int, int]) -> int:
+    (g1, s1, p1), (g2, s2, p2) = start, end
+    if g1 != g2:
+        return 20000 * abs(g1 - g2)
+    if s1 != s2:
+        return 2700 + 95 * abs(s1 - s2)
+    if p1 != p2:
+        return 1000 + 5 * abs(p1 - p2)
+    return 5
+
+
+def flight_seconds(dist: int, speed: int, percent: int) -> int:
+    """One-way flight time; percent is the chosen speed (10-100)."""
+    return max(1, round((10 + 3500 / (percent / 10) * math.sqrt(10 * dist / speed)) / config.SPEED))
+
+
+def fuel(ships: dict[int, int], dist: int, percent: int) -> int:
+    base = sum(SHIPS[t].fuel * n for t, n in ships.items())
+    return 1 + round(base * dist / 35000 * (percent / 100 + 1) ** 2)
+
+
+def cargo_capacity(ships: dict[int, int]) -> int:
+    return sum(SHIPS[t].cargo * n for t, n in ships.items())

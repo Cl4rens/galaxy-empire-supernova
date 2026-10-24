@@ -245,6 +245,37 @@ system per tile. Supernova lays the 499 systems out row by row: system *n* is ti
 
 Here `lord_info` is required (the client reads `lord_info.lord_name`).
 
+### Fleet missions
+
+| Request | Meaning |
+|---------|---------|
+| `GET fleet_hanging_events/show_be_attacked` | flight list of the dispatch screen: `{hanging_info: [own flights], be_attacked_hanging_info: [{radar_level, hanging: [...]}], planet: {current_server_time}}` |
+| `GET fleet_hanging_events/prepare_hanging?fleet_ids=..&fleet_cnt_ids=..&end_p_pos=g,s,p&mission=..&start_p_id=..&planet_type=planet` | before sending: `{missions: [...], speed, total_time, fuel_consumption, empty_cargobays}` |
+| `POST fleet_hanging_events.json` with the same fields plus `speed_ratio` (10–100), `metal`, `crystal`, `deuterium` | send the fleet |
+| `POST fleet_hanging_events/<event_id>/cancel.json` with `planet_id` | recall a fleet that is still outbound |
+| `GET planets/<planet_id>/fleet_info.json` | sent when a flight timer runs out; the answer is merged into both the empire and the planet, so it carries planet fields plus `fleet_hanging_events` |
+
+- `fleet_ids` / `fleet_cnt_ids` are comma-terminated lists (`"109,"`, `"2,"`). The ids are the `id`
+  field of `main_planet.fleets`; the dispatch screen only lists entries with `fleet_category` 1
+  (ships), not 2 (defense).
+- `missions` decides which mission buttons are enabled. Mission ids and button positions:
+  transport 4 (0), recycle 3 (1), espionage 6 (2), attack 7 (3), deploy 5 (4), colonize 2 (5),
+  expedition 1 (6), transmit 16 (7). The client only shows the cargo panel for transport, deploy
+  and colonize.
+- The client shows `total_time × 100 / speed_ratio` and `fuel_consumption × speed_ratio / 100`
+  itself, so `prepare_hanging` reports the values for 100 %.
+
+A flight in `empire.fleet_hanging_events`:
+
+```
+{event_id, planet_id, mission, origin_mission, mission_name, start_planet_name,
+ start_planet_pos ("g:s:p"), end_planet_id, end_planet_name, end_planet_pos, distance_time,
+ is_returning, finish_time, total_time, acs_status, show_hanging, fleets: [{fleet_type, fleet_count}]}
+```
+
+`finish_time` is the end of the current leg (arrival, or return when `is_returning`), and
+`total_time` the length of that leg. Mission 11 marks hostile fleets on their way to the player.
+
 ### Errors
 
 For a status other than 200 the client shows the response body **as text** (or the `<title>` of

@@ -5,7 +5,8 @@ with a reimplemented game server.
 
 > **Status: early development.** A patched client logs in as a guest, builds and upgrades
 > buildings, produces resources, researches technologies, builds ships and defense, and sees the
-> other players on the galaxy map. Sending fleets and everything beyond are not there yet.
+> other players on the galaxy map, and sends fleets to transport resources. Combat, espionage and
+> colonization are not there yet.
 
 > **Disclaimer:** This is a non-commercial fan project. It is not affiliated with, endorsed by, or
 > connected to tap4fun or any rights holder. All trademarks belong to their respective owners.
@@ -110,6 +111,7 @@ python -m supernova.admin list
 python -m supernova.admin show <username>
 python -m supernova.admin give <username> metal=10000 crystal=5000 deuterium=2000
 python -m supernova.admin set-building <username> <building_type> <level> [lot]
+python -m supernova.admin give-fleet <username> 9=5 1=10      # fleet_type=count
 ```
 
 ### 4. Build the patched APK
@@ -147,7 +149,8 @@ Uninstall any old copy of the original game first, because the signatures differ
 - [x] Research
 - [x] Shipyard: ships and defense
 - [x] Galaxy map and solar systems
-- [ ] Fleet missions, combat, colonization
+- [x] Fleet missions: transport, deploy, recall
+- [ ] Espionage, combat, colonization, expeditions
 - [ ] Tutorial quests
 - [ ] Support for 64-bit-only devices
 - [ ] Game logic: buildings, research, fleets, combat, alliances

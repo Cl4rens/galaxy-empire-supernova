@@ -4,6 +4,7 @@
     python -m supernova.admin show <username>
     python -m supernova.admin give <username> metal=10000 crystal=5000 deuterium=2000
     python -m supernova.admin set-building <username> <building_type> <level> [lot]
+    python -m supernova.admin give-fleet <username> 9=5 1=10      (fleet_type=count)
 
 Run it while the server is running or stopped; changes are visible at the player's next request.
 """
@@ -58,6 +59,23 @@ def cmd_give(args) -> None:
     print("ok")
 
 
+def cmd_give_fleet(args) -> None:
+    amounts = {}
+    for item in args.amounts:
+        ftype, _, value = item.partition("=")
+        if not ftype.isdigit() or not value.lstrip("-").isdigit():
+            raise SystemExit(f"Expected fleet_type=count, got {item!r}")
+        amounts[int(ftype)] = int(value)
+    with db.player_state(player_id(args.username)) as state:
+        p = state["empire"]["main_planet"]
+        for ftype, value in amounts.items():
+            f = next((f for f in p["fleets"] if f["fleet_type"] == ftype), None)
+            if f is None:
+                raise SystemExit(f"Unknown fleet type {ftype}")
+            f["amount"] = max(0, f["amount"] + value)
+    print("ok")
+
+
 def cmd_set_building(args) -> None:
     if args.building_type not in eco.BUILDINGS:
         raise SystemExit(f"Unknown building type {args.building_type}")
@@ -83,6 +101,10 @@ def main() -> None:
     give.add_argument("username")
     give.add_argument("amounts", nargs="+")
     give.set_defaults(func=cmd_give)
+    givef = sub.add_parser("give-fleet")
+    givef.add_argument("username")
+    givef.add_argument("amounts", nargs="+")
+    givef.set_defaults(func=cmd_give_fleet)
     setb = sub.add_parser("set-building")
     setb.add_argument("username")
     setb.add_argument("building_type", type=int)

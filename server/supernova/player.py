@@ -8,6 +8,7 @@ import secrets
 import time
 
 from . import economy as eco
+from . import fleets
 from . import planet as planet_rules
 from . import universe
 
@@ -128,7 +129,8 @@ def new_state(player_id: int, username: str, home: dict | None = None) -> dict:
 def empire_view(state: dict, now: float) -> dict:
     """The empire object as the client expects it."""
     empire = state["empire"]
-    return dict(empire, main_planet=planet_rules.client_view(empire, now), **planet_rules.researches_view(empire))
+    return dict(empire, main_planet=planet_rules.client_view(empire, now), **planet_rules.researches_view(empire),
+                fleet_hanging_events=fleets.events_view(empire["user_id"]))
 
 
 def empire_summary(state: dict) -> dict:
@@ -136,6 +138,7 @@ def empire_summary(state: dict) -> dict:
     empire = state["empire"]
     summary = {k: v for k, v in empire.items() if k != "main_planet"}
     summary.update(planet_rules.researches_view(empire))
+    summary["fleet_hanging_events"] = fleets.events_view(empire["user_id"])
     return summary
 
 

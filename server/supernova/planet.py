@@ -11,6 +11,7 @@ from . import config, economy as eco
 
 FREE_LOTS = range(4, 16)  # lots 1-3 belong to the mines
 EVENT_UPGRADE, EVENT_TEARDOWN = 1, 2
+FLEET_CATEGORY_SHIP, FLEET_CATEGORY_DEFENSE = 1, 2
 RESOURCES = ("metal", "crystal", "deuterium")
 
 
@@ -461,7 +462,9 @@ def researches_view(empire: dict) -> dict:
 
 def fleet_view(planet: dict, f: dict) -> dict:
     ftype = f["fleet_type"]
-    view = dict(f, amount_limit=f["amount"])
+    # id is what the dispatch screen sends; only ships (category 1) are offered there.
+    view = dict(f, id=f["fleet_id"], amount_limit=f["amount"],
+                fleet_category=FLEET_CATEGORY_SHIP if ftype in eco.SHIPS else FLEET_CATEGORY_DEFENSE)
     if ftype in eco.UNITS:
         rule = eco.UNITS[ftype]
         view.update({

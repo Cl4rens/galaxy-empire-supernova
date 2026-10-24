@@ -5,13 +5,15 @@ Run from the server/ folder:  python -m uvicorn supernova.app:app --host 0.0.0.0
 Settings come from environment variables, see supernova/config.py.
 """
 
+import asyncio
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 
-from . import config, crypto, gateway, world
+from . import config, crypto, fleets, gateway, world
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("supernova")
@@ -33,7 +35,24 @@ def find_client_key() -> bytes:
 
 world.CLIENT_KEY = find_client_key()
 
-app = FastAPI(title="Project Supernova")
+async def fleet_processor():
+    """Completes fleet arrivals and returns every second, also for players who are offline."""
+    while True:
+        try:
+            await asyncio.to_thread(fleets.process_due)
+        except Exception:
+            log.exception("fleet processing failed")
+        await asyncio.sleep(1)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    task = asyncio.create_task(fleet_processor())
+    yield
+    task.cancel()
+
+
+app = FastAPI(title="Project Supernova", lifespan=lifespan)
 app.include_router(gateway.router)
 app.include_router(world.router)
 

@@ -12,7 +12,7 @@ from urllib.parse import parse_qs
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse, Response
 
-from . import crypto, db, player
+from . import crypto, db, fleets, player
 from . import planet as planet_rules
 from . import universe
 
@@ -288,6 +288,82 @@ def fleets_build_info(planet_id: int, fleet_id: int, player_id: int = Depends(cu
         if changed is None:
             return error("Unknown unit", 404)
         return fleet_update(state, changed, now)
+
+
+# --- Fleet missions -------------------------------------------------------------------------
+
+
+def fleet_response(state: dict, now: float) -> Response:
+    """Answer for fleet actions: the empire (with flights), the planet and its ships."""
+    planet_now = state["empire"]["main_planet"]
+    return encrypted_json({
+        "update": {"fleets": [planet_rules.fleet_view(planet_now, f) for f in planet_now["fleets"]]},
+        "empire": player.empire_summary(state),
+        "planet": planet_rules.client_view(state["empire"], now),
+    })
+
+
+@router.get("/fleet_hanging_events/show_be_attacked")
+def flights_overview(player_id: int = Depends(current_player)):
+    """The dispatch screen's flight list: own flights and hostile fleets on their way here."""
+    return encrypted_json({
+        "hanging_info": fleets.events_view(player_id),
+        "be_attacked_hanging_info": [],  # no attacks yet
+        "planet": {"current_server_time": int(time.time())},
+    })
+
+
+@router.get("/fleet_hanging_events/prepare_hanging")
+async def prepare_fleet(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    """Speed, flight time, fuel, cargo space and possible missions for the selected ships."""
+    params = await form(request)
+    try:
+        with db.player_state(player_id) as state:
+            empire = state["empire"]
+            ships = fleets.parse_ships(empire["main_planet"], params.get("fleet_ids", ""),
+                                       params.get("fleet_cnt_ids", ""))
+            target = fleets.parse_target(params.get("end_p_pos", ""))
+            info = fleets.plan(empire, player_id, ships, target)
+    except planet_rules.GameError as e:
+        return error(str(e))
+    return encrypted_json({k: v for k, v in info.items() if k != "distance"})
+
+
+@router.post("/fleet_hanging_events.json")
+async def send_fleet(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    now = time.time()
+    try:
+        with db.player_state(player_id) as state:
+            fleets.send(player_id, state, params, now)
+            return fleet_response(state, now)
+    except planet_rules.GameError as e:
+        return error(str(e))
+
+
+@router.post("/fleet_hanging_events/{event_id}/cancel.json")
+def recall_fleet(world_id: int, event_id: int, player_id: int = Depends(current_player)):
+    now = time.time()
+    try:
+        fleets.recall(player_id, event_id, now)
+    except planet_rules.GameError as e:
+        return error(str(e))
+    with db.player_state(player_id) as state:
+        planet_rules.tick(state["empire"], now)
+        return fleet_response(state, now)
+
+
+@router.get("/planets/{planet_id}/fleet_info.json")
+def fleet_info(planet_id: int, player_id: int = Depends(current_player)):
+    """Requested when a flight timer runs out. The client merges the answer into both its
+    empire and its planet, so it holds the flights and the planet fields side by side."""
+    now = time.time()
+    fleets.process_due(now)
+    with db.player_state(player_id) as state:
+        planet_rules.tick(state["empire"], now)
+        content = planet_rules.client_view(state["empire"], now)
+        content["fleet_hanging_events"] = fleets.events_view(player_id)
+        return encrypted_json(content)
 
 
 # --- Galaxy map and solar systems ------------------------------------------------------

@@ -28,6 +28,24 @@ CREATE TABLE IF NOT EXISTS planets (
     name       TEXT NOT NULL,
     UNIQUE (galaxy, system, position)
 );
+CREATE TABLE IF NOT EXISTS fleet_events (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_id         INTEGER NOT NULL REFERENCES players(id),
+    origin_planet_id INTEGER NOT NULL,
+    target_planet_id INTEGER,
+    target_galaxy    INTEGER NOT NULL,
+    target_system    INTEGER NOT NULL,
+    target_position  INTEGER NOT NULL,
+    mission          INTEGER NOT NULL,
+    ships            TEXT NOT NULL,   -- JSON {fleet_type: count}
+    cargo            TEXT NOT NULL,   -- JSON {metal, crystal, deuterium}
+    start_time       INTEGER NOT NULL,
+    arrival_time     INTEGER NOT NULL,
+    return_time      INTEGER NOT NULL,
+    turn_time        INTEGER NOT NULL DEFAULT 0,  -- when it turned around (arrival or recall)
+    status           TEXT NOT NULL    -- outbound, returning
+);
+CREATE INDEX IF NOT EXISTS fleet_events_due ON fleet_events (status, arrival_time, return_time);
 CREATE TABLE IF NOT EXISTS sessions (
     token      TEXT PRIMARY KEY,
     player_id  INTEGER NOT NULL REFERENCES players(id),

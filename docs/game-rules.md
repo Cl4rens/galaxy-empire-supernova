@@ -147,3 +147,41 @@ immediately.
 - New players get a home planet in galaxy 1 at position 4–12 of a random system. The range of
   systems grows with the number of planets (10 + planets), so early players live close together
   instead of being spread over 4,491 systems.
+
+## Fleets
+
+Ships fly between planets; defense units and solar satellites cannot fly. Implemented missions:
+
+- **Transport:** delivers the cargo to any player's planet, then returns.
+- **Deploy:** moves ships and cargo to another planet of your own; they stay there.
+
+A fleet that is still on its way out can be **recalled**; it flies back as long as it has
+already flown. Missions complete on the server even while the player is offline.
+
+| | Formula (OGame) |
+|-|-----------------|
+| Distance, other galaxy | 20,000 × galaxies apart |
+| Distance, same galaxy | 2,700 + 95 × systems apart |
+| Distance, same system | 1,000 + 5 × positions apart |
+| Flight time (seconds) | (10 + 3500 / (speed% / 10) × √(10 × distance / slowest ship speed)) / game speed |
+| Fuel (deuterium) | 1 + Σ consumption × distance / 35,000 × (speed% / 100 + 1)² |
+
+Ship speed grows with its drive research: combustion +10 %, impulse +20 %, hyperspace +30 % per
+level. Small cargos switch to the impulse drive (speed 10,000) at Impulse Drive 5, bombers to the
+hyperspace drive at Hyperspace Drive 8.
+
+| Ship | Speed | Cargo | Fuel | Drive |
+|------|------:|------:|-----:|-------|
+| Light Fighter | 12,500 | 50 | 20 | Combustion |
+| Heavy Fighter | 10,000 | 100 | 75 | Impulse |
+| Cruiser | 15,000 | 800 | 300 | Impulse |
+| Battleship | 10,000 | 1,500 | 500 | Hyperspace |
+| Battlecruiser | 10,000 | 750 | 250 | Hyperspace |
+| Bomber | 4,000 | 500 | 1,000 | Impulse |
+| Destroyer | 5,000 | 2,000 | 1,000 | Hyperspace |
+| Deathstar | 100 | 1,000,000 | 1 | Hyperspace |
+| Small Cargo | 5,000 | 5,000 | 10 | Combustion |
+| Large Cargo | 7,500 | 25,000 | 50 | Combustion |
+| Colony Ship | 2,500 | 7,500 | 1,000 | Impulse |
+| Recycler | 2,000 | 20,000 | 300 | Combustion |
+| Espionage Probe | 100,000,000 | 5 | 1 | Combustion |
