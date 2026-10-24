@@ -44,7 +44,8 @@ CREATE TABLE IF NOT EXISTS fleet_events (
     arrival_time     INTEGER NOT NULL,
     return_time      INTEGER NOT NULL,
     turn_time        INTEGER NOT NULL DEFAULT 0,  -- when it turned around (arrival or recall)
-    status           TEXT NOT NULL    -- outbound, returning
+    status           TEXT NOT NULL,   -- outbound, returning
+    acs_id           INTEGER          -- coordinated attack: the leading attack's event id
 );
 CREATE INDEX IF NOT EXISTS fleet_events_due ON fleet_events (status, arrival_time, return_time);
 CREATE TABLE IF NOT EXISTS mails (
@@ -169,6 +170,10 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
+    fleet_columns = [r[1] for r in conn.execute("PRAGMA table_info(fleet_events)")]
+    if fleet_columns and "acs_id" not in fleet_columns:
+        with conn:
+            conn.execute("ALTER TABLE fleet_events ADD COLUMN acs_id INTEGER")
     columns = [r[1] for r in conn.execute("PRAGMA table_info(planets)")]
     if columns and "kind" not in columns:  # moons share positions with their planets
         with conn:

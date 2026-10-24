@@ -24,9 +24,11 @@ log = logging.getLogger("supernova")
 
 EXPEDITION, COLONY, RECYCLE, TRANSPORT, DEPLOY, ESPIONAGE, ATTACK = 1, 2, 3, 4, 5, 6, 7
 TRANSMIT = 16  # jump through the transmit portals of two own moons
+ACS_ATTACK, ACS_JOIN = 8, 21  # joining a coordinated attack (8 in the dispatch screen, 21 for the flight)
 MISSION_NAMES = {
     EXPEDITION: "Expedition", COLONY: "Colonize", RECYCLE: "Recycle", TRANSPORT: "Transport",
     DEPLOY: "Deploy", ESPIONAGE: "Espionage", ATTACK: "Attack", TRANSMIT: "Transmit",
+    ACS_JOIN: "Coordinated attack ",
 }
 UNDER_ATTACK = 11  # how incoming attacks appear in the defender's flight list
 ATTACK_PIRATES = 13  # report type of battles against pirate bases
@@ -320,9 +322,14 @@ def recall(player_id: int, event_id: int, now: float) -> None:
         row = conn.execute("SELECT * FROM fleet_events WHERE id = ? AND owner_id = ?", (event_id, player_id)).fetchone()
         if row is None or row["status"] != "outbound" or row["arrival_time"] <= now:
             raise FleetError("This fleet cannot be recalled")
-        elapsed = int(now) - row["start_time"]
-        conn.execute("UPDATE fleet_events SET status = 'returning', turn_time = ?, return_time = ? WHERE id = ?",
-                     (int(now), int(now) + max(1, elapsed), event_id))
+        group = [row]
+        if row["mission"] == ATTACK:  # a coordinated attack turns with its leader
+            group += conn.execute("SELECT * FROM fleet_events WHERE acs_id = ? AND status = 'outbound'",
+                                  (event_id,)).fetchall()
+        for r in group:
+            elapsed = int(now) - r["start_time"]
+            conn.execute("UPDATE fleet_events SET status = 'returning', turn_time = ?, return_time = ? WHERE id = ?",
+                         (int(now), int(now) + max(1, elapsed), r["id"]))
 
 
 # --- Processing -----------------------------------------------------------------------------
@@ -530,14 +537,52 @@ def _fly_home(row, survivors: dict[int, int], cargo: dict) -> str:
     return "returning"
 
 
+def _share(total: dict[int, int], parts: list[dict[int, int]]) -> list[dict[int, int]]:
+    """Split the surviving units of a group back to its fleets, in proportion to what each sent."""
+    shares = [{} for _ in parts]
+    for t, left in total.items():
+        sent = [p.get(t, 0) for p in parts]
+        given = [left * s // max(1, sum(sent)) for s in sent]
+        given[sent.index(max(sent))] += left - sum(given)
+        for share, n in zip(shares, given):
+            if n:
+                share[t] = n
+    return shares
+
+
+def _split_loot(loot: dict[str, int], capacities: list[int]) -> list[dict[str, int]]:
+    total = max(1, sum(capacities))
+    parts = [{res: loot[res] * c // total for res in RESOURCES} for c in capacities]
+    if parts:
+        biggest = capacities.index(max(capacities))
+        for res in RESOURCES:
+            parts[biggest][res] += loot[res] - sum(p[res] for p in parts)
+    return parts
+
+
 def _attack(row, target_owner: int, state: dict, planet: dict) -> str:
-    """Fight at a player's planet. Returns the new status of the flight."""
+    """Fight at a player's planet, together with every fleet that joined the attack. Returns the
+    new status of the leading flight; the joined flights are updated here."""
+    conn = db.connect()
+    joined = conn.execute("SELECT * FROM fleet_events WHERE acs_id = ? AND status = 'outbound' ORDER BY id",
+                          (row["id"],)).fetchall()
+    group = [row] + list(joined)
     owner_state = db.load_state(row["owner_id"])
-    attacker_name, defender_name = _username(row["owner_id"]), _username(target_owner)
+    names = []
+    for r in group:
+        if _username(r["owner_id"]) not in names:
+            names.append(_username(r["owner_id"]))
+    attacker_name, defender_name = " + ".join(names), _username(target_owner)
     defend_units = {f["fleet_type"]: f["amount"] for f in planet["fleets"]
                     if f["amount"] and f["fleet_type"] in combat.STATS}
+    sent = [_ships(r) for r in group]
+    attack_units = {}
+    for ships in sent:
+        for t, n in ships.items():
+            attack_units[t] = attack_units.get(t, 0) + n
     origin = planet_rules.find_planet(owner_state["empire"], row["origin_planet_id"])
-    result = _battle(row, _side(attacker_name, owner_state["empire"], _ships(row), origin),
+    # The group fights with the technologies and kryptons of the player who started the attack.
+    result = _battle(row, _side(attacker_name, owner_state["empire"], attack_units, origin),
                      _tech_bonus(owner_state["empire"]),
                      _side(defender_name, state["empire"], defend_units, planet), _tech_bonus(state["empire"]))
     for f in planet["fleets"]:
@@ -552,9 +597,12 @@ def _attack(row, target_owner: int, state: dict, planet: dict) -> str:
     add_debris(row["target_galaxy"], row["target_system"], row["target_position"],
                result["debris"]["metal"], result["debris"]["crystal"])
     moon = _maybe_moon(target_owner, planet, result["debris"])
+    survivors = _share(result["attacker_left"], sent)
+    loots = _split_loot(loot, [eco.cargo_capacity(s) for s in survivors])
 
     win = result["report"]["win"]
-    ranking.record_battle(row["owner_id"], win)
+    for owner in {r["owner_id"] for r in group}:
+        ranking.record_battle(owner, win)
     ranking.record_battle(target_owner, {"win": "lose", "lose": "win"}.get(win, "draw"))
     info = _event_info(row, row["arrival_time"])
     notes = [_loot_text(loot)] if result["winner"] == "attacker" else []
@@ -565,9 +613,25 @@ def _attack(row, target_owner: int, state: dict, planet: dict) -> str:
     body = {"mission_type": ATTACK, "is_returning": False, "event_info": info, "notify_message": " ".join(notes),
             "attack_result": dict(result["report"], loot=loot), "defender_repair_sw": int(bool(repaired))}
     subject = f"Battle report [{info['end_planet_pos']}]"
-    mails.send(row["owner_id"], mails.REPORT, mails.SENDER_FLEET, attacker_name, subject, body, row["arrival_time"])
+    for owner in {r["owner_id"] for r in group}:  # the client finds its side by attacker_name
+        name = _username(owner)
+        own = dict(body, attack_result=dict(body["attack_result"], attacker_name=name,
+                                            winner_name=name if result["winner"] == "attacker"
+                                            else body["attack_result"]["winner_name"]))
+        if len(names) > 1:
+            own["notify_message"] = " ".join(filter(None, [f"Coordinated attack: {attacker_name}.",
+                                                           body["notify_message"]]))
+        mails.send(owner, mails.REPORT, mails.SENDER_FLEET, name, subject, own, row["arrival_time"])
     mails.send(target_owner, mails.REPORT, mails.SENDER_FLEET, defender_name, subject, body, row["arrival_time"])
-    return _fly_home(row, result["attacker_left"], loot)
+    for r, ships, share in zip(joined, survivors[1:], loots[1:]):
+        status = _fly_home(r, ships, share)
+        with db.lock(), conn:
+            if status == "done":
+                conn.execute("DELETE FROM fleet_events WHERE id = ?", (r["id"],))
+            else:
+                conn.execute("UPDATE fleet_events SET status = 'returning', turn_time = arrival_time WHERE id = ?",
+                             (r["id"],))
+    return _fly_home(row, survivors[0], loots[0])
 
 
 def moon_chance(debris: dict) -> int:
@@ -755,6 +819,8 @@ def _arrive(row) -> str:
         return _expedition(row)
     if row["target_position"] in universe.PIRATE_POSITIONS:
         return _attack_pirates(row) if row["mission"] == ATTACK else _spy_pirates(row)
+    if row["mission"] == ACS_JOIN:
+        return "returning"  # its attack already happened or was called off
     cargo = json.loads(row["cargo"])
     target_owner = _planet_owner(row["target_planet_id"])
     if target_owner is None:
@@ -819,7 +885,10 @@ def process_due(now: float | None = None) -> int:
     rows = conn.execute(
         "SELECT * FROM fleet_events WHERE (status = 'outbound' AND arrival_time <= ?) "
         "OR (status = 'returning' AND return_time <= ?) ORDER BY id", (now, now)).fetchall()
-    for row in rows:
+    for due in rows:
+        row = conn.execute("SELECT * FROM fleet_events WHERE id = ?", (due["id"],)).fetchone()
+        if row is None or row["status"] != due["status"]:
+            continue  # handled together with another flight (coordinated attack)
         try:
             if row["status"] == "outbound":
                 status = _arrive(row)
@@ -834,7 +903,7 @@ def process_due(now: float | None = None) -> int:
                 with db.lock(), conn:
                     conn.execute("DELETE FROM fleet_events WHERE id = ?", (row["id"],))
         except Exception:
-            log.exception("fleet event %s failed", row["id"])
+            log.exception("fleet event %s failed", due["id"])
     return len(rows)
 
 
@@ -889,6 +958,7 @@ def events_view(player_id: int, include_incoming: bool = True) -> list[dict]:
             "finish_time": finish,
             "total_time": max(1, finish - leg_start),
             "acs_status": 0,
+            "acs_id": row["acs_id"] or "",
             "show_hanging": True,
             "fleets": [{"fleet_type": t, "fleet_count": n} for t, n in _ships(row).items()],
         })

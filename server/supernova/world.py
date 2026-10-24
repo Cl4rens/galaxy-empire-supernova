@@ -12,7 +12,7 @@ from urllib.parse import parse_qs
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse, Response
 
-from . import accounts, alliances, bookmarks, chat, checkin, combat, crypto, db, faq, fleets, gifts, mails
+from . import accounts, acs, alliances, bookmarks, chat, checkin, combat, crypto, db, faq, fleets, gifts, mails
 from . import kryptons, notices, player, quests, ranking, repairs
 from . import economy as eco
 from . import planet as planet_rules
@@ -705,9 +705,62 @@ async def alliance_application_change(world_id: int, application_id: int, reques
     return alliance_call(act)
 
 
+def acs_call(player_id: int, act, with_fleets: bool = False) -> Response:
+    now = time.time()
+    try:
+        with db.player_state(player_id) as state:
+            planet_rules.tick(state["empire"], now)
+            result = act(state, now)
+            planet = state["empire"]["main_planet"]
+            result.update(empire=player.empire_summary(state), planet=planet_rules.client_view(state["empire"], now))
+            if with_fleets:
+                result["update"] = {"fleets": [planet_rules.fleet_view(planet, f) for f in planet["fleets"]]}
+            return encrypted_json(result)
+    except planet_rules.GameError as e:
+        return error(str(e))
+
+
 @router.get("/acses")
-def alliance_joint_attacks(player_id: int = Depends(current_player)):
-    return encrypted_json({"info": [], "planet": {}, "empire": {}})  # joint attacks: not implemented
+def acs_list(player_id: int = Depends(current_player)):
+    return acs_call(player_id, lambda state, now: {"info": acs.listing(player_id, now)})
+
+
+@router.get("/acses/{acs_id}")
+def acs_details(acs_id: int, player_id: int = Depends(current_player)):
+    return acs_call(player_id, lambda state, now: {"info": acs.details(player_id, acs_id, now)})
+
+
+@router.get("/acses/{acs_id}/prepare_append")
+def acs_prepare(acs_id: int, planet_id: int = 0, fleets: str = "", player_id: int = Depends(current_player)):
+    return acs_call(player_id, lambda state, now: acs.prepare(player_id, state, acs_id, planet_id, fleets, now))
+
+
+@router.post("/acses/{acs_id}/append")
+async def acs_join(world_id: int, acs_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    return acs_call(player_id, lambda state, now: {"acs_info": acs.join(
+        player_id, state, acs_id, int(params.get("planet_id") or 0), params.get("fleets", ""), now)}, with_fleets=True)
+
+
+@router.post("/acses/{acs_id}/delete")
+def acs_call_off(acs_id: int, player_id: int = Depends(current_player)):
+    def act(state, now):
+        acs.call_off(player_id, acs_id, now)
+        return {}
+    return acs_call(player_id, act)
+
+
+@router.post("/acses/{acs_id}/expand_acs_limit")
+def acs_expand(acs_id: int, player_id: int = Depends(current_player)):
+    return error(f"A coordinated attack takes at most {acs.MAX_FLEETS} fleets")
+
+
+@router.get("/fleet_hanging_events/{event_id}")
+def flight_ships(event_id: int, player_id: int = Depends(current_player)):
+    try:
+        return encrypted_json({"hanging_info": acs.fleet_list(player_id, event_id)})
+    except planet_rules.GameError as e:
+        return error(str(e))
 
 
 @router.post("/sensor_arrays/scan")

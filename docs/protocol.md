@@ -561,6 +561,25 @@ Opened from the robotics factory ("Repair ships").
 - `GET users/my_buffs_ext?planet_id=` answers `{buff_list: [{buffer_name, end_time,
   buffer_desc, buff_type}], krypton_buffs: [{description}], kryptons}`.
 
+### Coordinated attacks
+
+| Request | Answer |
+|---------|--------|
+| `GET acses` | the alliance's joinable attacks: `{info: [{id, attacker, defender, attacker_pos, defender_pos, curr_lines, max_lines, acs_line_limit, morale, left_time, total_time, acs_status, sub_lines: [{id, user_name, morale}]}], empire, planet}` |
+| `GET acses/<id>` | `{info}` for one attack |
+| `GET acses/<id>/prepare_append?planet_id=&fleets=type:count,...` | `{missions: [8], speed, total_time, fuel_consumption}` (mission screen) |
+| `POST acses/<id>/append` `planet_id, fleets` | `{acs_info, update: {fleets}, empire, planet}` |
+| `POST acses/<id>/delete` | the attacker calls it off |
+| `GET fleet_hanging_events/<id>` | `{hanging_info: [{name, count}]}`, the ships of a flight (also for the flight info screen) |
+
+`acs_status`: 1 joinable, 2 under way. Joined flights have mission 21 and `acs_id` (the attack's
+event id), which the flight list appends to the mission name. The client finds its side in a
+battle report by comparing `attacker_name` with the mail's recipient, so every attacker gets
+the report with their own name there.
+
+The client has no mission icon for 9 (ACS defense) and 10 (moon destruction); this version
+cannot send them.
+
 ### Errors
 
 For a status other than 200 the client shows the response body **as text** (or the `<title>` of

@@ -386,3 +386,13 @@ As in OGame:
 
 Espionage, transport and pirate bases are not affected. Operators can change the limits with
 `SUPERNOVA_NEWBIE_POINTS` and `SUPERNOVA_STRONG_POINTS`.
+
+## Coordinated attacks
+
+Every attack of an alliance member on another player can be joined by up to four other
+members of the alliance (tab "coordinated attacks"). Joined fleets fly at their own speed but
+arrive exactly with the attack; a fleet that cannot make it in time cannot join. The group
+fights as one side, with the technologies and kryptons of the player who started the attack.
+Surviving ships and the loot are shared in proportion to what each fleet sent. Newbie
+protection applies to every participant. When the attacker recalls the attack, all joined
+fleets turn around too.
