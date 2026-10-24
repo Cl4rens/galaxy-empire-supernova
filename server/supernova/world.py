@@ -89,7 +89,8 @@ async def guest_login(world_id: int, request: Request):
         log.info("new guest %s (udid %s)", username, udid)
     now = time.time()
     with db.player_state(player_id) as state:
-        universe.ensure_registered(player_id, state["empire"]["main_planet"])
+        for p in state["empire"]["planets"]:
+            universe.ensure_registered(player_id, p)
         planet_rules.tick(state["empire"], now)
         content = player.login_response(state, now)
     return logged_in(player_id, content)
@@ -110,12 +111,47 @@ def heartbeat(player_id: int = Depends(current_player)):
                            "refresh": {}})
 
 
+def use_planet(state: dict, params: dict, *keys: str) -> None:
+    """Requests name the planet they act on; make it the current one."""
+    for key in keys or ("planet_id",):
+        value = params.get(key)
+        if value and str(value).isdigit():
+            planet_rules.switch_planet(state["empire"], int(value))
+            return
+
+
+@router.get("/planets/{planet_id}.json")
+def enter_planet(planet_id: int, player_id: int = Depends(current_player)):
+    """The player switches to another of their planets."""
+    now = time.time()
+    try:
+        with db.player_state(player_id) as state:
+            planet_rules.switch_planet(state["empire"], planet_id)
+            planet_rules.tick(state["empire"], now)
+            view = planet_rules.client_view(state["empire"], now)
+            view["researches"] = planet_rules.researches_view(state["empire"])["researches"]
+    except planet_rules.GameError as e:
+        return error(str(e), 404)
+    view["new_message_count"] = mails.unread_count(player_id)
+    return encrypted_json(view)
+
+
+@router.get("/users/{user_id}/my_planets.json")
+def my_planets(user_id: int, player_id: int = Depends(current_player)):
+    now = time.time()
+    with db.player_state(player_id) as state:
+        planet_rules.tick(state["empire"], now)
+        return encrypted_json({"planets_info": player.planets_info(state["empire"]),
+                               "empire": player.empire_summary(state)})
+
+
 @router.get("/planets/{planet_id}")
 def planet(planet_id: int, player_id: int = Depends(current_player)):
     now = time.time()
     with db.player_state(player_id) as state:
-        if state["empire"]["main_planet"]["planet_id"] != planet_id:
+        if planet_rules.find_planet(state["empire"], planet_id) is None:
             return error("Unknown planet", 404)
+        planet_rules.switch_planet(state["empire"], planet_id)
         planet_rules.tick(state["empire"], now)
         view = planet_rules.client_view(state["empire"], now)
     # Shown as the number on the mail button; updatePlanet passes it on.
@@ -174,6 +210,7 @@ async def start_building(world_id: int, request: Request, player_id: int = Depen
     now = time.time()
     try:
         with db.player_state(player_id) as state:
+            use_planet(state, params)
             changed = planet_rules.start_building_event(
                 state["empire"], state, int(params["building_id"]), int(params["event_type"]),
                 int(params["building_index"]) if params.get("building_index") else None, now)
@@ -227,6 +264,7 @@ async def start_research(world_id: int, request: Request, player_id: int = Depen
     now = time.time()
     try:
         with db.player_state(player_id) as state:
+            use_planet(state, params)
             research = planet_rules.start_research(state["empire"], state, int(params["research_id"]), now)
             return research_update(state, research, now)
     except planet_rules.GameError as e:
@@ -237,11 +275,13 @@ async def start_research(world_id: int, request: Request, player_id: int = Depen
 async def cancel_research(world_id: int, event_id: int, request: Request,
                           player_id: int = Depends(current_player)):
     """The client sends _method=delete to cancel research."""
-    if (await form(request)).get("_method") != "delete":
+    params = await form(request)
+    if params.get("_method") != "delete":
         return error("Unsupported", 400)
     now = time.time()
     try:
         with db.player_state(player_id) as state:
+            use_planet(state, params, "current_planet_id")
             research = planet_rules.cancel_research(state["empire"], event_id, now)
             return research_update(state, research, now)
     except planet_rules.GameError as e:
@@ -267,6 +307,7 @@ async def start_fleet_order(world_id: int, request: Request, player_id: int = De
     now = time.time()
     try:
         with db.player_state(player_id) as state:
+            use_planet(state, params)
             changed = planet_rules.start_fleet_order(state["empire"], state, int(params["fleet_id"]),
                                                      int(params["fleet_count"]), now)
             return fleet_update(state, changed, now)

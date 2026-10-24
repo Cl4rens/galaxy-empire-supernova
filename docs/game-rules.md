@@ -8,6 +8,12 @@ Corrections from people who remember the original values are very welcome.
 All production and build times scale with the server's game speed (`SUPERNOVA_SPEED`,
 default 1).
 
+## Planets
+
+Every planet has its own buildings, resources, shipyard and production, and keeps producing
+while the player looks at another one. Research belongs to the whole empire; a research runs in
+the lab of the planet where it was started.
+
 ## New account
 
 - 500 metal, 500 crystal, 0 deuterium
@@ -156,6 +162,9 @@ Ships fly between planets; defense units and solar satellites cannot fly. Implem
 - **Deploy:** moves ships and cargo to another planet of your own; they stay there.
 - **Espionage:** needs at least one espionage probe; probes return after the report.
 - **Attack:** needs armed ships; fights the planet's ships and defense (see Combat).
+- **Colonize:** a colony ship settles a free position (1–15). The ship becomes the colony; other
+  ships and the cargo stay there. How many planets a player may rule depends on Astrophysics
+  (OGame): 1 + ⌈level / 2⌉, i.e. one more planet at levels 1, 3, 5, …
 - **Recycle:** recyclers collect a debris field up to their cargo space (20,000 each), metal
   first; the rest stays for later.
 

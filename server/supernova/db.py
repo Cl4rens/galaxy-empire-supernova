@@ -106,25 +106,51 @@ def create_player(username_for_id, udid: str, new_state) -> tuple[int, str, dict
         state = new_state(player_id, username)
         conn.execute(
             "UPDATE players SET username = ?, state = ? WHERE id = ?",
-            (username, json.dumps(state), player_id),
+            (username, _encode(state), player_id),
         )
     return player_id, username, state
 
 
+def _decode(text: str) -> dict:
+    """Load a stored state. empire["main_planet"] becomes a reference to the current planet."""
+    state = json.loads(text)
+    empire = state.get("empire")
+    if empire is None:
+        return state
+    if "planets" not in empire:  # state_version 1: a single planet stored as main_planet
+        empire["planets"] = [empire["main_planet"]]
+        empire["current_planet_id"] = empire["main_planet"]["planet_id"]
+        empire.pop("planets_info", None)
+        state["state_version"] = 2
+    current = next((p for p in empire["planets"] if p["planet_id"] == empire.get("current_planet_id")),
+                   empire["planets"][0])
+    empire["current_planet_id"] = current["planet_id"]
+    empire["main_planet"] = current
+    return state
+
+
+def _encode(state: dict) -> str:
+    empire = state.get("empire")
+    if empire is None or "main_planet" not in empire:
+        return json.dumps(state)
+    stored = dict(state, empire={k: v for k, v in empire.items() if k != "main_planet"})
+    return json.dumps(stored)
+
+
 def find_player(username: str) -> tuple[int, dict] | None:
     row = connect().execute("SELECT id, state FROM players WHERE username = ?", (username,)).fetchone()
-    return (row["id"], json.loads(row["state"])) if row else None
+    return (row["id"], _decode(row["state"])) if row else None
 
 
 def save_state(player_id: int, state: dict) -> None:
     conn = connect()
     with _lock, conn:
-        conn.execute("UPDATE players SET state = ? WHERE id = ?", (json.dumps(state), player_id))
+        conn.execute("UPDATE players SET state = ? WHERE id = ?", (_encode(state), player_id))
 
 
 def load_state(player_id: int) -> dict:
     row = connect().execute("SELECT state FROM players WHERE id = ?", (player_id,)).fetchone()
-    return json.loads(row["state"])
+    return _decode(row["state"])
 
 
 def create_session(player_id: int) -> str:

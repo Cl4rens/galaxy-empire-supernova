@@ -4,7 +4,7 @@ Flights are stored in the fleet_events table, not in the player state, because a
 change another player's planet. A background task in the server calls `process_due` every
 second, so missions also complete while their owner is offline.
 
-Implemented missions: transport, deploy, espionage, attack and recycle. Arrivals and returns send reports to
+Implemented missions: transport, deploy, espionage, attack, recycle and colonize. Arrivals and returns send reports to
 the mailbox.
 """
 
@@ -29,6 +29,7 @@ UNDER_ATTACK = 11  # how incoming attacks appear in the defender's flight list
 BE_ESPIONAGE, BE_TRANSPORT = 14, 15  # report types for the target's side
 ESPIONAGE_PROBE = 13
 RECYCLER = 12
+COLONY_SHIP = 11
 RESOURCES = planet_rules.RESOURCES
 
 
@@ -90,8 +91,12 @@ def debris_at(target: tuple[int, int, int]) -> dict[str, int]:
 def allowed_missions(player_id: int, origin: dict, target: tuple[int, int, int], ships: dict[int, int]) -> list[int]:
     recycle = [RECYCLE] if RECYCLER in ships and any(debris_at(target).values()) else []
     row = target_planet(target)
-    if row is None or row["id"] == origin["planet_id"]:
-        return recycle  # colonize, expedition, pirates: not implemented yet
+    if row is None:
+        if COLONY_SHIP in ships and target[2] <= universe.PLANET_POSITIONS:
+            return [COLONY] + recycle
+        return recycle  # expedition, pirates: not implemented yet
+    if row["id"] == origin["planet_id"]:
+        return recycle
     missions = [TRANSPORT] + recycle
     if row["player_id"] == player_id:
         missions.append(DEPLOY)
@@ -104,8 +109,8 @@ def allowed_missions(player_id: int, origin: dict, target: tuple[int, int, int],
 
 
 def plan(empire: dict, player_id: int, ships: dict[int, int], target: tuple[int, int, int],
-         percent: int = 100) -> dict:
-    origin = empire["main_planet"]
+         percent: int = 100, origin: dict | None = None) -> dict:
+    origin = origin or empire["main_planet"]
     levels = _research_levels(empire)
     speed = min(eco.ship_speed(t, levels) for t in ships)
     dist = eco.distance(_position(origin), target)
@@ -124,7 +129,10 @@ def plan(empire: dict, player_id: int, ships: dict[int, int], target: tuple[int,
 
 def send(player_id: int, state: dict, params: dict, now: float) -> None:
     empire = state["empire"]
-    origin = empire["main_planet"]
+    start = params.get("start_p_id") or params.get("planet_id")
+    origin = planet_rules.find_planet(empire, int(start)) if start else empire["main_planet"]
+    if origin is None:
+        raise FleetError("This is not your planet")
     planet_rules.tick(empire, now)
     ships = parse_ships(origin, params.get("fleet_ids", ""), params.get("fleet_cnt_ids", ""))
     target = parse_target(params.get("end_p_pos", ""))
@@ -132,9 +140,11 @@ def send(player_id: int, state: dict, params: dict, now: float) -> None:
     percent = int(params.get("speed_ratio", 100))
     if not 10 <= percent <= 100 or percent % 10:
         raise FleetError("Invalid speed")
-    info = plan(empire, player_id, ships, target, percent)
+    info = plan(empire, player_id, ships, target, percent, origin)
     if mission not in info["missions"]:
         raise FleetError("This mission is not possible here")
+    if mission == COLONY and len(empire["planets"]) >= max_planets(empire):
+        raise FleetError("Research more Astrophysics to rule more planets")
 
     cargo = {res: max(0, int(float(params.get(res, 0) or 0))) for res in RESOURCES}
     if sum(cargo.values()) > info["empty_cargobays"]:
@@ -221,10 +231,9 @@ def espionage_level(probes: int, own_tech: int, target_tech: int) -> int:
     return probes + gap * abs(gap)
 
 
-def probe_result(target_state: dict, level: int) -> dict:
+def probe_result(target_state: dict, level: int, planet: dict) -> dict:
     """What the probes see: resources always; more with a higher level (OGame thresholds)."""
     empire = target_state["empire"]
-    planet = empire["main_planet"]
     rates = planet_rules.production(planet, empire)
     result = {
         "metal": int(planet["metal"]),
@@ -252,7 +261,7 @@ def probe_result(target_state: dict, level: int) -> dict:
     return result
 
 
-def _espionage(row, target_owner: int, state: dict) -> None:
+def _espionage(row, target_owner: int, state: dict, planet: dict) -> None:
     owner_state = db.load_state(row["owner_id"])
     level = espionage_level(_ships(row).get(ESPIONAGE_PROBE, 0),
                             planet_rules.research_level(owner_state["empire"], eco.ESPIONAGE_TECH),
@@ -262,7 +271,7 @@ def _espionage(row, target_owner: int, state: dict) -> None:
     mails.send(row["owner_id"], mails.REPORT, mails.SENDER_FLEET, spy,
                f"Espionage report [{info['end_planet_pos']}]",
                {"mission_type": ESPIONAGE, "is_returning": False, "event_info": info,
-                "probe_result": probe_result(state, level)}, row["arrival_time"])
+                "probe_result": probe_result(state, level, planet)}, row["arrival_time"])
     mails.send(target_owner, mails.REPORT, mails.SENDER_FLEET, victim,
                f"Espionage activity [{info['end_planet_pos']}]",
                {"mission_type": BE_ESPIONAGE, "is_returning": False,
@@ -296,9 +305,8 @@ def _side(name: str, empire: dict, units: dict[int, int]) -> combat.Side:
                        planet_rules.research_level(empire, eco.ARMOUR_TECH))
 
 
-def _attack(row, target_owner: int, state: dict) -> str:
+def _attack(row, target_owner: int, state: dict, planet: dict) -> str:
     """Fight at the target planet. Returns the new status of the flight."""
-    planet = state["empire"]["main_planet"]
     owner_state = db.load_state(row["owner_id"])
     attacker_name, defender_name = _username(row["owner_id"]), _username(target_owner)
     attack_units = _ships(row)
@@ -397,24 +405,65 @@ def _recycle(row) -> str:
     return "returning"
 
 
+def max_planets(empire: dict) -> int:
+    """OGame: Astrophysics allows one more colony every two levels."""
+    return 1 + (planet_rules.research_level(empire, eco.ASTROPHYSICS) + 1) // 2
+
+
+def _colonize(row) -> str:
+    from . import player  # player imports this module
+
+    ships = _ships(row)
+    target = (row["target_galaxy"], row["target_system"], row["target_position"])
+    owner = row["owner_id"]
+    info = _event_info(row, row["arrival_time"])
+    with db.player_state(owner) as state:
+        empire = state["empire"]
+        failure = None
+        if len(empire["planets"]) >= max_planets(empire):
+            failure = "Research more Astrophysics to rule more planets."
+        else:
+            planet_id = universe.add_planet(owner, *target, player.COLONY_NAME)
+            if planet_id is None:
+                failure = "The position is already taken."
+        if failure:
+            mails.send(owner, mails.SYSTEM, mails.SENDER_FLEET, state["username"],
+                       f"Colonization failed [{info['end_planet_pos']}]", failure, row["arrival_time"])
+            return "returning"
+        planet_rules.tick(empire, row["arrival_time"])
+        colony = player.new_planet(planet_id, *target, player.COLONY_NAME, resources=json.loads(row["cargo"]))
+        colony["last_update"] = row["arrival_time"]
+        ships[COLONY_SHIP] -= 1  # the colony ship becomes the colony
+        for ftype, n in ships.items():
+            planet_rules.fleet(colony, ftype)["amount"] += n
+        empire["planets"].append(colony)
+    info["end_planet_name"] = player.COLONY_NAME
+    mails.send(owner, mails.REPORT, mails.SENDER_FLEET, _username(owner),
+               f"New colony [{info['end_planet_pos']}]",
+               {"mission_type": COLONY, "is_returning": False, "event_info": info}, row["arrival_time"])
+    return "done"
+
+
 def _arrive(row) -> str:
     """Apply the mission at the target. Returns the new status of the flight."""
     if row["mission"] == RECYCLE:
         return _recycle(row)
+    if row["mission"] == COLONY:
+        return _colonize(row)
     cargo = json.loads(row["cargo"])
     target_owner = _planet_owner(row["target_planet_id"])
     if target_owner is None:
         return "returning"  # the planet is gone: fly back with everything
     with db.player_state(target_owner) as state:
-        planet = state["empire"]["main_planet"]
-        if planet["planet_id"] != row["target_planet_id"]:
+        planet = planet_rules.find_planet(state["empire"], row["target_planet_id"])
+        if planet is None:
             return "returning"
         planet_rules.tick(state["empire"], row["arrival_time"])
         if row["mission"] == ESPIONAGE:
-            _espionage(row, target_owner, state)
+            _espionage(row, target_owner, state, planet)
             return "returning"
         if row["mission"] == ATTACK:
-            return _attack(row, target_owner, state)
+            return _attack(row, target_owner, state, planet)
         for res in RESOURCES:
             planet[res] += cargo[res]
         if row["mission"] == DEPLOY:
@@ -445,7 +494,7 @@ def _arrive(row) -> str:
 
 def _return(row) -> None:
     with db.player_state(row["owner_id"]) as state:
-        planet = state["empire"]["main_planet"]
+        planet = planet_rules.find_planet(state["empire"], row["origin_planet_id"]) or state["empire"]["planets"][0]
         planet_rules.tick(state["empire"], row["return_time"])
         for ftype, n in _ships(row).items():
             planet_rules.fleet(planet, ftype)["amount"] += n

@@ -82,7 +82,7 @@ def test_research_requires_lab_over_api():
     energy = next(r for r in state["empire"]["researches"] if r["research_type"] == 1)
     assert energy["tech_tree"]["buildings_tree"] == [{"unit_type": 11, "unit_level": 1}]
     response = c.post("/world/1/research_upgrading_events.json",
-                      content=f"planet_id=1&research_id={energy['research_id']}")
+                      content=f"planet_id={state['empire']['main_planet']['planet_id']}&research_id={energy['research_id']}")
     assert response.status_code == 400 and "Requirements" in response.text
 
 

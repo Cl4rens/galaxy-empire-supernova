@@ -24,46 +24,42 @@ def guest_username(player_id: int) -> str:
     return f"Commander{player_id}"
 
 
-def new_state(player_id: int, username: str, home: dict | None = None) -> dict:
-    """`home` is where universe.place_home put the planet; without it (tests) a fixed spot."""
-    home = home or {"planet_id": player_id, "galaxy": 1, "system": player_id % 499 + 1, "position": 8}
-    planet_id = home["planet_id"]
-    buildings = [
-        {
-            "building_id": planet_id * 100 + btype,
-            "building_type": btype,
-            "building_level": 0,
-            "building_position_index": MINE_POSITIONS.get(btype, 0),
-        }
-        for btype in eco.BUILDINGS
-    ]
-    fleets = [
-        {"fleet_id": planet_id * 100 + ftype, "fleet_type": ftype, "amount": 0}
-        for ftype in [*eco.UNITS, *eco.SPECIAL_UNITS]
-    ]
-    researches = [
-        {"research_id": player_id * 100 + rtype, "research_type": rtype, "research_level": 0}
-        for rtype in eco.RESEARCHES
-    ]
-    position = {"galaxy_position": home["galaxy"], "system_position": home["system"],
-                "planet_position": home["position"]}
-    main_planet = {
+PLANET_TYPE_COLONY = 1
+COLONY_NAME = "Colony"
+
+
+def new_planet(planet_id: int, galaxy: int, system: int, position: int, name: str,
+               planet_type: int = PLANET_TYPE_COLONY, resources: dict | None = None) -> dict:
+    """A planet without buildings or ships."""
+    resources = resources or {"metal": 0, "crystal": 0, "deuterium": 0}
+    return {
         "planet_id": planet_id,
-        "planet_name": HOME_PLANET_NAME,
-        "planet_type": PLANET_TYPE_CAPITAL,
-        "system_id": universe.system_id(home["galaxy"], home["system"]),
-        **position,
-        "metal": 500,
-        "crystal": 500,
-        "deuterium": 0,
+        "planet_name": name,
+        "planet_type": planet_type,
+        "system_id": universe.system_id(galaxy, system),
+        "galaxy_position": galaxy,
+        "system_position": system,
+        "planet_position": position,
+        **resources,
         "last_update": time.time(),
         "metal_mine_percent": 100,
         "crystal_mine_percent": 100,
         "deuterium_mine_percent": 100,
         "solar_plant_percent": 100,
         "fusion_reactor_percent": 100,
-        "buildings": buildings,
-        "fleets": fleets,
+        "buildings": [
+            {
+                "building_id": planet_id * 100 + btype,
+                "building_type": btype,
+                "building_level": 0,
+                "building_position_index": MINE_POSITIONS.get(btype, 0),
+            }
+            for btype in eco.BUILDINGS
+        ],
+        "fleets": [
+            {"fleet_id": planet_id * 100 + ftype, "fleet_type": ftype, "amount": 0}
+            for ftype in [*eco.UNITS, *eco.SPECIAL_UNITS]
+        ],
         "building_events": [],
         "fleet_building_events": [],
         "transmit_recharge_event": [],
@@ -75,16 +71,25 @@ def new_state(player_id: int, username: str, home: dict | None = None) -> dict:
         "planet_icon_info": {},
         "last_chat": {},
     }
+
+
+def new_state(player_id: int, username: str, home: dict | None = None) -> dict:
+    """`home` is where universe.place_home put the planet; without it (tests) a fixed spot."""
+    home = home or {"planet_id": player_id, "galaxy": 1, "system": player_id % 499 + 1, "position": 8}
+    planet_id = home["planet_id"]
+    main_planet = new_planet(planet_id, home["galaxy"], home["system"], home["position"], HOME_PLANET_NAME,
+                             PLANET_TYPE_CAPITAL, {"metal": 500, "crystal": 500, "deuterium": 0})
     empire = {
         "empire_id": player_id,
         "user_id": player_id,
-        "main_planet_id": planet_id,
-        "main_planet": main_planet,
-        "planets_info": [
-            {"planet_id": planet_id, "planet_name": main_planet["planet_name"],
-             "planet_type": PLANET_TYPE_CAPITAL, **position}
+        "main_planet_id": planet_id,  # the capital
+        "planets": [main_planet],
+        "current_planet_id": planet_id,  # the planet the player is looking at
+        "main_planet": main_planet,  # == the current planet; not stored, see db.py
+        "researches": [
+            {"research_id": player_id * 100 + rtype, "research_type": rtype, "research_level": 0}
+            for rtype in eco.RESEARCHES
         ],
-        "researches": researches,
         "research_upgrading_events": [],
         "fleet_hanging_events": [],
         "fortress_interspace_events": [],
@@ -111,7 +116,7 @@ def new_state(player_id: int, username: str, home: dict | None = None) -> dict:
         "buff_commander": 0,
     }
     return {
-        "state_version": 1,
+        "state_version": 2,
         "user_id": player_id,
         "empire_id": player_id,
         "username": username,
@@ -126,17 +131,45 @@ def new_state(player_id: int, username: str, home: dict | None = None) -> dict:
     }
 
 
+def planets_info(empire: dict) -> list[dict]:
+    """The player's planets as the planet list shows them."""
+    return [{
+        "planet_id": p["planet_id"],
+        "planet_name": p["planet_name"],
+        "planet_type": p["planet_type"],
+        "galaxy_position": p["galaxy_position"],
+        "system_position": p["system_position"],
+        "planet_position": p["planet_position"],
+        "field_current": sum(b["building_level"] for b in p["buildings"]),
+        "field_max": planet_rules.PLANET_FIELDS,
+        "planet_activity": 2,
+        "radar_level": planet_rules.level(p, eco.RADAR_CENTER),
+        "is_radar_on": False,
+        "moon_array": [],
+        "is_protected": 0,
+        "protected_time": 0,
+        "attacked_time": 0,
+        "attacked_num": 0,
+        "auto_explore": False,
+    } for p in empire["planets"]]
+
+
+HIDDEN_EMPIRE_FIELDS = ("main_planet", "planets", "current_planet_id")
+
+
 def empire_view(state: dict, now: float) -> dict:
     """The empire object as the client expects it."""
     empire = state["empire"]
-    return dict(empire, main_planet=planet_rules.client_view(empire, now), **planet_rules.researches_view(empire),
-                fleet_hanging_events=fleets.events_view(empire["user_id"]))
+    view = {k: v for k, v in empire.items() if k not in HIDDEN_EMPIRE_FIELDS}
+    return dict(view, main_planet=planet_rules.client_view(empire, now), **planet_rules.researches_view(empire),
+                planets_info=planets_info(empire), fleet_hanging_events=fleets.events_view(empire["user_id"]))
 
 
 def empire_summary(state: dict) -> dict:
     """Empire fields without the planet, for responses that send the planet separately."""
     empire = state["empire"]
-    summary = {k: v for k, v in empire.items() if k != "main_planet"}
+    summary = {k: v for k, v in empire.items() if k not in HIDDEN_EMPIRE_FIELDS}
+    summary["planets_info"] = planets_info(empire)
     summary.update(planet_rules.researches_view(empire))
     summary["fleet_hanging_events"] = fleets.events_view(empire["user_id"])
     return summary

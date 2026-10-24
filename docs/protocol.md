@@ -349,6 +349,23 @@ pirate layout.
 Incoming attacks appear in the defender's `fleet_hanging_events` with `mission` 11; while one is
 on its way the heartbeat sets `empire: 1` and the planet has `is_underattack: true`.
 
+### Several planets
+
+| Request | Meaning |
+|---------|---------|
+| `GET users/<empire_id>/my_planets.json` | planet list: `{planets_info: [...], empire: {...}}` |
+| `GET planets/<planet_id>.json` | switch to that planet; the answer is the planet (merged into `main_planet`) plus `researches` |
+
+`empire.main_planet` is always the planet the player is looking at. Actions name the planet
+they act on (`planet_id`, `start_p_id`, `current_planet_id`).
+
+A `planets_info` entry: `{planet_id, planet_name, planet_type (2 capital, 1 colony, 3 moon),
+galaxy_position, system_position, planet_position, field_current, field_max, planet_activity,
+radar_level, is_radar_on, moon_array, is_protected, protected_time, attacked_time, attacked_num,
+auto_explore}`.
+
+Colonization report: `body.mission_type` 2 with `event_info`.
+
 ### Errors
 
 For a status other than 200 the client shows the response body **as text** (or the `<title>` of

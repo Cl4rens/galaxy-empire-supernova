@@ -35,6 +35,20 @@ def fleet(planet: dict, ftype: int) -> dict:
     return next(f for f in planet["fleets"] if f["fleet_type"] == ftype)
 
 
+def find_planet(empire: dict, planet_id: int) -> dict | None:
+    return next((p for p in empire["planets"] if p["planet_id"] == planet_id), None)
+
+
+def switch_planet(empire: dict, planet_id: int) -> dict:
+    """Make `planet_id` the planet the player is looking at (empire["main_planet"])."""
+    planet = find_planet(empire, planet_id)
+    if planet is None:
+        raise GameError("This is not your planet")
+    empire["current_planet_id"] = planet_id
+    empire["main_planet"] = planet
+    return planet
+
+
 def research_level(empire: dict, rtype: int) -> int:
     return next((r["research_level"] for r in empire["researches"] if r["research_type"] == rtype), 0)
 
@@ -120,13 +134,20 @@ def _deliver_fleets(planet: dict, now: float) -> None:
 
 
 def tick(empire: dict, now: float | None = None) -> None:
-    """Bring the main planet up to `now`: production, constructions, research and shipyard.
-
-    Events are applied in time order, with production calculated in between, because they
-    change production (mines, energy technology, solar satellites).
-    """
-    planet = empire["main_planet"]
+    """Bring every planet up to `now`: production, constructions, research and shipyard."""
     now = time.time() if now is None else now
+    for planet in empire["planets"]:
+        _tick_planet(empire, planet, now)
+
+
+def _research_planet(empire: dict, event: dict) -> dict:
+    return find_planet(empire, event.get("planet_id")) or empire["planets"][0]
+
+
+def _tick_planet(empire: dict, planet: dict, now: float) -> None:
+    """Events are applied in time order, with production calculated in between, because they
+    change production (mines, energy technology, solar satellites). Research belongs to the
+    planet whose lab runs it."""
     t = planet["last_update"]
 
     def done(events, event, finish, target):
@@ -138,7 +159,7 @@ def tick(empire: dict, now: float | None = None) -> None:
     queue = [(e["finish_time"], done(planet["building_events"], e, _finish_event, planet))
              for e in planet["building_events"]]
     queue += [(e["finish_time"], done(empire["research_upgrading_events"], e, _finish_research, empire))
-              for e in empire["research_upgrading_events"]]
+              for e in empire["research_upgrading_events"] if _research_planet(empire, e) is planet]
     queue += [(e["finish_time"], lambda at: _deliver_fleets(planet, at)) for e in planet["fleet_building_events"]]
     for finish_time, apply in sorted(queue, key=lambda q: q[0]):
         if finish_time > now:

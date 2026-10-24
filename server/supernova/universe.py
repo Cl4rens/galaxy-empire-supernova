@@ -64,6 +64,18 @@ def place_home(player_id: int, name: str) -> dict:
     return {"planet_id": cur.lastrowid, "galaxy": 1, "system": system, "position": position}
 
 
+def add_planet(player_id: int, galaxy: int, system: int, position: int, name: str) -> int | None:
+    """Register a new planet. Returns its id, or None if the position is taken."""
+    conn = db.connect()
+    with db.lock(), conn:
+        if conn.execute("SELECT 1 FROM planets WHERE galaxy = ? AND system = ? AND position = ?",
+                        (galaxy, system, position)).fetchone():
+            return None
+        cur = conn.execute("INSERT INTO planets (player_id, galaxy, system, position, name) VALUES (?, ?, ?, ?, ?)",
+                           (player_id, galaxy, system, position, name))
+    return cur.lastrowid
+
+
 def ensure_registered(player_id: int, planet: dict) -> None:
     """Register a planet created before the universe table existed."""
     conn = db.connect()

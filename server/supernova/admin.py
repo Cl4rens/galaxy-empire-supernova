@@ -5,6 +5,7 @@
     python -m supernova.admin give <username> metal=10000 crystal=5000 deuterium=2000
     python -m supernova.admin set-building <username> <building_type> <level> [lot]
     python -m supernova.admin give-fleet <username> 9=5 1=10      (fleet_type=count)
+    python -m supernova.admin set-research <username> <research_type> <level>
 
 Run it while the server is running or stopped; changes are visible at the player's next request.
 """
@@ -76,6 +77,15 @@ def cmd_give_fleet(args) -> None:
     print("ok")
 
 
+def cmd_set_research(args) -> None:
+    with db.player_state(player_id(args.username)) as state:
+        research = next((r for r in state["empire"]["researches"] if r["research_type"] == args.research_type), None)
+        if research is None:
+            raise SystemExit(f"Unknown research type {args.research_type}")
+        research["research_level"] = args.level
+    print("ok")
+
+
 def cmd_set_building(args) -> None:
     if args.building_type not in eco.BUILDINGS:
         raise SystemExit(f"Unknown building type {args.building_type}")
@@ -105,6 +115,11 @@ def main() -> None:
     givef.add_argument("username")
     givef.add_argument("amounts", nargs="+")
     givef.set_defaults(func=cmd_give_fleet)
+    setr = sub.add_parser("set-research")
+    setr.add_argument("username")
+    setr.add_argument("research_type", type=int)
+    setr.add_argument("level", type=int)
+    setr.set_defaults(func=cmd_set_research)
     setb = sub.add_parser("set-building")
     setb.add_argument("username")
     setb.add_argument("building_type", type=int)
