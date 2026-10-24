@@ -107,7 +107,8 @@ Optional settings: `SUPERNOVA_SPEED` (game speed, default 1), `SUPERNOVA_NEWBIE_
 (newbie protection below these points, default 5000), `SUPERNOVA_STRONG_POINTS` (from here on
 the 1:5 rule no longer protects, default 500000), `SUPERNOVA_FORTRESS_BATTLE` (time of a
 star fortress battle in seconds since 1970; battles repeat every week / speed, default Sunday
-19:00 UTC).
+19:00 UTC), `SUPERNOVA_STARTING_DARK_MATTER` (dark matter of new players, default 200),
+`SUPERNOVA_DARK_MATTER_PER_DAY` (dark matter every player earns per day, default 0).
 
 Server operators can manage players from the command line (in Docker:
 `docker compose exec supernova python -m supernova.admin ...`):

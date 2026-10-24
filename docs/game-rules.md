@@ -459,3 +459,12 @@ Following the client's help texts, with Supernova's numbers:
   krypton stones.
 - Speed-ups (5 min to 12 h) shorten a running construction, research or shipyard order. Dark
   matter finishes an order at once: 1 per 5 minutes left (at least 1).
+
+## Dark matter
+
+The original game sold dark matter for real money. Supernova hands it out instead:
+
+- New players start with 200 (`SUPERNOVA_STARTING_DARK_MATTER`).
+- The daily check-in gives dark matter on days 3, 5, 10, 12, 17 and 19 (20 to 80).
+- A beaten pirate base gives 3 per pirate level; expeditions sometimes find 50 to 300.
+- Optionally every player earns an income per day (`SUPERNOVA_DARK_MATTER_PER_DAY`, default 0).

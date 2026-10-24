@@ -191,10 +191,22 @@ def _deliver_fleets(planet: dict, now: float) -> None:
 def tick(empire: dict, now: float | None = None) -> None:
     """Bring every planet up to `now`: production, constructions, research and shipyard."""
     now = time.time() if now is None else now
+    _dark_matter_income(empire, now)
     for planet in bodies(empire):
         _tick_planet(empire, planet, now)
         planet["transmit_recharge_event"] = [e for e in planet.get("transmit_recharge_event", [])
                                              if e["finish_time"] > now]
+
+
+def _dark_matter_income(empire: dict, now: float) -> None:
+    """config.DARK_MATTER_PER_DAY, paid out in whole units as time passes."""
+    income = empire.setdefault("dark_matter_income", {"time": now, "fraction": 0.0})
+    earned = income["fraction"] + config.DARK_MATTER_PER_DAY * max(0.0, now - income["time"]) / 86400
+    income["time"] = now
+    whole = int(earned)
+    income["fraction"] = earned - whole
+    if whole:
+        empire["dark_matter_count"] = empire.get("dark_matter_count", 0) + whole
 
 
 def _research_planet(empire: dict, event: dict) -> dict:

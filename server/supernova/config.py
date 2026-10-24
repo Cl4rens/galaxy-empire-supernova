@@ -26,6 +26,10 @@ SPEED = float(os.environ.get("SUPERNOVA_SPEED", "1"))
 NEWBIE_POINTS = int(os.environ.get("SUPERNOVA_NEWBIE_POINTS", "5000"))
 STRONG_POINTS = int(os.environ.get("SUPERNOVA_STRONG_POINTS", "500000"))
 
+# Dark matter: what new players start with, and an income every player gets per day (0: none).
+STARTING_DARK_MATTER = int(os.environ.get("SUPERNOVA_STARTING_DARK_MATTER", "200"))
+DARK_MATTER_PER_DAY = float(os.environ.get("SUPERNOVA_DARK_MATTER_PER_DAY", "0"))
+
 # Star fortress battles (see fortresses.py) repeat every week / SPEED from this moment
 # (seconds since 1970). Default: Sunday 19:00 UTC.
 FORTRESS_BATTLE_OFFSET = int(os.environ.get("SUPERNOVA_FORTRESS_BATTLE", str(3 * 86400 + 19 * 3600)))

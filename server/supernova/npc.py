@@ -39,6 +39,11 @@ def pirate_loot(level: int) -> dict[str, int]:
     return {r: v * level * level for r, v in PIRATE_LOOT_PER_LEVEL.items()}
 
 
+def pirate_dark_matter(level: int) -> int:
+    """Dark matter in a beaten pirate base."""
+    return 3 * level
+
+
 def respawn_seconds() -> int:
     return max(60, int(PIRATE_RESPAWN_SECONDS / config.SPEED))
 

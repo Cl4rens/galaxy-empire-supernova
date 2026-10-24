@@ -693,7 +693,7 @@ def _attack_pirates(row) -> str:
                      _tech_bonus(owner_state["empire"]), pirates, pirate_bonus)
     salvage_note = _salvage(row["owner_id"], result["debris"], _ships(row), result["defend_lost"])
     loot = {res: 0 for res in RESOURCES}
-    stones = chips = 0
+    stones = chips = dark_matter = 0
     if result["winner"] == "attacker":
         space = eco.cargo_capacity(result["attacker_left"])
         loot = combat.plunder({r: 2 * v for r, v in base["loot"].items()}, space)  # all of it, if it fits
@@ -701,15 +701,17 @@ def _attack_pirates(row) -> str:
             npc.beat_pirates(*target, row["arrival_time"])
             stones = kryptons.pirate_stones(level)
             chips = level
+            dark_matter = npc.pirate_dark_matter(level)
             with db.player_state(row["owner_id"]) as state:
                 kryptons.add_stones(state, stones)
                 ecm.add_chips(state, chips)
+                state["empire"]["dark_matter_count"] = state["empire"].get("dark_matter_count", 0) + dark_matter
     add_debris(*target, result["debris"]["metal"], result["debris"]["crystal"])
     info = _event_info(row, row["arrival_time"])
     info["end_planet_name"] = npc.pirate_name(level)
     notes = [_loot_text(loot)] if result["winner"] == "attacker" else []
     if stones:
-        notes.append(f"Krypton stones: {stones:,}, ECM chips: {chips}")
+        notes.append(f"Krypton stones: {stones:,}, ECM chips: {chips}, dark matter: {dark_matter}")
     if salvage_note:
         notes.append(salvage_note)
     body = {"mission_type": ATTACK_PIRATES, "is_returning": False, "event_info": info,

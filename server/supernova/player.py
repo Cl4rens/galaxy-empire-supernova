@@ -8,7 +8,7 @@ import secrets
 import time
 
 from . import economy as eco
-from . import checkin, fleets, fortresses, gifts, mails, ranking
+from . import checkin, config, fleets, fortresses, gifts, mails, ranking
 from . import planet as planet_rules
 from . import universe
 
@@ -99,7 +99,7 @@ def new_state(player_id: int, username: str, home: dict | None = None) -> dict:
         "alliance_name": "",
         "alliance_application_id": 0,
         "alliance_membership_id": 0,
-        "dark_matter_count": 0,
+        "dark_matter_count": config.STARTING_DARK_MATTER,
         "gu_count": 0,
         "score": 0,
         "rank": 0,
@@ -178,7 +178,7 @@ def planets_info(empire: dict) -> list[dict]:
     } for p in empire["planets"]]
 
 
-HIDDEN_EMPIRE_FIELDS = ("main_planet", "planets", "current_planet_id")
+HIDDEN_EMPIRE_FIELDS = ("main_planet", "planets", "current_planet_id", "dark_matter_income")
 PRIVATE_STATE = ("empire", "next_event_id", "quests", "bookmarks", "checkin", "kryptons", "flagships", "ecm",
                  "fortress", "items")
 
