@@ -195,7 +195,9 @@ def instant_price(left_seconds: float) -> int:
 def speedup_info(state: dict, kind: str, event_id: int, now: float) -> dict:
     event, _ = _running(state["empire"], kind, event_id, now)
     left = max(0, int(event["finish_time"] - now))
-    return {"items": [owned_view(state, i) for i in CATALOG if i.category == SPEEDUP],
+    # this screen always draws a credit icon next to the price, so the price says what it is
+    return {"items": [dict(owned_view(state, i), sale_price=f"{i.price} DM") for i in CATALOG
+                      if i.category == SPEEDUP],
             "left_time": left, "dark_matter_count": instant_price(left)}
 
 
