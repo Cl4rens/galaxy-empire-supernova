@@ -178,7 +178,8 @@ Uninstall any old copy of the original game first, because the signatures differ
 - [x] Kryptons: refining, storage, planet slots, upgrades, research, merchant
 - [x] Ship repair after defending
 - [x] Runs on Android 6-16 without crashes or permission dialogs
-- [ ] Support for 64-bit-only devices (needs a 64-bit game engine)
+- [ ] Support for 64-bit-only devices: needs an open client engine that runs the original Lua
+      scripts and Flash UI from the player's APK (idea, not started)
 - [ ] Game logic: buildings, research, fleets, combat, alliances
 
 ## What we know so far
