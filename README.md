@@ -3,8 +3,8 @@
 A fan-made effort to bring the discontinued mobile game **Galaxy Empire** (tap4fun) back to life
 with a reimplemented game server.
 
-> **Status: early development.** Not playable yet. A patched client already connects to our
-> server and reaches the title screen; the next step is the login and the player state.
+> **Status: early development.** Not playable yet. A patched client connects to our server,
+> logs in as a guest and shows its home planet. Building, research and fleets come next.
 
 > **Disclaimer:** This is a non-commercial fan project. It is not affiliated with, endorsed by, or
 > connected to tap4fun or any rights holder. All trademarks belong to their respective owners.
@@ -59,6 +59,7 @@ own copy from their own original.
 
 - [Git](https://git-scm.com/)
 - [Python](https://www.python.org/) 3.10 or newer (tools, patcher and server)
+- or [Docker](https://docs.docker.com/get-docker/) for the server
 - [Java](https://adoptium.net/) 17 or newer (APK re-signing)
 - An Android device or emulator that can run **32-bit ARM** apps (`armeabi-v7a`).
   Real phones usually work. On PC, use an emulator with ARM translation,
@@ -77,6 +78,17 @@ Copy your original APK into the [`apk/`](apk/) folder. That folder is ignored by
 file never gets committed by accident.
 
 ### 3. Run a server
+
+**With Docker** (recommended for Linux servers):
+
+```sh
+docker compose up -d --build
+```
+
+The container reads the client key from the APK in `./apk` (mounted read-only) and keeps its
+database in the `supernova-data` volume.
+
+**Without Docker:**
 
 ```sh
 cd server
@@ -119,7 +131,8 @@ Uninstall any old copy of the original game first, because the signatures differ
 - [x] Redirect the client to a custom server
 - [x] Patcher: verify → patch → re-sign
 - [x] Minimal server: update check and world list (client reaches the title screen)
-- [ ] Login and player state
+- [x] Guest login, sessions, heartbeat, player state
+- [ ] Buildings, resource production, research, fleets
 - [ ] Support for 64-bit-only devices
 - [ ] Game logic: buildings, research, fleets, combat, alliances
 

@@ -1,46 +1,53 @@
-"""HTTP gateway and game world the patched client talks to. See docs/protocol.md.
+"""Project Supernova server. See docs/protocol.md.
 
 Run from the server/ folder:  python -m uvicorn supernova.app:app --host 0.0.0.0 --port 8000
 
-The client's response key is read from an original APK: set SUPERNOVA_APK, or put the APK
-into the repository's apk/ folder.
+Settings come from environment variables, see supernova/config.py.
 """
 
-import json
 import logging
-import os
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, PlainTextResponse, Response
+from fastapi.responses import JSONResponse, PlainTextResponse
 
-from . import crypto
+from . import config, crypto, gateway, world
 
-# Oldest client version we accept, and the resource version we report. The client only
-# downloads updated files when our resource version is newer than its own (header "resv"),
-# so reporting the shipped version (6507 in 1.9.36) means "nothing to update".
-LOWEST_CLIENT_VERSION = "1.9.36"
-RESOURCE_VERSION = 6507
-
-WORLD_ID = 1
-WORLD_NAME = "Supernova"
-
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("supernova")
-app = FastAPI(title="Project Supernova")
 
 
 def find_client_key() -> bytes:
-    apk_dir = Path(__file__).resolve().parents[2] / "apk"
-    candidates = [Path(os.environ["SUPERNOVA_APK"])] if "SUPERNOVA_APK" in os.environ else sorted(apk_dir.glob("*.apk"))
+    candidates = [Path(config.APK_PATH)] if config.APK_PATH else sorted(config.APK_DIR.glob("*.apk"))
     for apk in candidates:
         try:
             return crypto.load_key(apk)
-        except (ValueError, OSError) as error:
-            log.warning("%s", error)
-    raise RuntimeError("No original APK found. Set SUPERNOVA_APK or put the APK into apk/.")
+        except (ValueError, OSError) as e:
+            log.warning("%s", e)
+    message = f"No original APK found. Set SUPERNOVA_APK or put the APK into {config.APK_DIR}."
+    if config.REQUIRE_CLIENT_KEY:
+        raise RuntimeError(message)
+    log.error("%s Game world disabled.", message)
+    return b""
 
 
-CLIENT_KEY = find_client_key()
+world.CLIENT_KEY = find_client_key()
+
+app = FastAPI(title="Project Supernova")
+app.include_router(gateway.router)
+app.include_router(world.router)
+
+
+@app.middleware("http")
+async def require_client_key(request: Request, call_next):
+    if not world.CLIENT_KEY and request.url.path.startswith("/world/"):
+        return PlainTextResponse("Server is missing the client key", status_code=503)
+    return await call_next(request)
+
+
+@app.exception_handler(world.NotLoggedIn)
+def not_logged_in(request: Request, exc: world.NotLoggedIn):
+    return world.error("Please log in again", 401)
 
 
 @app.middleware("http")
@@ -53,76 +60,10 @@ async def collapse_slashes(request: Request, call_next):
     return await call_next(request)
 
 
-def base_url(request: Request) -> str:
-    return str(request.base_url).rstrip("/")
-
-
-def encrypted_json(content: dict, status_code: int = 200) -> Response:
-    """Response for requests the client sends in mode "normal"."""
-    body = crypto.encrypt(CLIENT_KEY, json.dumps(content, separators=(",", ":")))
-    return Response(body, status_code=status_code, media_type="application/json")
-
-
-async def log_unhandled(request: Request) -> None:
-    body = await request.body()
-    log.warning(
-        "UNHANDLED %s %s query=%s body=%s headers=%s",
-        request.method,
-        request.url.path,
-        dict(request.query_params),
-        body[:2000].decode("utf-8", "replace"),
-        {k: v for k, v in request.headers.items() if k.lower() not in ("host", "connection")},
-    )
-
-
-# --- Gateway (plain JSON) ---------------------------------------------------------------
-
-
-@app.get("/servers/auto_update")
-def auto_update(request: Request):
-    return {"url": f"{base_url(request)}/update", "lowestv": LOWEST_CLIENT_VERSION}
-
-
-@app.get("/update/ver.txt")
-def update_version():
-    return PlainTextResponse(f"tag\n{RESOURCE_VERSION}\n{LOWEST_CLIENT_VERSION}\nsupernova")
-
-
-@app.get("/servers/track_quest")
-def track_quest():
-    """Client progress tracking (launch, update finished, ...). Nothing to do."""
-    return {}
-
-
-@app.get("/servers.json")
-def server_list(request: Request):
-    return {
-        "server_list": [
-            {
-                "server_id": WORLD_ID,
-                "server_name": WORLD_NAME,
-                "server_root_url": f"{base_url(request)}/world/{WORLD_ID}/",
-                "language": "all",
-                "busy": 0,
-                "is_local": False,
-                "status": "new",
-                "is_recommended": True,
-            }
-        ]
-    }
-
-
-# --- Game world (encrypted JSON) ---------------------------------------------------------
-
-
-@app.api_route("/world/{world_id}/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
-async def world_not_implemented(world_id: int, path: str, request: Request):
-    await log_unhandled(request)
-    return encrypted_json({"message": f"not implemented: {path}"}, status_code=404)
-
-
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
 async def not_implemented(path: str, request: Request):
     """Log everything the client asks for that we do not handle yet."""
-    await log_unhandled(request)
+    body = await request.body()
+    log.warning("UNHANDLED %s /%s query=%s body=%s", request.method, path,
+                dict(request.query_params), body[:2000].decode("utf-8", "replace"))
     return JSONResponse({"message": f"not implemented: /{path}"}, status_code=404)

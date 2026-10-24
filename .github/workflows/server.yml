@@ -1,0 +1,38 @@
+name: Server
+
+on:
+  push:
+    paths: ["server/**", "docker-compose.yml", ".github/workflows/server.yml"]
+  pull_request:
+    paths: ["server/**", "docker-compose.yml", ".github/workflows/server.yml"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pytest -q
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t supernova ./server
+      - name: Start container (no APK available in CI, so without client key)
+        run: docker run -d --name supernova -p 8000:8000 -e SUPERNOVA_REQUIRE_KEY=0 supernova
+      - name: Smoke test
+        run: |
+          for i in $(seq 1 20); do curl -sf localhost:8000/servers.json && break; sleep 1; done
+          curl -sf localhost:8000/servers/auto_update
+          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:8000/world/1/passive_events)" = 503
+      - name: Container logs
+        if: always()
+        run: docker logs supernova

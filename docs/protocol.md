@@ -78,10 +78,72 @@ The chosen entry's `server_root_url` becomes the base URL for all game requests.
 
 ## Login
 
-Pressing START as a guest sends `POST <world>/trials.json` with the body `username=`
-(empty for a new guest). The response goes to `GameUISplash.LoginSuccCallback` →
-`GameGlobalData:UpdateGameData(content)`, i.e. it must contain the full player state.
-Format still to be worked out.
+Guest login: `POST <world>/trials.json` with body `username=<name>`.
+
+- A new guest sends an empty `username`. The server creates an account and returns its state,
+  including the generated `username`; the client stores it in `ACCOUNT.tfl`.
+- A returning guest sends its stored name encrypted with `ext.getENC2` (see below).
+- Login with password: `POST <world>/sessions.json` with `username` (encrypted) and `password`.
+
+The response goes to `GameUISplash.LoginSuccCallback` → `GameGlobalData:UpdateGameData(content)`
+and becomes the client's global state. Then the client switches to the planet view.
+
+Top-level fields: `user_id`, `empire_id`, `username`, `salt` (used in the `sig` header),
+`account_level`, `vip_info` (`vip_left`), `grows`, `purchase`, `events`,
+`athletics_server_config`, `checkin_days`, and `empire`:
+
+| `empire` field | Meaning |
+|----------------|---------|
+| `main_planet` | the planet shown, see below |
+| `planets_info` | list of `{planet_id, planet_name, planet_type, galaxy_position, system_position, planet_position}` |
+| `researches` | list of `{research_id, research_type, research_name, research_level}` |
+| `research_upgrading_events`, `fleet_hanging_events`, `fortress_interspace_events` | running timers |
+| `alliance_id`, `alliance_name`, `alliance_application_id`, `alliance_membership_id` | 0 / "" without alliance |
+| `dark_matter_count`, `gu_count` | premium currencies |
+| `score`, `rank`, `new_message_count`, `warning_count`, `acs_attack_count`, `safe_explore_times` | counters |
+| `quests_complete`, `quests_newbie_guide`, `quests_new_ver`, `gift_id`, `buff_*` | tutorial and buffs |
+
+| `main_planet` field | Meaning |
+|---------------------|---------|
+| `planet_id`, `planet_name`, `planet_type` (2 = capital), `galaxy_position`, `system_position`, `planet_position`, `system_id` | identity and coordinates |
+| `metal`, `crystal`, `deuterium`, `*_max`, `energy_max`, `energy_used`, `*_mine_percent` | resources |
+| `buildings` | list of `{building_id, building_type, building_name, building_level, building_position_index}`; must contain every building type, unbuilt ones with level 0; lots 1-15, the mines use 1-3 |
+| `fleets` | list of `{fleet_id, fleet_type, fleet_name, amount, amount_limit}` |
+| `building_events`, `fleet_building_events`, `transmit_recharge_event` | running timers |
+| `current_server_time` | Unix time in seconds, the client syncs its clock with it |
+
+Names (`building_name`, ...) come from the server, so they have to be localized there
+(`Locale` header).
+
+### Sessions
+
+The client keeps cookies per host (`MyCookieManager`), so the server sets a session cookie at
+login. The cookie parser is simplistic: attributes after the value keep a leading space, so the
+cookie is sent without attributes.
+
+### Encrypted parameters (`ext.getENC2`)
+
+Some parameters (the username, the `requestindex` header) are encrypted with the same key as
+responses: `URL-encode(Base64(AES-256-CBC(key, zero IV, value)))`. The Lua code passes a longer
+string as key; the Java side truncates it to the same 32 bytes.
+
+### After login
+
+| Request | Response |
+|---------|----------|
+| `GET passive_events?heartBeatRate=6` | heartbeat, every `heartBeatRate` seconds: `{heartBeatRate, empire, planet, refresh}`. `empire`/`planet` = 1 makes the client reload `users/<id>?do=empire` / `planets/<id>`. If it fails, the client stops polling. |
+| `GET planets/<id>` | the `main_planet` object |
+| `GET users/<id>?do=empire` | the `empire` object |
+| `GET notices/popup.json` | `{"popup": {}}` (no popup) |
+| `GET notices/lastest.json` | `{"list": [{id, notice_type: "activity" or other, ...}]}` |
+| `GET users/first_charge_misc` | `{"first_charge": false}` (no first-purchase offer) |
+| `GET gc/current` | `{"status": 0}` (no galaxy challenge running) |
+| `GET promotions/my_newbie_invite_info` | `{"my_code": "..."}` |
+
+### Errors
+
+For a status other than 200 the client shows the response body **as text** (or the `<title>` of
+an HTML page) in a message box. Send plain text, not JSON.
 
 ## Game requests
 
@@ -136,13 +198,7 @@ Built in `ext.http.request` (`AutoUpdateInit.lua`):
 
 A replacement server can ignore `sig` and `requestindex` at first.
 
-### Error handling
-
-Any status other than 200 shows an error box. If the body is JSON with a `message` field, that
-text is shown with the status code appended.
-
 ## Open questions
 
-- Login and registration flow: which endpoints, which fields.
 - `ENC1` / `ENC2`: exact algorithms (MD5? AES?) in case we want to validate requests.
-- The login response (`trials.json`) and the player state format.
+- Original values for a new account (resources, storage limits) and the economy formulas.
