@@ -177,7 +177,7 @@ def empire_summary(state: dict) -> dict:
 
 
 def login_response(state: dict, now: float) -> dict:
-    response = {k: v for k, v in state.items() if k not in ("empire", "next_event_id")}
+    response = {k: v for k, v in state.items() if k not in ("empire", "next_event_id", "quests")}
     response["empire"] = empire_view(state, now)
     response["checkin_days"] = 0
     response["empire"]["new_message_count"] = mails.unread_count(state["user_id"])

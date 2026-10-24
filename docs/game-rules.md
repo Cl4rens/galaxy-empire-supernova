@@ -13,6 +13,7 @@ default 1).
 Every planet has its own buildings, resources, shipyard and production, and keeps producing
 while the player looks at another one. Research belongs to the whole empire; a research runs in
 the lab of the planet where it was started.
+Colonies can be given up as long as no fleet flies from or to them; the home planet stays.
 
 ## New account
 
@@ -299,3 +300,13 @@ up to a few hundred players.
 - If the president leaves, the longest-serving vice president (or member) takes over; the last
   member leaving dissolves the alliance.
 - The alliance score is the sum of its members' points.
+
+## Tutorial quests
+
+A chain of 21 quests leads new players through the game: mines, energy, deuterium, robotics,
+shipyard, storage, naming a planet, research, the first fleet, espionage, attacking pirates,
+expeditions, registering, colonizing, transport, deploy, attacking a player, recycling and the
+radar center. Each pays resources, some also ships the next quest needs (espionage probes,
+light fighters, a colony ship, small cargos, a recycler). Rewards go to the current planet when
+the player opens the quest window after reaching the goals. Fleet missions sent earlier also
+count. Players can skip the tutorial; skipping pays nothing.

@@ -76,6 +76,12 @@ def add_planet(player_id: int, galaxy: int, system: int, position: int, name: st
     return cur.lastrowid
 
 
+def remove_planet(planet_id: int) -> None:
+    conn = db.connect()
+    with db.lock(), conn:
+        conn.execute("DELETE FROM planets WHERE id = ?", (planet_id,))
+
+
 def ensure_registered(player_id: int, planet: dict) -> None:
     """Register a planet created before the universe table existed."""
     conn = db.connect()

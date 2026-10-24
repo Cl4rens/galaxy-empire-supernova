@@ -159,7 +159,7 @@ Uninstall any old copy of the original game first, because the signatures differ
 - [x] Rankings
 - [x] Accounts: register, password login, rename, change password
 - [x] Alliances: found, apply, ranks, alliance mail
-- [ ] Tutorial quests
+- [x] Tutorial quests, renaming and giving up planets
 - [ ] Support for 64-bit-only devices
 - [ ] Game logic: buildings, research, fleets, combat, alliances
 

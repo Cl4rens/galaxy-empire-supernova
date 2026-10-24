@@ -415,6 +415,30 @@ Ranks (`level`): 0 member, 1 vice president, 2 president. The empire carries `al
 `alliance_name`, `alliance_membership_id` and `alliance_application_id`. The treasury
 (`bag_log`) and coordinated attacks (`acses`) answer empty lists.
 
+### Tutorial quests
+
+On login the client shows the tutorial choice while `empire.quests_complete` is false and
+`empire.quests_newbie_guide` is 0. `quests_new_ver = 0` selects the client's "old" quest
+numbering, which decides where it shows arrows and hints.
+
+- `GET quest_events?user_id=` answers
+  `{"update": {"cur_quest": {...}, "reward_info": {...}}, "next_quest": {...}, "empire", "planet"}`.
+  `cur_quest` has `quest_index, quest_title, quest_description, quest_state` (goals reached),
+  `quest_targets: [{target_title, finished}]` (the client drops the first four characters of
+  each title), `quest_rewards: [{reward_type, reward_subtype, reward_count, reward_name}]`,
+  `congra_text, hints, is_last`. Reward types: 1 resource (subtype 1 metal, 2 crystal,
+  3 deuterium), 2 ships, 4 money, 7 building.
+- `reward_info = {"code": 0, "data": [{type, subtype, amount}]}`; `amount` is the **new total**
+  the client writes into its planet data. A non-zero `code` shows `data` as an error text.
+- `POST quest_event/skip_all_newbie_guide` answers `{"update": {"rewards_all": text}, "empire",
+  "planet"}`; the client then hides the quest button.
+
+### Planet info
+
+- `POST planets/<id>/change_name.json` `name` answers `{"planet_name"}`.
+- `POST planets/<id>` `_method=delete` gives the planet up and answers
+  `{"empire_info", "planet_info"}` (the planet the client switches to).
+
 ### Errors
 
 For a status other than 200 the client shows the response body **as text** (or the `<title>` of

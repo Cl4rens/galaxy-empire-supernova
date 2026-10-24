@@ -15,7 +15,7 @@ import time
 
 from . import combat, db, ranking
 from . import economy as eco
-from . import mails, npc
+from . import mails, npc, quests
 from . import planet as planet_rules
 from . import universe
 
@@ -28,6 +28,8 @@ MISSION_NAMES = {
 }
 UNDER_ATTACK = 11  # how incoming attacks appear in the defender's flight list
 ATTACK_PIRATES = 13  # report type of battles against pirate bases
+QUEST_ACTIONS = {ESPIONAGE: quests.ESPIONAGE, EXPEDITION: quests.EXPEDITION, TRANSPORT: quests.TRANSPORT,
+                 DEPLOY: quests.DEPLOY, RECYCLE: quests.RECYCLE}
 BE_ESPIONAGE, BE_TRANSPORT = 14, 15  # report types for the target's side
 ESPIONAGE_PROBE = 13
 RECYCLER = 12
@@ -173,6 +175,11 @@ def send(player_id: int, state: dict, params: dict, now: float) -> None:
     flight = info["total_time"]
     target_row = target_planet(target)
     target_id = target_row["id"] if target_row else None  # empty space, e.g. a debris field
+    quest_action = QUEST_ACTIONS.get(mission)
+    if mission == ATTACK:
+        quest_action = quests.ATTACK_PLAYER if target_row else quests.ATTACK_PIRATES
+    if quest_action:
+        quests.record_action(state, quest_action)
     conn = db.connect()
     with db.lock(), conn:
         conn.execute(
@@ -182,6 +189,11 @@ def send(player_id: int, state: dict, params: dict, now: float) -> None:
             (player_id, origin["planet_id"], target_id, *target, mission,
              json.dumps({str(t): n for t, n in ships.items()}), json.dumps(cargo),
              int(now), int(now) + flight, int(now) + 2 * flight))
+
+
+def planet_has_flights(planet_id: int) -> bool:
+    return db.connect().execute("SELECT 1 FROM fleet_events WHERE origin_planet_id = ? OR target_planet_id = ?",
+                                (planet_id, planet_id)).fetchone() is not None
 
 
 def recall(player_id: int, event_id: int, now: float) -> None:

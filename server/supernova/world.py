@@ -12,7 +12,7 @@ from urllib.parse import parse_qs
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse, Response
 
-from . import accounts, alliances, crypto, db, fleets, mails, player, ranking
+from . import accounts, alliances, crypto, db, fleets, mails, player, quests, ranking
 from . import planet as planet_rules
 from . import universe
 
@@ -184,6 +184,44 @@ def enter_planet(planet_id: int, player_id: int = Depends(current_player)):
         return error(str(e), 404)
     view["new_message_count"] = mails.unread_count(player_id)
     return encrypted_json(view)
+
+
+@router.post("/planets/{planet_id}/change_name.json")
+async def rename_planet(world_id: int, planet_id: int, request: Request, player_id: int = Depends(current_player)):
+    name = decrypt_param((await form(request)).get("name", "")).strip()
+    if not 1 <= len(name) <= 20:
+        return error("Planet names have 1-20 characters")
+    with db.player_state(player_id) as state:
+        planet = planet_rules.find_planet(state["empire"], planet_id)
+        if planet is None:
+            return error("This is not your planet", 404)
+        planet["planet_name"] = name
+        conn = db.connect()
+        with db.lock(), conn:
+            conn.execute("UPDATE planets SET name = ? WHERE id = ?", (name, planet_id))
+    return encrypted_json({"planet_name": name})
+
+
+@router.post("/planets/{planet_id}")
+async def abandon_planet(world_id: int, planet_id: int, request: Request, player_id: int = Depends(current_player)):
+    """_method=delete gives up a colony. The home planet and planets with fleets on the way stay."""
+    if (await form(request)).get("_method") != "delete":
+        return error("Unsupported request")
+    now = time.time()
+    with db.player_state(player_id) as state:
+        empire = state["empire"]
+        if planet_rules.find_planet(empire, planet_id) is None:
+            return error("This is not your planet", 404)
+        if empire["planets"][0]["planet_id"] == planet_id:
+            return error("You cannot give up your home planet")
+        if fleets.planet_has_flights(planet_id):
+            return error("Fleets are flying from or to this planet")
+        empire["planets"] = [p for p in empire["planets"] if p["planet_id"] != planet_id]
+        universe.remove_planet(planet_id)
+        planet_rules.switch_planet(empire, empire["planets"][0]["planet_id"])
+        planet_rules.tick(empire, now)
+        return encrypted_json({"empire_info": player.empire_summary(state),
+                               "planet_info": planet_rules.client_view(empire, now)})
 
 
 @router.get("/users/{user_id}/my_planets.json")
@@ -592,6 +630,29 @@ async def alliance_application_change(world_id: int, application_id: int, reques
 @router.get("/acses")
 def alliance_joint_attacks(player_id: int = Depends(current_player)):
     return encrypted_json({"info": [], "planet": {}, "empire": {}})  # joint attacks: not implemented
+
+
+# --- Tutorial quests ---------------------------------------------------------------------------
+
+
+@router.get("/quest_events")
+def quest_events(player_id: int = Depends(current_player)):
+    now = time.time()
+    with db.player_state(player_id) as state:
+        result = quests.current(state, player_id, now)
+        result["empire"] = player.empire_summary(state)
+        result["planet"] = planet_rules.client_view(state["empire"], now)
+    return encrypted_json(result)
+
+
+@router.post("/quest_event/skip_all_newbie_guide")
+def quest_skip_all(player_id: int = Depends(current_player)):
+    now = time.time()
+    with db.player_state(player_id) as state:
+        message = quests.skip_all(state)
+        planet_rules.tick(state["empire"], now)
+        return encrypted_json({"update": {"rewards_all": message}, "empire": player.empire_summary(state),
+                               "planet": planet_rules.client_view(state["empire"], now)})
 
 
 # --- Rankings ---------------------------------------------------------------------------------

@@ -98,3 +98,23 @@ def test_old_single_planet_saves_are_migrated():
     assert loaded["empire"]["planets"][0]["planet_id"] == 1
     assert loaded["empire"]["main_planet"] is loaded["empire"]["planets"][0]
     assert "main_planet" not in json.loads(db._encode(loaded))["empire"]
+
+
+def test_abandon_colony_but_not_home():
+    c = TestClient(app, headers={"openudid": "abandoner"})
+    state = decrypt_json(c.post("/world/1/trials.json", content="username="))
+    pid = state["user_id"]
+    with db.player_state(pid) as s:
+        research = next(r for r in s["empire"]["researches"] if r["research_type"] == eco.ASTROPHYSICS)
+        research["research_level"] = 1
+        s["empire"]["main_planet"].update(metal=10_000, crystal=10_000, deuterium=10_000)
+    target = free_position(pid)
+    colonize(pid, target)
+    planets = db.load_state(pid)["empire"]["planets"]
+    home_id, colony_id = planets[0]["planet_id"], planets[1]["planet_id"]
+
+    assert c.post(f"/world/1/planets/{home_id}", content="_method=delete").status_code == 400
+    abandoned = decrypt_json(c.post(f"/world/1/planets/{colony_id}", content="_method=delete"))
+    assert abandoned["planet_info"]["planet_id"] == home_id
+    assert len(abandoned["empire_info"]["planets_info"]) == 1
+    assert fleets.target_planet(target) is None
