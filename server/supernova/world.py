@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse, Response
 
 from . import accounts, acs, alliances, bookmarks, chat, checkin, combat, crypto, db, faq, fleets, gifts, mails
-from . import kryptons, notices, player, quests, ranking, repairs
+from . import flagships, kryptons, notices, player, quests, ranking, repairs
 from . import economy as eco
 from . import planet as planet_rules
 from . import universe
@@ -940,6 +940,69 @@ async def krypton_shop_buy(world_id: int, request: Request, player_id: int = Dep
     params = await form(request)
     return krypton_call(player_id, lambda state, now: kryptons.buy(
         state, params.get("type", ""), _int(params, "times", 1), now))
+
+
+# --- Pioneer Lab and Iron Behemoth -----------------------------------------------------------
+
+
+def flagship_call(player_id: int, planet_id, act) -> Response:
+    """act(state, planet, now) -> dict, on the given (or current) planet."""
+    now = time.time()
+    try:
+        with db.player_state(player_id) as state:
+            empire = state["empire"]
+            planet_rules.tick(empire, now)
+            planet = planet_rules.find_planet(empire, int(planet_id)) if str(planet_id or "").isdigit() else None
+            return encrypted_json(act(state, planet or empire["main_planet"], now))
+    except planet_rules.GameError as e:
+        return error(str(e))
+
+
+def _next_event_id(state):
+    return lambda: planet_rules._next_event_id(state)
+
+
+@router.post("/flagships/show_info.json")
+async def flagship_info(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    return flagship_call(player_id, params.get("planet_id"), lambda state, planet, now: flagships.show_info(state))
+
+
+@router.post("/flagships/building_info.json")
+async def flagship_building_info(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    return flagship_call(player_id, params.get("planet_id"),
+                         lambda state, planet, now: flagships.building_info(state, now))
+
+
+@router.post("/flagships/buy_flagship_box")
+def flagship_box(player_id: int = Depends(current_player)):
+    return flagship_call(player_id, None, lambda state, planet, now: flagships.buy_box(state, now))
+
+
+@router.post("/flagships.json")
+async def flagship_build(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    return flagship_call(player_id, params.get("planet_id"), lambda state, planet, now: flagships.build(
+        state, planet, int(params.get("fleet_count") or 0), params.get("sure") == "1", _next_event_id(state), now))
+
+
+@router.get("/flagship_researches")
+def flagship_researches(player_id: int = Depends(current_player)):
+    return flagship_call(player_id, None, lambda state, planet, now: {
+        "flagship_research": flagships.research_view(state, now)})
+
+
+@router.post("/flagship_researches/upgrade.json")
+async def flagship_research_start(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    return flagship_call(player_id, params.get("planet_id"), lambda state, planet, now: flagships.start_research(
+        state, planet, int(params.get("research_id") or 0), _next_event_id(state), now))
+
+
+@router.post("/flagship_researches/speedup.json")
+def flagship_research_speedup(player_id: int = Depends(current_player)):
+    return error("Speeding up is not available on Supernova")
 
 
 # --- Ship repair ---------------------------------------------------------------------------

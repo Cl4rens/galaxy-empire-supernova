@@ -16,7 +16,7 @@ import time
 
 from . import combat, config, db, ranking
 from . import economy as eco
-from . import kryptons, mails, npc, protection, quests, repairs
+from . import flagships, kryptons, mails, npc, protection, quests, repairs
 from . import planet as planet_rules
 from . import universe
 
@@ -193,6 +193,9 @@ def send(player_id: int, state: dict, params: dict, now: float) -> None:
             raise FleetError("No more expeditions possible today")
         npc.record_expedition(player_id, now)
 
+    limit = flagships.behemoth_limit(state)
+    if ships.get(flagships.BEHEMOTH, 0) > limit:
+        raise FleetError(f"A fleet can take at most {limit} Iron Behemoth(s). Research Dynamic Power Tech for more.")
     cargo = {res: max(0, int(float(params.get(res, 0) or 0))) for res in RESOURCES}
     if sum(cargo.values()) > info["empty_cargobays"]:
         raise FleetError("Not enough cargo space")
@@ -448,14 +451,36 @@ def _tech_bonus(empire: dict) -> dict:
     }
 
 
-def _side(name: str, empire: dict, units: dict[int, int], planet: dict | None = None) -> combat.Side:
-    """A player's side; `planet` (where the fleet starts or the defense stands) adds its krypton bonuses."""
+def _side(name: str, empire: dict, units: dict[int, int], planet: dict | None = None,
+          state: dict | None = None) -> combat.Side:
+    """A player's side; `planet` (where the fleet starts or the defense stands) adds its krypton
+    bonuses, Behemoths in `units` raise the attack (`state` gives the player's Behemoth limit)."""
     planet = planet or {}
+    behemoths = units.get(flagships.BEHEMOTH, 0)
+    behemoth_bonus = flagships.attack_bonus(behemoths, flagships.behemoth_limit(state)) if state and behemoths else 0
     return combat.Side(name, units, planet_rules.research_level(empire, eco.WEAPONS_TECH),
                        planet_rules.research_level(empire, eco.SHIELDING_TECH),
                        planet_rules.research_level(empire, eco.ARMOUR_TECH),
-                       kryptons.bonus(planet, "attack"), kryptons.bonus(planet, "shield"),
+                       kryptons.bonus(planet, "attack") + behemoth_bonus, kryptons.bonus(planet, "shield"),
                        kryptons.bonus(planet, "armour"))
+
+
+def _salvage(player_id: int, debris: dict, own_units: dict[int, int], enemy_lost: dict[int, int],
+             state: dict | None = None) -> str:
+    """Alloy fragments (and dark energy, when Behemoths fought) for one side of a battle."""
+    def apply(s: dict) -> str:
+        notes = []
+        alloy = flagships.salvage(s, debris)
+        if alloy:
+            notes.append(f"Alloy fragments: {alloy:,}")
+        if own_units.get(flagships.BEHEMOTH):
+            lost_points = sum(sum(eco.unit_cost(t)) * n for t, n in enemy_lost.items() if t in eco.UNITS) // 1000
+            notes.append(f"Dark energy: {flagships.gather_dark_energy(s, lost_points):,}")
+        return ", ".join(notes)
+    if state is not None:
+        return apply(state)
+    with db.player_state(player_id) as s:
+        return apply(s)
 
 
 def unit_info(empire: dict, planet: dict, ftype: int) -> dict:
@@ -582,9 +607,12 @@ def _attack(row, target_owner: int, state: dict, planet: dict) -> str:
             attack_units[t] = attack_units.get(t, 0) + n
     origin = planet_rules.find_planet(owner_state["empire"], row["origin_planet_id"])
     # The group fights with the technologies and kryptons of the player who started the attack.
-    result = _battle(row, _side(attacker_name, owner_state["empire"], attack_units, origin),
+    result = _battle(row, _side(attacker_name, owner_state["empire"], attack_units, origin, owner_state),
                      _tech_bonus(owner_state["empire"]),
-                     _side(defender_name, state["empire"], defend_units, planet), _tech_bonus(state["empire"]))
+                     _side(defender_name, state["empire"], defend_units, planet, state), _tech_bonus(state["empire"]))
+    salvage_notes = {r["owner_id"]: _salvage(r["owner_id"], result["debris"], _ships(r), result["defend_lost"])
+                     for r in group}
+    defender_note = _salvage(target_owner, result["debris"], defend_units, result["attack_lost"], state)
     for f in planet["fleets"]:
         if f["fleet_type"] in defend_units:
             f["amount"] = result["defender_left"].get(f["fleet_type"], 0) + result["rebuilt"].get(f["fleet_type"], 0)
@@ -618,11 +646,12 @@ def _attack(row, target_owner: int, state: dict, planet: dict) -> str:
         own = dict(body, attack_result=dict(body["attack_result"], attacker_name=name,
                                             winner_name=name if result["winner"] == "attacker"
                                             else body["attack_result"]["winner_name"]))
-        if len(names) > 1:
-            own["notify_message"] = " ".join(filter(None, [f"Coordinated attack: {attacker_name}.",
-                                                           body["notify_message"]]))
+        prefix = f"Coordinated attack: {attacker_name}." if len(names) > 1 else ""
+        own["notify_message"] = " ".join(filter(None, [prefix, body["notify_message"], salvage_notes[owner]]))
         mails.send(owner, mails.REPORT, mails.SENDER_FLEET, name, subject, own, row["arrival_time"])
-    mails.send(target_owner, mails.REPORT, mails.SENDER_FLEET, defender_name, subject, body, row["arrival_time"])
+    defender_body = dict(body, notify_message=" ".join(filter(None, [body["notify_message"], defender_note])))
+    mails.send(target_owner, mails.REPORT, mails.SENDER_FLEET, defender_name, subject, defender_body,
+               row["arrival_time"])
     for r, ships, share in zip(joined, survivors[1:], loots[1:]):
         status = _fly_home(r, ships, share)
         with db.lock(), conn:
@@ -657,8 +686,9 @@ def _attack_pirates(row) -> str:
     pirate_bonus = {"attack_bonus_percent": 10 * level, "shield_bonus_percent": 10 * level,
                     "armour_bonus_percent": 10 * level}
     origin = planet_rules.find_planet(owner_state["empire"], row["origin_planet_id"])
-    result = _battle(row, _side(attacker_name, owner_state["empire"], _ships(row), origin),
+    result = _battle(row, _side(attacker_name, owner_state["empire"], _ships(row), origin, owner_state),
                      _tech_bonus(owner_state["empire"]), pirates, pirate_bonus)
+    salvage_note = _salvage(row["owner_id"], result["debris"], _ships(row), result["defend_lost"])
     loot = {res: 0 for res in RESOURCES}
     stones = 0
     if result["winner"] == "attacker":
@@ -675,6 +705,8 @@ def _attack_pirates(row) -> str:
     notes = [_loot_text(loot)] if result["winner"] == "attacker" else []
     if stones:
         notes.append(f"Krypton stones: {stones:,}")
+    if salvage_note:
+        notes.append(salvage_note)
     body = {"mission_type": ATTACK_PIRATES, "is_returning": False, "event_info": info,
             "notify_message": ", ".join(notes),
             "attack_result": dict(result["report"], loot=loot)}

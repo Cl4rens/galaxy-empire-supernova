@@ -580,6 +580,19 @@ the report with their own name there.
 The client has no mission icon for 9 (ACS defense) and 10 (moon destruction); this version
 cannot send them.
 
+### Pioneer Lab and Iron Behemoth
+
+| Request | Answer |
+|---------|--------|
+| `POST flagships/show_info.json` `planet_id` | `{dark_energy_count, attack_buff, total_behemoth_num, alloy_fragment_count, behemoth_limit}` |
+| `POST flagships/building_info.json` `planet_id` | `{enable_building_num, total_behemoth_num, alloy_fragment_box_price, time_cost_next (shown as text), alloy_fragment_cost_next, dark_matter_cost_next}` |
+| `POST flagships/buy_flagship_box` | `{credit_count, alloy_fragment_box_price, alloy_fragment_count, enable_building_num, message}` |
+| `POST flagships.json` `planet_id, fleet_id, fleet_count, sure` | `sure=0`: `{message}` to confirm; `sure=1`: `{event_id, finished, fleet_id, total_time, finish_time}` (the client adds a shipyard event of type 24) |
+| `GET flagship_researches` | `{flagship_research: [{research_id, research_type (20, 21), research_name, research_level, finished, up_dark_energy_require, up_dark_matter_require, up_time}]}` |
+| `POST flagship_researches/upgrade.json` `research_id` | the research event plus `dark_energy_count` |
+
+The client assumes 250 alloy fragments per Behemoth.
+
 ### Errors
 
 For a status other than 200 the client shows the response body **as text** (or the `<title>` of

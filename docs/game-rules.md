@@ -396,3 +396,18 @@ fights as one side, with the technologies and kryptons of the player who started
 Surviving ships and the loot are shared in proportion to what each fleet sent. Newbie
 protection applies to every participant. When the attacker recalls the attack, all joined
 fleets turn around too.
+
+## Pioneer Lab and Iron Behemoth
+
+Following the client's help texts, with Supernova's numbers:
+
+- The Pioneer Lab is built on a moon; an empire can have only one.
+- An Iron Behemoth costs 250 alloy fragments and 50 × (number owned + 1) dark matter; it takes
+  4 h × (1 + owned / 2) / speed. Weapons 2,000, shields 500, hull 30,000.
+- Alloy fragments: 1 per 20,000 debris of every battle a player fights (+2 % per level of
+  Alloy Detection Tech), or 250 in a box for dark matter (20, then +10 per box that day).
+- Dark energy: only from battles fought with Behemoths, 1 per 10 points the enemy lost.
+- Each Behemoth in a fleet adds 5 % attack to the whole fleet. A fleet may take
+  1 + (Dynamic Power Tech level) Behemoths along.
+- Pioneer techs cost 100 × (level + 1)² dark energy and 10 × (level + 1) dark matter and take
+  (level + 1) h / speed; one at a time.

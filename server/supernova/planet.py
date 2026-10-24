@@ -262,6 +262,11 @@ def start_building_event(empire: dict, state: dict, building_id: int, event_type
     if event_type == EVENT_UPGRADE:
         if not buildable_here(planet, btype):
             raise GameError("This building cannot be built here")
+        if btype == eco.PIONEER_LAB and current == 0 and any(
+                p is not planet and (level(p, btype) or any(e["building_id"] == building(p, btype)["building_id"]
+                                                            for e in p["building_events"]))
+                for p in bodies(empire)):
+            raise GameError("An empire can have only one Pioneer Lab")
         if not _requirements_met(planet, empire, btype):
             raise GameError("Requirements not met")
         used, available = fields(planet)
@@ -578,7 +583,8 @@ def fleet_event_view(order: dict) -> dict:
         "event_id": order["event_id"],
         "fleet_id": order["fleet_id"],
         "fleet_type": order["fleet_type"],
-        "fleet_name": eco.UNITS[order["fleet_type"]].name,
+        "fleet_name": eco.UNITS[order["fleet_type"]].name if order["fleet_type"] in eco.UNITS
+        else eco.SPECIAL_UNITS.get(order["fleet_type"], ""),
         "building_count": order["total_count"] - order["delivered"],
         "start_time": order["start_time"],
         "finish_time": order["finish_time"],

@@ -31,7 +31,7 @@ def _hull(utype: int) -> int:
     rule = eco.UNITS.get(utype)
     if rule:
         return (rule.metal + rule.crystal) // 10
-    return 400  # interceptor/behemoth: same as a light fighter
+    return {23: 400, 24: 30000}.get(utype, 400)  # interceptor: like a light fighter; behemoth: a giant
 
 
 STATS: dict[int, CombatStats] = {t: CombatStats(w, s, _hull(t)) for t, (w, s) in {
