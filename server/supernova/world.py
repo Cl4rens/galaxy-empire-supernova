@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse, Response
 
 from . import accounts, acs, alliances, bookmarks, chat, checkin, combat, crypto, db, faq, fleets, gifts, mails
-from . import ecm, flagships, kryptons, lordship, notices, player, quests, ranking, repairs
+from . import ecm, flagships, fortresses, kryptons, lordship, notices, player, quests, ranking, repairs
 from . import economy as eco
 from . import planet as planet_rules
 from . import universe
@@ -591,6 +591,7 @@ def fleet_info(planet_id: int, player_id: int = Depends(current_player)):
         planet_rules.tick(state["empire"], now)
         content = planet_rules.client_view(state["empire"], now)
     content["fleet_hanging_events"] = fleets.events_view(player_id)
+    content["fortress_interspace_events"] = fortresses.events_view(player_id, now)
     content["is_underattack"] = bool(fleets.incoming_attacks(player_id))
     return encrypted_json(content)
 
@@ -646,9 +647,36 @@ async def alliance_auto_join(world_id: int, alliance_id: int, request: Request,
     return alliance_call(lambda: encrypted_json({"auto_in": alliances.set_auto_join(player_id, alliance_id, on)}))
 
 
+@router.post("/alliances/{alliance_id}/list_rewards")
+def alliance_rewards(alliance_id: int, player_id: int = Depends(current_player)):
+    return encrypted_json({"gifts": fortresses.gifts(player_id)})
+
+
+@router.post("/alliances/{alliance_id}/get_reward")
+async def alliance_get_reward(world_id: int, alliance_id: int, request: Request,
+                              player_id: int = Depends(current_player)):
+    reward_id = (await form(request)).get("reward_id", "")
+    try:
+        return encrypted_json({"info": fortresses.claim_gift(player_id, int(reward_id) if reward_id.isdigit() else 0)})
+    except planet_rules.GameError as e:
+        return error(str(e))
+
+
 @router.post("/alliances/{alliance_id}/bag_log")
 def alliance_log(alliance_id: int, player_id: int = Depends(current_player)):
-    return encrypted_json({"log": []})  # the alliance treasury is not implemented
+    return alliance_call(lambda: encrypted_json({"log": alliances.bag_log(player_id, alliance_id)}))
+
+
+@router.post("/alliances/{alliance_id}/donate")
+async def alliance_donate(world_id: int, alliance_id: int, request: Request,
+                          player_id: int = Depends(current_player)):
+    params = await form(request)
+
+    def amount(key: str) -> int:
+        value = params.get(key) or "0"
+        return int(float(value)) if value.replace(".", "", 1).isdigit() else -1
+    return alliance_call(lambda: encrypted_json(
+        alliances.donate(player_id, alliance_id, amount("dark_matter"), amount("credit"))))
 
 
 @router.get("/alliance_memberships.json")
@@ -1321,6 +1349,134 @@ async def gift_claim(world_id: int, request: Request, player_id: int = Depends(c
         if not gifts.claim(player_id, empire["main_planet"], int(params.get("gift_id") or 0), now):
             return error("This gift is gone")
         return encrypted_json({"empire": player.empire_summary(state), "planet": planet_rules.client_view(empire, now)})
+
+
+# --- Star fortresses ------------------------------------------------------------------------
+
+
+@router.get("/challenge_events/{planet_id}")
+def galaxy_challenge_events(planet_id: int, player_id: int = Depends(current_player)):
+    """The star gate: without a running galaxy challenge the client shows the star fortresses."""
+    return encrypted_json({"switch_status": False})
+
+
+@router.get("/challenge_event/switch")
+def galaxy_challenge_switch(player_id: int = Depends(current_player)):
+    return encrypted_json({"status": False})
+
+
+@router.get("/fortresses")
+def fortress_list(player_id: int = Depends(current_player)):
+    return encrypted_json({"info": fortresses.listing(player_id, time.time())})
+
+
+@router.api_route("/fortresses/interspace_fleet", methods=["GET", "POST"])
+async def interspace_fleet(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    interspace_id = (await form(request)).get("interspace_id", "")
+    try:
+        return encrypted_json({"fleets": fortresses.interspace_fleet(int(interspace_id) if interspace_id.isdigit()
+                                                                     else 0)})
+    except planet_rules.GameError as e:
+        return error(str(e))
+
+
+def fortress_call(fn):
+    try:
+        return encrypted_json(fn())
+    except planet_rules.GameError as e:
+        return error(str(e))
+
+
+@router.get("/fortresses/{fortress_id}")
+def fortress_info(fortress_id: int, player_id: int = Depends(current_player)):
+    return fortress_call(lambda: fortresses.info(fortress_id, player_id, time.time()))
+
+
+@router.post("/fortresses/{fortress_id}/alliance_list")
+def fortress_alliances(fortress_id: int, player_id: int = Depends(current_player)):
+    return fortress_call(lambda: {"alliance_list": fortresses.alliance_list(fortress_id, time.time())})
+
+
+@router.post("/fortresses/{fortress_id}/declare_war")
+def fortress_declare_war(fortress_id: int, player_id: int = Depends(current_player)):
+    def act():
+        now = time.time()
+        message = fortresses.declare_war(player_id, fortress_id, now)
+        return {"info": message, "fortress": fortresses.info(fortress_id, player_id, now)}
+    return fortress_call(act)
+
+
+@router.post("/fortresses/{fortress_id}/stroe")
+def fortress_store(fortress_id: int, player_id: int = Depends(current_player)):
+    def act():
+        items = fortresses.store(fortress_id)
+        with db.player_state(player_id) as state:
+            empire = state["empire"]
+            return {"items": items, "dark_matter_count": empire.get("dark_matter_count", 0),
+                    "gu_count": empire.get("gu_count", 0)}
+    return fortress_call(act)
+
+
+@router.post("/fortresses/{fortress_id}/buy")
+async def fortress_buy(world_id: int, fortress_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    item, count = params.get("game_item_id", ""), params.get("count", "1")
+    return fortress_call(lambda: fortresses.buy(player_id, fortress_id, int(item) if item.isdigit() else 0,
+                                                int(count) if count.isdigit() else 0))
+
+
+@router.post("/alliances/alli_stroe")
+def alliance_store(player_id: int = Depends(current_player)):
+    return encrypted_json({"items": fortresses.alliance_store()})
+
+
+@router.post("/alliances/{fortress_id}/alli_stroe_buy")
+async def alliance_store_buy(world_id: int, fortress_id: int, request: Request,
+                             player_id: int = Depends(current_player)):
+    item = (await form(request)).get("item", "")
+    return fortress_call(lambda: {"info": fortresses.use_store_item(player_id, fortress_id,
+                                                                    int(item) if item.isdigit() else 0, time.time())})
+
+
+@router.api_route("/fortress_hanging_events/prepare_hanging", methods=["GET", "POST"])
+async def fortress_prepare(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    try:
+        with db.player_state(player_id) as state:
+            origin = fleets.origin_planet(state["empire"], params)
+            ships = fleets.parse_ships(origin, params.get("fleet_ids", ""), params.get("fleet_cnt_ids", ""))
+            return encrypted_json(fortresses.plan(state["empire"], ships))
+    except planet_rules.GameError as e:
+        return error(str(e))
+
+
+@router.post("/fortress_hanging_events")
+async def fortress_send(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    now = time.time()
+    try:
+        with db.player_state(player_id) as state:
+            planet_rules.tick(state["empire"], now)
+            origin = fleets.origin_planet(state["empire"], params)
+            ships = fleets.parse_ships(origin, params.get("fleet_ids", ""), params.get("fleet_cnt_ids", ""))
+            kind, target = params.get("hanging_type", ""), params.get("end_id", "")
+            fortresses.send(player_id, state, origin, ships, int(kind) if kind.isdigit() else 0,
+                            int(target) if target.isdigit() else 0, now)
+            return fleet_response(state, now)
+    except planet_rules.GameError as e:
+        return error(str(e))
+
+
+@router.post("/fortress_hanging_events/{event_id}/cancel.json")
+def fortress_recall(world_id: int, event_id: int, player_id: int = Depends(current_player)):
+    now = time.time()
+    try:
+        fortresses.recall(player_id, event_id, now)
+    except planet_rules.GameError as e:
+        return error(str(e))
+    with db.player_state(player_id) as state:
+        planet_rules.tick(state["empire"], now)
+        return fleet_response(state, now)
 
 
 # --- Features we do not implement yet, answered with their "nothing here" values ---------

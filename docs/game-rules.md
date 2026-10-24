@@ -427,3 +427,27 @@ Following the client's help texts, with Supernova's numbers:
 - Rank = 1 + log2(points / 1,000), at most 21 (Grand Marshal).
 - The lord's planets in that system get +rank % weapons, shields and armour and +2 × rank % mine
   output. Lords are worked out once a minute.
+
+## Alliance treasury
+
+- Members donate dark matter and credits; the president and vice presidents spend them on
+  star fortress items. Every donation and payment is logged.
+
+## Star fortresses
+
+- Three fortresses (Orion, Draco, Hydra). Battles are every week / speed (default Sunday
+  19:00 UTC, `SUPERNOVA_FORTRESS_BATTLE`); the last 2/7 of the cycle before a battle is the war
+  phase.
+- In the war phase the alliance leader declares war with a Gravity Field Beacon (100 dark
+  matter from the treasury); the holder takes part without one. Members station fleets at the
+  fortress (flight as over 5,000 distance units).
+- Morale = stationed fleet points (metal + crystal) / 1,000 + Battle Songs (+50 for 20 dark
+  matter, +200 for 50 credits) + 30 per won interspace battle.
+- The two alliances with the most morale and stationed fleets fight; the holder defends. The
+  one with more morale gets +10 % weapons, shields and armour. With only one alliance there,
+  it takes the fortress without a fight. Afterwards all stationed fleets fly home.
+- The holder's members get +10 % production of the fortress's resource (metal, crystal,
+  deuterium), daily supplies (50,000 metal, 30,000 crystal, 10,000 deuterium, 5 ECM chips)
+  and the fortress store (ECM chips, alloy boxes, krypton stones, resource crates).
+- Interspace: guard fleets (pirates of level 3, 5, 7) that any alliance member can attack 3
+  times a day, for supplies and, during a war, morale.

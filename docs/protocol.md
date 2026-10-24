@@ -602,6 +602,40 @@ The client assumes 250 alloy fragments per Behemoth.
 | `GET systems/{galaxy}/{system}` | also `lord_info: {lord_level, lord_name}` when the system has a lord (the galaxy map always sends `lord_info`) |
 | `GET systems/lord_config` | `{lord_configs: {"g:s": {level, effect: {increase_attack, increase_shield, increase_armour, increase_metal, increase_crystal, increase_deuterium}}}, lord_des}` for the systems the player rules |
 
+### Alliance treasury
+
+| Request | Answer |
+|---------|--------|
+| `GET alliances/{id}.json` | also `bag: [{bag_type: "2" (credits), number}, {bag_type: "1" (dark matter), number}]` |
+| `POST alliances/{id}/donate` `dark_matter, credit` | `{my_dark_matter, my_credit, bag_info}` |
+| `POST alliances/{id}/bag_log` | `{log: [{created_at, number, bag_type, user, action}]}`, newest first; spending is negative |
+| `POST alliances/{id}/list_rewards` | `{gifts: [{id, name, image}]}`: today's supplies of the fortresses the alliance holds |
+| `POST alliances/{id}/get_reward` `reward_id` | `{info}` |
+
+### Star fortresses
+
+The planet's star gate asks `GET challenge_events/{planet_id}`; `switch_status: false` makes the
+client show the star fortress map (three fortresses `sf_1..3`, each with an interspace `is_1..3`).
+
+| Request | Answer |
+|---------|--------|
+| `GET fortresses` | `{info: [fortress]}` |
+| `GET fortresses/{id}` | `fortress`: `{fortress_id, name, lock, status (1 held, 2 free, 3 war phase), alliance_name, declare_war, our_rank, apply_count, alliance_info: {apply_member, apply_max}, war_price (text), is_president, start_time: [_, countdown end], reward: [text], interspace_info: {interspace_id, name, left_count, max_count}}` |
+| `POST fortresses/{id}/alliance_list` | `{alliance_list: [{alliance_id, alli_name, morale, morale_ratio (battle bonus %), member}]}` |
+| `POST fortresses/{id}/declare_war` | `{info, fortress}` |
+| `GET fortresses/interspace_fleet` `interspace_id` | `{fleets: [{name, count}]}` |
+| `POST fortresses/{id}/stroe` | `{items: [{id, name, desc, img, pay_type, sale_price}], dark_matter_count, gu_count}` |
+| `POST fortresses/{id}/buy` `game_item_id, count` | `{darkmatter, credits, info}` |
+| `POST alliances/alli_stroe` | `{items: [{id, name, detail, price, pay_type}]}`: beacon and two battle songs |
+| `POST alliances/{fortress_id}/alli_stroe_buy` `item` | `{info}` (paid from the treasury) |
+| `GET fortress_hanging_events/prepare_hanging` `fleet_ids, fleet_cnt_ids, end_id, hanging_type` | like the normal prepare; `missions: [7]` |
+| `POST fortress_hanging_events` `fleet_ids, fleet_cnt_ids, planet_id, end_id, hanging_type (1 fortress, 2 interspace)` | the fleet response |
+| `POST fortress_hanging_events/{id}/cancel.json` | the fleet response |
+
+The empire carries `fortress_interspace_events: [{id, planet_id, planet_name, planet_position,
+end_planet_name, end_planet_pos, mission_name, is_returning (0/1), start_time, finish_time,
+total_time, fleets}]`.
+
 ### Errors
 
 For a status other than 200 the client shows the response body **as text** (or the `<title>` of

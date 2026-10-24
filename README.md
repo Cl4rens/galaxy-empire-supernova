@@ -105,7 +105,9 @@ The server reads the client's response key from your APK in `apk/` (or from the 
 
 Optional settings: `SUPERNOVA_SPEED` (game speed, default 1), `SUPERNOVA_NEWBIE_POINTS`
 (newbie protection below these points, default 5000), `SUPERNOVA_STRONG_POINTS` (from here on
-the 1:5 rule no longer protects, default 500000).
+the 1:5 rule no longer protects, default 500000), `SUPERNOVA_FORTRESS_BATTLE` (time of a
+star fortress battle in seconds since 1970; battles repeat every week / speed, default Sunday
+19:00 UTC).
 
 Server operators can manage players from the command line (in Docker:
 `docker compose exec supernova python -m supernova.admin ...`):
@@ -185,6 +187,7 @@ Uninstall any old copy of the original game first, because the signatures differ
 - [x] Coordinated attacks (alliance members join an attack)
 - [x] Pioneer Lab: Iron Behemoth, alloy fragments, dark energy, pioneer techs
 - [x] ECM module and system lords
+- [x] Alliance treasury and star fortresses
 - [x] Runs on Android 6-16 without crashes or permission dialogs
 - [ ] Support for 64-bit-only devices: needs an open client engine that runs the original Lua
       scripts and Flash UI from the player's APK (idea, not started)

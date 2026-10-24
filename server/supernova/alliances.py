@@ -325,9 +325,76 @@ def details(alliance_id: int, player_id: int) -> dict:
         "fight_score": 0,
         "morale_ratio": 0,
         "auto_in": a["auto_in"],
-        # Alliance treasury (credits / dark matter) is not implemented.
-        "bag": [{"bag_type": "2", "number": 0}, {"bag_type": "1", "number": 0}],
+        "bag": bag_view(a),
     }
+
+
+# --- Treasury ----------------------------------------------------------------------------------
+# Members donate dark matter and credits; the president and vice presidents spend them on
+# star fortress items (see fortresses.py).
+
+DARK_MATTER, CREDITS = "1", "2"  # bag_type, as the client calls them
+_BAG_COLUMNS = {DARK_MATTER: "bag_dark_matter", CREDITS: "bag_credits"}
+LOG_LENGTH = 50
+
+
+def bag_view(row) -> list[dict]:
+    return [{"bag_type": CREDITS, "number": row["bag_credits"]},
+            {"bag_type": DARK_MATTER, "number": row["bag_dark_matter"]}]
+
+
+def _log(conn, alliance_id: int, username: str, bag_type: str, number: int, action: str) -> None:
+    conn.execute("INSERT INTO alliance_bag_log (alliance_id, username, bag_type, number, action, created_at) "
+                 "VALUES (?, ?, ?, ?, ?, ?)", (alliance_id, username, bag_type, number, action, int(time.time())))
+
+
+def _username(player_id: int) -> str:
+    row = _conn().execute("SELECT username FROM players WHERE id = ?", (player_id,)).fetchone()
+    return row["username"] if row else ""
+
+
+def donate(player_id: int, alliance_id: int, dark_matter: int, credits: int) -> dict:
+    _require_post(player_id, alliance_id, MEMBER)
+    if dark_matter < 0 or credits < 0 or dark_matter + credits == 0:
+        raise AllianceError("Choose how much to donate")
+    with db.player_state(player_id) as state:
+        empire = state["empire"]
+        if empire.get("dark_matter_count", 0) < dark_matter or empire.get("gu_count", 0) < credits:
+            raise AllianceError("You do not have that much")
+        empire["dark_matter_count"] -= dark_matter
+        empire["gu_count"] = empire.get("gu_count", 0) - credits
+        mine = {"my_dark_matter": empire["dark_matter_count"], "my_credit": empire["gu_count"]}
+    name = _username(player_id)
+    conn = _conn()
+    with db.lock(), conn:
+        conn.execute("UPDATE alliances SET bag_dark_matter = bag_dark_matter + ?, bag_credits = bag_credits + ? "
+                     "WHERE id = ?", (dark_matter, credits, alliance_id))
+        for bag_type, number in ((DARK_MATTER, dark_matter), (CREDITS, credits)):
+            if number:
+                _log(conn, alliance_id, name, bag_type, number, "Donation")
+    return dict(mine, bag_info=bag_view(_alliance(alliance_id)))
+
+
+def spend(player_id: int, alliance_id: int, bag_type: str, number: int, action: str) -> None:
+    """Pay from the treasury; only the president and vice presidents may."""
+    _require_post(player_id, alliance_id, VICE_PRESIDENT)
+    column = _BAG_COLUMNS[bag_type]
+    conn = _conn()
+    with db.lock(), conn:
+        cur = conn.execute(f"UPDATE alliances SET {column} = {column} - ? WHERE id = ? AND {column} >= ?",
+                           (number, alliance_id, number))
+        if cur.rowcount == 0:
+            what = "dark matter" if bag_type == DARK_MATTER else "credits"
+            raise AllianceError(f"The alliance treasury needs {number:,} {what}")
+        _log(conn, alliance_id, _username(player_id), bag_type, -number, action)
+
+
+def bag_log(player_id: int, alliance_id: int) -> list[dict]:
+    _require_post(player_id, alliance_id, MEMBER)
+    rows = _conn().execute("SELECT * FROM alliance_bag_log WHERE alliance_id = ? ORDER BY id DESC LIMIT ?",
+                           (alliance_id, LOG_LENGTH)).fetchall()
+    return [{"created_at": r["created_at"], "number": r["number"], "bag_type": r["bag_type"], "user": r["username"],
+             "action": r["action"]} for r in rows]
 
 
 def members_view(alliance_id: int) -> list[dict]:

@@ -13,7 +13,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 
-from . import config, crypto, fleets, gateway, world
+from . import config, crypto, fleets, fortresses, gateway, world
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("supernova")
@@ -40,6 +40,7 @@ async def fleet_processor():
     while True:
         try:
             await asyncio.to_thread(fleets.process_due)
+            await asyncio.to_thread(fortresses.process_due)
         except Exception:
             log.exception("fleet processing failed")
         await asyncio.sleep(1)

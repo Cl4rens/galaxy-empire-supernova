@@ -126,7 +126,44 @@ CREATE TABLE IF NOT EXISTS alliances (
     activity    TEXT NOT NULL,
     creator_id  INTEGER NOT NULL,
     created_at  INTEGER NOT NULL,
-    auto_in     INTEGER NOT NULL DEFAULT 0
+    auto_in     INTEGER NOT NULL DEFAULT 0,
+    bag_dark_matter INTEGER NOT NULL DEFAULT 0,
+    bag_credits     INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS alliance_bag_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    alliance_id INTEGER NOT NULL,
+    username    TEXT NOT NULL,
+    bag_type    TEXT NOT NULL,
+    number      INTEGER NOT NULL,
+    action      TEXT NOT NULL,
+    created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS bag_log_by_alliance ON alliance_bag_log (alliance_id, id);
+CREATE TABLE IF NOT EXISTS fortresses (
+    id          INTEGER PRIMARY KEY,
+    alliance_id INTEGER,
+    battle      INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS fortress_wars (
+    fortress_id INTEGER NOT NULL,
+    alliance_id INTEGER NOT NULL,
+    battle      INTEGER NOT NULL,
+    morale      INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (fortress_id, alliance_id, battle)
+);
+CREATE TABLE IF NOT EXISTS fortress_events (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_id     INTEGER NOT NULL REFERENCES players(id),
+    planet_id    INTEGER NOT NULL,
+    kind         INTEGER NOT NULL,
+    target_id    INTEGER NOT NULL,
+    ships        TEXT NOT NULL,
+    flight       INTEGER NOT NULL,
+    start_time   INTEGER NOT NULL,
+    arrival_time INTEGER NOT NULL,
+    return_time  INTEGER NOT NULL,
+    status       TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS alliance_members (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -170,6 +207,11 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
+    alliance_columns = [r[1] for r in conn.execute("PRAGMA table_info(alliances)")]
+    if alliance_columns and "bag_credits" not in alliance_columns:
+        with conn:
+            conn.execute("ALTER TABLE alliances ADD COLUMN bag_dark_matter INTEGER NOT NULL DEFAULT 0")
+            conn.execute("ALTER TABLE alliances ADD COLUMN bag_credits INTEGER NOT NULL DEFAULT 0")
     fleet_columns = [r[1] for r in conn.execute("PRAGMA table_info(fleet_events)")]
     if fleet_columns and "acs_id" not in fleet_columns:
         with conn:

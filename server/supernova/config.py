@@ -25,3 +25,7 @@ SPEED = float(os.environ.get("SUPERNOVA_SPEED", "1"))
 # STRONG_POINTS on, the 1:5 points rule no longer applies.
 NEWBIE_POINTS = int(os.environ.get("SUPERNOVA_NEWBIE_POINTS", "5000"))
 STRONG_POINTS = int(os.environ.get("SUPERNOVA_STRONG_POINTS", "500000"))
+
+# Star fortress battles (see fortresses.py) repeat every week / SPEED from this moment
+# (seconds since 1970). Default: Sunday 19:00 UTC.
+FORTRESS_BATTLE_OFFSET = int(os.environ.get("SUPERNOVA_FORTRESS_BATTLE", str(3 * 86400 + 19 * 3600)))

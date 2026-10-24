@@ -120,9 +120,11 @@ def production(planet: dict, empire: dict) -> dict:
 
     from . import lordship  # lordship reads the rankings, which import this module
     lord = lordship.bonus(planet, empire.get("user_id", 0)) if empire.get("user_id") else {}
+    from . import fortresses
+    fortress = {res: fortresses.production_bonus(empire, res) for res in RESOURCES}
 
     def mine(btype: int, resource: str) -> float:
-        krypton = 1 + (planet.get("krypton_bonus", {}).get(resource, 0) + lord.get(f"increase_{resource}", 0)) / 100
+        krypton = 1 + (planet.get("krypton_bonus", {}).get(resource, 0) + lord.get(f"increase_{resource}", 0) + fortress[resource]) / 100
         return eco.BASE_PRODUCTION[resource] + eco.mine_output(btype, level(planet, btype)) * pct[btype] * factor * krypton
 
     return {

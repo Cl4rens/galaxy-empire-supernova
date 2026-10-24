@@ -8,7 +8,7 @@ import secrets
 import time
 
 from . import economy as eco
-from . import checkin, fleets, gifts, mails, ranking
+from . import checkin, fleets, fortresses, gifts, mails, ranking
 from . import planet as planet_rules
 from . import universe
 
@@ -179,7 +179,8 @@ def planets_info(empire: dict) -> list[dict]:
 
 
 HIDDEN_EMPIRE_FIELDS = ("main_planet", "planets", "current_planet_id")
-PRIVATE_STATE = ("empire", "next_event_id", "quests", "bookmarks", "checkin", "kryptons", "flagships", "ecm")
+PRIVATE_STATE = ("empire", "next_event_id", "quests", "bookmarks", "checkin", "kryptons", "flagships", "ecm",
+                 "fortress")
 
 
 def empire_view(state: dict, now: float) -> dict:
@@ -189,7 +190,8 @@ def empire_view(state: dict, now: float) -> dict:
     view.update(score=ranking.points(state)["score"], rank=ranking.rank_of(state["user_id"]),
                 gift_id=gifts.pending_id(state["user_id"]))
     return dict(view, main_planet=planet_rules.client_view(empire, now), **planet_rules.researches_view(empire),
-                planets_info=planets_info(empire), fleet_hanging_events=fleets.events_view(empire["user_id"]))
+                planets_info=planets_info(empire), fleet_hanging_events=fleets.events_view(empire["user_id"]),
+                fortress_interspace_events=fortresses.events_view(empire["user_id"]))
 
 
 def empire_summary(state: dict) -> dict:
@@ -199,6 +201,7 @@ def empire_summary(state: dict) -> dict:
     summary["planets_info"] = planets_info(empire)
     summary.update(planet_rules.researches_view(empire))
     summary["fleet_hanging_events"] = fleets.events_view(empire["user_id"])
+    summary["fortress_interspace_events"] = fortresses.events_view(empire["user_id"])
     summary["gift_id"] = gifts.pending_id(empire["user_id"])
     return summary
 
