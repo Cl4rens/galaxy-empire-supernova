@@ -83,7 +83,17 @@ Guest login: `POST <world>/trials.json` with body `username=<name>`.
 - A new guest sends an empty `username`. The server creates an account and returns its state,
   including the generated `username`; the client stores it in `ACCOUNT.tfl`.
 - A returning guest sends its stored name encrypted with `ext.getENC2` (see below).
-- Login with password: `POST <world>/sessions.json` with `username` (encrypted) and `password`.
+- Login with password: `POST <world>/sessions.json` with `username` and `password` (both ENC2).
+- Register ("end trial"): `POST <world>/users.json` with `username`, `password`,
+  `password_confirmation` (all ENC2); answers like a login. The client then saves name and
+  password and uses `sessions.json` from now on.
+- Change password: `POST users/<id>.json` with `_method=put`, `username`, `old_password`,
+  `new_password`, `new_password_confirmation` (ENC2). Rename: `POST users/reset_username` with
+  `username`, `password`. Both show the answer text in a message box.
+- `POST users/<id>/email_bind_status` → `{mail_status: 0}` (0 unbound, 1 waiting, 2 bound).
+
+Supernova binds guest accounts to the device that created them (`openUDID`); registered
+accounts need their password and work on any device. Passwords are stored as scrypt hashes.
 
 The response goes to `GameUISplash.LoginSuccCallback` → `GameGlobalData:UpdateGameData(content)`
 and becomes the client's global state. Then the client switches to the planet view.

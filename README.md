@@ -157,6 +157,7 @@ Uninstall any old copy of the original game first, because the signatures differ
 - [x] Colonization: several planets per player
 - [x] Pirate bases and expeditions
 - [x] Rankings
+- [x] Accounts: register, password login, rename, change password
 - [ ] Tutorial quests
 - [ ] Support for 64-bit-only devices
 - [ ] Game logic: buildings, research, fleets, combat, alliances

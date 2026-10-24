@@ -12,7 +12,7 @@ from urllib.parse import parse_qs
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse, Response
 
-from . import crypto, db, fleets, mails, player, ranking
+from . import accounts, crypto, db, fleets, mails, player, ranking
 from . import planet as planet_rules
 from . import universe
 
@@ -76,17 +76,33 @@ def logged_in(player_id: int, content: dict) -> Response:
 async def guest_login(world_id: int, request: Request):
     """Guest login. An empty username creates a new guest account."""
     username = decrypt_param((await form(request)).get("username", "")).strip()
+    udid = request.headers.get("openudid", "")
     if username:
-        found = db.find_player(username)
-        if not found:
-            return error("Unknown guest account", 404)
-        player_id = found[0]
+        try:
+            player_id = accounts.guest_login(username, udid)
+        except accounts.AccountError as e:
+            return error(str(e), 403)
     else:
-        udid = request.headers.get("openudid", "")
         player_id, username, _ = db.create_player(
             player.guest_username, udid,
             lambda pid, name: player.new_state(pid, name, universe.place_home(pid, player.HOME_PLANET_NAME)))
         log.info("new guest %s (udid %s)", username, udid)
+    return enter_world(player_id)
+
+
+@router.post("/sessions.json")
+async def password_login(world_id: int, request: Request):
+    """Login with name and password; both are encrypted like the username."""
+    params = await form(request)
+    try:
+        player_id = accounts.password_login(decrypt_param(params.get("username", "")).strip(),
+                                            decrypt_param(params.get("password", "")))
+    except accounts.AccountError as e:
+        return error(str(e), 403)
+    return enter_world(player_id)
+
+
+def enter_world(player_id: int) -> Response:
     now = time.time()
     with db.player_state(player_id) as state:
         for p in state["empire"]["planets"]:
@@ -94,6 +110,40 @@ async def guest_login(world_id: int, request: Request):
         planet_rules.tick(state["empire"], now)
         content = player.login_response(state, now)
     return logged_in(player_id, content)
+
+
+# --- Accounts ---------------------------------------------------------------------------------
+
+
+@router.post("/users.json")
+async def register(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    """A guest chooses a name and password ("end trial")."""
+    params = await form(request)
+    try:
+        accounts.register(player_id, decrypt_param(params.get("username", "")).strip(),
+                          decrypt_param(params.get("password", "")),
+                          decrypt_param(params.get("password_confirmation", "")))
+    except accounts.AccountError as e:
+        return error(str(e))
+    with db.player_state(player_id) as state:
+        return encrypted_json(player.login_response(state, time.time()))
+
+
+@router.post("/users/reset_username")
+async def rename(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    try:
+        accounts.rename(player_id, decrypt_param(params.get("username", "")).strip(),
+                        decrypt_param(params.get("password", "")))
+    except accounts.AccountError as e:
+        return error(str(e))
+    # The client shows the answer as a message.
+    return PlainTextResponse("Your name has been changed.")
+
+
+@router.post("/users/{user_id}/email_bind_status")
+def email_status(user_id: int, player_id: int = Depends(current_player)):
+    return encrypted_json({"mail_status": 0})  # e-mail binding is not offered
 
 
 # --- Player state -------------------------------------------------------------------------
@@ -177,6 +227,20 @@ def research_info(research_id: int, player_id: int = Depends(current_player)):
 @router.get("/users/first_charge_misc")
 def first_charge(player_id: int = Depends(current_player)):
     return encrypted_json({"first_charge": False})
+
+
+@router.post("/users/{user_id}.json")
+async def change_password(user_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    if user_id != player_id or params.get("_method") != "put":
+        return error("Unsupported")
+    try:
+        accounts.change_password(player_id, decrypt_param(params.get("old_password", "")),
+                                 decrypt_param(params.get("new_password", "")),
+                                 decrypt_param(params.get("new_password_confirmation", "")))
+    except accounts.AccountError as e:
+        return error(str(e))
+    return PlainTextResponse("Your password has been changed.")
 
 
 @router.get("/users/{user_id}")
