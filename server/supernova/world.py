@@ -13,7 +13,8 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse, Response
 
 from . import accounts, acs, alliances, bookmarks, chat, checkin, combat, crypto, db, faq, fleets, gifts, mails
-from . import ecm, flagships, fortresses, items, kryptons, lordship, notices, player, quests, ranking, repairs
+from . import devices, ecm, flagships, fortresses, items, kryptons, lordship, notices, player, quests, ranking
+from . import repairs
 from . import economy as eco
 from . import planet as planet_rules
 from . import universe
@@ -357,6 +358,29 @@ async def change_password(user_id: int, request: Request, player_id: int = Depen
     except accounts.AccountError as e:
         return error(str(e))
     return PlainTextResponse("Your password has been changed.")
+
+
+# Ship modification (devices.py); before /users/{user_id}, which would take these paths
+
+
+@router.get("/users/fleet_devices")
+async def fleet_devices(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    fleet_type = _int(await form(request), "fleet_type")
+    with db.player_state(player_id) as state:
+        return item_call(lambda: devices.view(state, fleet_type))
+
+
+@router.post("/users/use_device")
+async def use_device(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    now = time.time()
+
+    def act():
+        with db.player_state(player_id) as state:
+            result = devices.install(state, _int(params, "fleet_type"), _int(params, "id"))
+            return dict(result, empire=player.empire_summary(state),
+                        planet=planet_rules.client_view(state["empire"], now))
+    return item_call(act)
 
 
 @router.get("/users/{user_id}")

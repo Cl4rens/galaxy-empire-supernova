@@ -391,8 +391,8 @@ def interspace_fleet(interspace_id: int) -> list[dict]:
 
 
 def plan(empire: dict, ships: dict[int, int]) -> dict:
-    levels = {r["research_type"]: r["research_level"] for r in empire["researches"]}
-    speed = min(eco.ship_speed(t, levels) for t in ships)
+    from . import fleets
+    speed = min(fleets.ship_speed(empire, t) for t in ships)
     return {"missions": [ATTACK], "speed": speed, "total_time": eco.flight_seconds(DISTANCE, speed, 100),
             "fuel_consumption": eco.fuel(ships, DISTANCE, 100), "empty_cargobays": 0}
 

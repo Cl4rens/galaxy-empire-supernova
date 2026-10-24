@@ -654,6 +654,16 @@ An item is `{id, game_item_id, name, desc, img, pay_type (1 dark matter, 2 credi
 code, item_type, category, is_featured, is_gift, step_gacha}`. The client shows `img` by its
 file name if it has that texture (`icons/item_res_04.png` ...), else downloads it from the server.
 
+### Ship modification
+
+| Request | Answer |
+|---------|--------|
+| `GET users/fleet_devices` `fleet_type` (5, 6, 7, 20, 23, 24; others answer an error) | `{items: [device item + type, lv (grade), amount], fleet_device: [{item_id, type (1 armour, 2 shield, 3 attack, 4 speed), lv, num (current bonus, text), next, devices (needed), score (needed points)}]}` |
+| `POST users/use_device` `fleet_type, id` | `{fleet_device, item_number, info, empire, planet}` |
+
+The client opens the screen from 100,000 points (`empire.score`). Devices are shop items in
+category 4.
+
 ### Errors
 
 For a status other than 200 the client shows the response body **as text** (or the `<title>` of

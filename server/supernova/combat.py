@@ -11,7 +11,7 @@ and crystal of destroyed ships becomes a debris field.
 """
 
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from . import economy as eco
 
@@ -66,6 +66,19 @@ class Side:
     attack_percent: int = 0  # krypton bonuses
     shield_percent: int = 0
     armour_percent: int = 0
+    unit_percent: dict[int, tuple[int, int, int]] = field(default_factory=dict)  # ship modification
+
+    def _extra(self, utype: int, index: int) -> float:
+        return self.unit_percent.get(utype, (0, 0, 0))[index] / 100
+
+    def weapon_of(self, utype: int) -> float:
+        return STATS[utype].weapon * (self.weapon_factor() + self._extra(utype, 0))
+
+    def shield_of(self, utype: int) -> float:
+        return STATS[utype].shield * (self.shield_factor() + self._extra(utype, 1))
+
+    def hull_of(self, utype: int) -> float:
+        return STATS[utype].hull * (self.armour_factor() + self._extra(utype, 2))
 
     def weapon_factor(self) -> float:
         return 1 + 0.1 * self.weapons + self.attack_percent / 100
@@ -84,9 +97,7 @@ def _expand(side: Side) -> list[list]:
     """One entry per unit: [type, hull, shield]."""
     units = []
     for utype, n in side.units.items():
-        s = STATS[utype]
-        hull = s.hull * side.armour_factor()
-        units += [[utype, hull, s.shield * side.shield_factor()] for _ in range(n)]
+        units += [[utype, side.hull_of(utype), side.shield_of(utype)] for _ in range(n)]
     return units
 
 
@@ -96,13 +107,13 @@ def _fire(shooters: list, side: Side, targets: list, target_side: Side, rng: ran
     if not targets:
         return 0, 0, 0
     for utype, _, _ in shooters:
-        weapon = STATS[utype].weapon * side.weapon_factor()
+        weapon = side.weapon_of(utype)
         rapid = RAPID_FIRE.get(utype, {})
         while True:
             target = targets[rng.randrange(len(targets))]
             shots += 1
             ttype, hull, shield = target
-            max_shield = STATS[ttype].shield * target_side.shield_factor()
+            max_shield = target_side.shield_of(ttype)
             if hull > 0 and weapon >= 0.01 * max_shield:
                 hit = weapon
                 if shield >= hit:
@@ -145,9 +156,9 @@ def fight(attacker: Side, defender: Side, rng: random.Random | None = None) -> d
         if not att or not dfn:
             break
         for unit in att:
-            unit[2] = STATS[unit[0]].shield * (1 + 0.1 * attacker.shielding)
+            unit[2] = attacker.shield_of(unit[0])
         for unit in dfn:
-            unit[2] = STATS[unit[0]].shield * (1 + 0.1 * defender.shielding)
+            unit[2] = defender.shield_of(unit[0])
         a_shots, a_damage, a_absorbed = _fire(att, attacker, dfn, defender, rng)
         d_shots, d_damage, d_absorbed = _fire(dfn, defender, att, attacker, rng)
         att = [u for u in att if u[1] > 0]

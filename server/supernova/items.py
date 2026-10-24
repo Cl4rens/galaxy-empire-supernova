@@ -36,6 +36,7 @@ class Item:
     krypton_stones: int = 0
     featured: bool = False
     code: str = ""
+    device: tuple[int, int] | None = None  # (device type, grade), see devices.py
 
 
 def _res(item_id, name, amount, index, icon, price, featured=False, code=""):
@@ -70,6 +71,9 @@ CATALOG = [
     Item(3103, AFFAIR, "Krypton stones x500", "500 krypton stones for the Krypton Lab.", "item_res_13.png", 15,
          krypton_stones=500),
 ]
+from . import devices  # noqa: E402 (devices builds its items with Item)
+
+CATALOG += devices.catalog()
 BY_ID = {i.id: i for i in CATALOG}
 
 
@@ -116,7 +120,7 @@ def depot_view(state: dict, category: int) -> list[dict]:
 
 
 def owned_view(state: dict, i: Item) -> dict:
-    return dict(_view(i), amount=amount(state, i.id), can_be_use=i.category != SPEEDUP)
+    return dict(_view(i), amount=amount(state, i.id), can_be_use=i.category != SPEEDUP and i.device is None)
 
 
 def _pay(state: dict, price: int) -> None:
@@ -141,6 +145,8 @@ def use(state: dict, item_id: int, n: int, planet: dict) -> str:
     i = item(item_id)
     if i.category == SPEEDUP:
         raise ItemError("Use speed-ups on a running construction, research or shipyard order")
+    if i.device:
+        raise ItemError("Install devices in the Modification screen")
     if not 1 <= n <= amount(state, i.id):
         raise ItemError("You do not have that many")
     _add(state, i.id, -n)

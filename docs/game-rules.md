@@ -468,3 +468,12 @@ The original game sold dark matter for real money. Supernova hands it out instea
 - The daily check-in gives dark matter on days 3, 5, 10, 12, 17 and 19 (20 to 80).
 - A beaten pirate base gives 3 per pirate level; expeditions sometimes find 50 to 300.
 - Optionally every player earns an income per day (`SUPERNOVA_DARK_MATTER_PER_DAY`, default 0).
+
+## Ship modification
+
+- Devices (hull plating, shield emitter, weapon module, thruster) are bought in the shop: basic
+  ones (10 dark matter) for battlecruisers, bombers and destroyers, advanced ones (30) for plasma
+  cannons, interceptors and Iron Behemoths.
+- Level n -> n + 1 of a device type uses n + 1 devices and needs 100,000 x (n + 1) points;
+  at most level 10. Each level gives +3 % armour, shields or attack, or +2 % speed, for that
+  ship type only. Defense gets no thrusters.

@@ -16,7 +16,7 @@ import time
 
 from . import combat, config, db, ranking
 from . import economy as eco
-from . import ecm, flagships, kryptons, lordship, mails, npc, protection, quests, repairs
+from . import devices, ecm, flagships, kryptons, lordship, mails, npc, protection, quests, repairs
 from . import planet as planet_rules
 from . import universe
 
@@ -54,6 +54,12 @@ class FleetError(planet_rules.GameError):
 
 def _research_levels(empire: dict) -> dict[int, int]:
     return {r["research_type"]: r["research_level"] for r in empire["researches"]}
+
+
+def ship_speed(empire: dict, ftype: int) -> int:
+    """Speed with drive research and thrusters (ship modification)."""
+    base = eco.ship_speed(ftype, _research_levels(empire))
+    return int(base * (1 + devices.bonus(empire, ftype, devices.SPEED) / 100))
 
 
 def _position(p: dict) -> tuple[int, int, int]:
@@ -148,8 +154,7 @@ def allowed_missions(player_id: int, origin: dict, target: tuple[int, int, int],
 def plan(empire: dict, player_id: int, ships: dict[int, int], target: tuple[int, int, int],
          percent: int = 100, origin: dict | None = None, moon: bool = False) -> dict:
     origin = origin or empire["main_planet"]
-    levels = _research_levels(empire)
-    speed = min(eco.ship_speed(t, levels) for t in ships)
+    speed = min(ship_speed(empire, t) for t in ships)
     dist = eco.distance(_position(origin), target)
     return {
         "missions": allowed_missions(player_id, origin, target, ships, moon),
@@ -465,7 +470,8 @@ def _side(name: str, empire: dict, units: dict[int, int], planet: dict | None = 
                        planet_rules.research_level(empire, eco.ARMOUR_TECH),
                        kryptons.bonus(planet, "attack") + behemoth_bonus + ecm_bonus + lord.get("increase_attack", 0),
                        kryptons.bonus(planet, "shield") + ecm_bonus + lord.get("increase_shield", 0),
-                       kryptons.bonus(planet, "armour") + ecm_bonus + lord.get("increase_armour", 0))
+                       kryptons.bonus(planet, "armour") + ecm_bonus + lord.get("increase_armour", 0),
+                       devices.unit_bonuses(empire))
 
 
 def _salvage(player_id: int, debris: dict, own_units: dict[int, int], enemy_lost: dict[int, int],
@@ -491,8 +497,8 @@ def unit_info(empire: dict, planet: dict, ftype: int) -> dict:
     side = _side("", empire, {ftype: 1}, planet)
     stats = combat.STATS[ftype]
 
-    def bonus(base: float, factor: float) -> int:
-        return round(base * factor) - round(base)
+    def bonus(base: float, value: float) -> int:
+        return round(value) - round(base)
 
     names = {**{t: r.name for t, r in eco.UNITS.items()}, **eco.SPECIAL_UNITS}
     rapid = [{"unit_name": names.get(t, str(t)), "damage_rate": n, "bonus_damage_rate": 0}
@@ -500,13 +506,13 @@ def unit_info(empire: dict, planet: dict, ftype: int) -> dict:
     rapid += [{"unit_name": names.get(t, str(t)), "damage_rate": -n, "bonus_damage_rate": 0}
               for t, against in combat.RAPID_FIRE.items() for target, n in against.items() if target == ftype]
     info = {"fatal_damage_list": rapid,
-            "armour": round(stats.hull), "bonus_armour": bonus(stats.hull, side.armour_factor()),
-            "shield": stats.shield, "bonus_shield": bonus(stats.shield, side.shield_factor()),
-            "attack": stats.weapon, "bonus_attack": bonus(stats.weapon, side.weapon_factor()),
+            "armour": round(stats.hull), "bonus_armour": bonus(stats.hull, side.hull_of(ftype)),
+            "shield": stats.shield, "bonus_shield": bonus(stats.shield, side.shield_of(ftype)),
+            "attack": stats.weapon, "bonus_attack": bonus(stats.weapon, side.weapon_of(ftype)),
             "speed": 0, "bonus_speed": 0, "capacity": 0, "fuel_usage": 0}
     if ftype in eco.SHIPS:
         ship = eco.SHIPS[ftype]
-        speed = eco.ship_speed(ftype, _research_levels(empire))
+        speed = ship_speed(empire, ftype)
         info.update(speed=ship.speed, bonus_speed=speed - ship.speed, capacity=ship.cargo, fuel_usage=ship.fuel)
     return info
 
