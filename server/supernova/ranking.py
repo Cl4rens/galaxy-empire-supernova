@@ -85,8 +85,16 @@ def ranking(kind: str, player_id: int, top: int = 100) -> list[dict]:
     elif kind in ("top_fight_users", "my_fight_rank"):
         ordered = _ranked(players, lambda p: (p["fight_win_count"], -p["fight_lose_count"], -p["id"]),
                           "fight_rank")
+    elif kind in ("top_alliances", "my_alliance"):
+        from . import alliances
+        rows = [{"id": a["alliance_id"], "rank": a["alliance_rank"], "alliance_name": a["alliance_name"],
+                 "president_name": a["president_name"], "score": a["score"]} for a in alliances.listing()]
+        if kind == "my_alliance":
+            mine = alliances.membership(player_id)
+            return [r for r in rows if mine and r["id"] == mine["alliance_id"]]
+        return rows[:top]
     else:
-        return []  # alliances: not implemented yet
+        return []
     return _around(ordered, player_id) if kind.startswith("my_") else ordered[:top]
 
 

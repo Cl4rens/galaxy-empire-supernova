@@ -83,6 +83,28 @@ CREATE TABLE IF NOT EXISTS battle_stats (
     losses    INTEGER NOT NULL DEFAULT 0,
     draws     INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS alliances (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    description TEXT NOT NULL,
+    activity    TEXT NOT NULL,
+    creator_id  INTEGER NOT NULL,
+    created_at  INTEGER NOT NULL,
+    auto_in     INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS alliance_members (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    alliance_id INTEGER NOT NULL REFERENCES alliances(id),
+    player_id   INTEGER NOT NULL UNIQUE REFERENCES players(id),
+    post        INTEGER NOT NULL,
+    joined_at   INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS alliance_applications (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    alliance_id INTEGER NOT NULL REFERENCES alliances(id),
+    player_id   INTEGER NOT NULL UNIQUE REFERENCES players(id),
+    created_at  INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS sessions (
     token      TEXT PRIMARY KEY,
     player_id  INTEGER NOT NULL REFERENCES players(id),

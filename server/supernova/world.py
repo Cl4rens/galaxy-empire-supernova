@@ -12,7 +12,7 @@ from urllib.parse import parse_qs
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse, Response
 
-from . import accounts, crypto, db, fleets, mails, player, ranking
+from . import accounts, alliances, crypto, db, fleets, mails, player, ranking
 from . import planet as planet_rules
 from . import universe
 
@@ -479,6 +479,121 @@ def fleet_info(planet_id: int, player_id: int = Depends(current_player)):
     return encrypted_json(content)
 
 
+# --- Alliances -------------------------------------------------------------------------------
+
+
+def alliance_call(fn):
+    try:
+        return fn()
+    except alliances.AllianceError as e:
+        return error(str(e))
+
+
+@router.get("/alliances.json")
+async def alliance_list(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    keyword = decrypt_param(params.get("keyword", "")) if params.get("do") == "search" else ""
+    return encrypted_json({"alliances": alliances.listing(keyword)})
+
+
+@router.post("/alliances.json")
+async def alliance_create(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    return alliance_call(lambda: encrypted_json(
+        alliances.create(player_id, params.get("alliance_name", ""), params.get("description", ""))))
+
+
+@router.get("/alliances/{alliance_id}.json")
+def alliance_details(alliance_id: int, player_id: int = Depends(current_player)):
+    return alliance_call(lambda: encrypted_json(alliances.details(alliance_id, player_id)))
+
+
+@router.post("/alliances/{alliance_id}.json")
+async def alliance_change(world_id: int, alliance_id: int, request: Request,
+                          player_id: int = Depends(current_player)):
+    """_method=delete dissolves the alliance, _method=put changes description/activity."""
+    params = await form(request)
+
+    def act():
+        if params.get("_method") == "delete":
+            alliances.dissolve(player_id, alliance_id)
+        else:
+            alliances.update_texts(player_id, alliance_id, params.get("description"), params.get("activity"))
+        return encrypted_json({})
+    return alliance_call(act)
+
+
+@router.post("/alliances/{alliance_id}/auto_in.json")
+async def alliance_auto_join(world_id: int, alliance_id: int, request: Request,
+                             player_id: int = Depends(current_player)):
+    on = (await form(request)).get("status") == "1"
+    return alliance_call(lambda: encrypted_json({"auto_in": alliances.set_auto_join(player_id, alliance_id, on)}))
+
+
+@router.post("/alliances/{alliance_id}/bag_log")
+def alliance_log(alliance_id: int, player_id: int = Depends(current_player)):
+    return encrypted_json({"log": []})  # the alliance treasury is not implemented
+
+
+@router.get("/alliance_memberships.json")
+def alliance_members(alliance_id: int, player_id: int = Depends(current_player)):
+    return encrypted_json({"alliance_members": alliances.members_view(alliance_id)})
+
+
+@router.post("/alliance_memberships/{membership_id}.json")
+async def alliance_member_change(world_id: int, membership_id: int, request: Request,
+                                 player_id: int = Depends(current_player)):
+    """_method=delete: leave (own membership) or kick; _method=put with level: change rank."""
+    params = await form(request)
+
+    def act():
+        if params.get("_method") == "put":
+            alliance_id = alliances.change_post(player_id, membership_id, int(params.get("level", 0)))
+        else:
+            alliance_id = alliances.kick_or_leave(player_id, membership_id)
+        empire = db.load_state(player_id)["empire"]
+        return encrypted_json({"alliance_members": alliances.members_view(alliance_id),
+                               "alliance_id": empire["alliance_id"], "alliance_name": empire["alliance_name"],
+                               "alliance_membership_id": empire["alliance_membership_id"]})
+    return alliance_call(act)
+
+
+@router.get("/alliance_applications.json")
+def alliance_applications(alliance_id: int, player_id: int = Depends(current_player)):
+    return encrypted_json({"applications": alliances.applications_view(alliance_id)})
+
+
+@router.post("/alliance_applications.json")
+async def alliance_apply(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    alliance_id = int((await form(request)).get("alliance_id", 0))
+
+    def act():
+        result = alliances.apply(player_id, alliance_id)
+        result["planet"] = {}
+        return encrypted_json(result)
+    return alliance_call(act)
+
+
+@router.post("/alliance_applications/{application_id}.json")
+async def alliance_application_change(world_id: int, application_id: int, request: Request,
+                                      player_id: int = Depends(current_player)):
+    """do=cancel (applicant), do=approve or do=reject (president, vice president)."""
+    action = (await form(request)).get("do")
+
+    def act():
+        if action == "cancel":
+            alliances.cancel_application(player_id, application_id)
+            return encrypted_json({"alliance_id": 0, "alliance_name": "", "alliance_application_id": 0})
+        alliance_id = alliances.decide(player_id, application_id, action == "approve")
+        return encrypted_json({"applications": alliances.applications_view(alliance_id)})
+    return alliance_call(act)
+
+
+@router.get("/acses")
+def alliance_joint_attacks(player_id: int = Depends(current_player)):
+    return encrypted_json({"info": [], "planet": {}, "empire": {}})  # joint attacks: not implemented
+
+
 # --- Rankings ---------------------------------------------------------------------------------
 
 
@@ -503,8 +618,15 @@ async def new_mails(world_id: int, request: Request, player_id: int = Depends(cu
 async def send_mail(world_id: int, request: Request, player_id: int = Depends(current_player)):
     """A mail to another player (message_type 3). Text fields are encrypted like the username."""
     params = await form(request)
+    if params.get("message_type") == str(mails.ALLIANCE):
+        try:
+            alliances.alliance_mail(player_id, decrypt_param(params.get("subject", ""))[:100],
+                                    decrypt_param(params.get("body", ""))[:5000])
+        except alliances.AllianceError as e:
+            return error(str(e))
+        return encrypted_json({})
     if params.get("message_type") != str(mails.USER):
-        return error("Alliance mails are not available yet")
+        return error("Unsupported message")
     to = decrypt_param(params.get("to", "")).strip()
     found = db.find_player(to)
     if found is None:

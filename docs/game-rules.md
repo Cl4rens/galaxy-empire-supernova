@@ -289,3 +289,13 @@ spied on and leave debris like any battle.
 
 Rankings are computed on request from all players' states; fine for community servers with
 up to a few hundred players.
+
+## Alliances
+
+- Founding needs an alliance depot on any planet and costs 999 metal, crystal and deuterium
+  from the current planet. Names are unique (case-insensitive).
+- Up to 50 members. The president and vice presidents accept or reject applications, change
+  ranks and kick members; with automatic joining applications are accepted at once.
+- If the president leaves, the longest-serving vice president (or member) takes over; the last
+  member leaving dissolves the alliance.
+- The alliance score is the sum of its members' points.

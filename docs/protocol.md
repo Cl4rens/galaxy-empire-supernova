@@ -395,6 +395,26 @@ Colonization report: `body.mission_type` 2 with `event_info`.
 `my_*` lists show the entries around the player. `empire.rank` and `empire.score` appear in the
 top bar.
 
+### Alliances
+
+| Request | Meaning |
+|---------|---------|
+| `GET alliances.json` (`do=search&keyword=ENC2`) | list or search: `{"alliances": [...]}` |
+| `POST alliances.json` `alliance_name, description` | found an alliance |
+| `GET alliances/<id>.json` | overview (president, vice presidents, members, texts, `bag`) |
+| `POST alliances/<id>.json` `_method=put` / `_method=delete` | change texts / dissolve |
+| `POST alliances/<id>/auto_in.json` `status=0/1` | accept applications automatically |
+| `GET alliance_memberships.json?alliance_id=` | member list |
+| `POST alliance_memberships/<id>.json` `_method=put&level=` / `_method=delete` | change rank / kick or leave |
+| `GET alliance_applications.json?alliance_id=` | open applications |
+| `POST alliance_applications.json` `alliance_id` | apply |
+| `POST alliance_applications/<id>.json` `do=approve/reject/cancel` | decide or withdraw |
+| `POST messages.json` `message_type=4` | mail to all members |
+
+Ranks (`level`): 0 member, 1 vice president, 2 president. The empire carries `alliance_id`,
+`alliance_name`, `alliance_membership_id` and `alliance_application_id`. The treasury
+(`bag_log`) and coordinated attacks (`acses`) answer empty lists.
+
 ### Errors
 
 For a status other than 200 the client shows the response body **as text** (or the `<title>` of

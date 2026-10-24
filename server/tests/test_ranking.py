@@ -28,7 +28,7 @@ def test_ranks_endpoint_orders_by_score():
     assert top == sorted(top, key=lambda r: -r["score"])
     mine = decrypt_json(c.get("/world/1/ranks?do=my_rank"))["rank"]
     assert any(r["id"] == me["user_id"] for r in mine)
-    assert decrypt_json(c.get("/world/1/ranks?do=top_alliances"))["rank"] == []
+    assert isinstance(decrypt_json(c.get("/world/1/ranks?do=top_alliances"))["rank"], list)
 
 
 def test_battle_stats():
