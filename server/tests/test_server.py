@@ -1,18 +1,13 @@
 """End-to-end tests of the client-facing API, using a random key instead of the real one."""
 
 import json
-import os
 import secrets
-import tempfile
 from urllib.parse import quote
 
-os.environ["SUPERNOVA_REQUIRE_KEY"] = "0"
-os.environ["SUPERNOVA_DATA"] = tempfile.mkdtemp()
+from fastapi.testclient import TestClient
 
-from fastapi.testclient import TestClient  # noqa: E402
-
-from supernova import crypto, world  # noqa: E402
-from supernova.app import app  # noqa: E402
+from supernova import crypto, world
+from supernova.app import app
 
 KEY = secrets.token_bytes(32)
 world.CLIENT_KEY = KEY
