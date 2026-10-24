@@ -411,3 +411,19 @@ Following the client's help texts, with Supernova's numbers:
   1 + (Dynamic Power Tech level) Behemoths along.
 - Pioneer techs cost 100 × (level + 1)² dark energy and 10 × (level + 1) dark matter and take
   (level + 1) h / speed; one at a time.
+
+## ECM
+
+- One ECM module per empire, levels 0–20. Each level adds 2 % weapons, shields and armour to all
+  fleets and defense.
+- A try costs 1 + level / 2 chips (rounded down). It succeeds with 50 % / (1 + level / 4) plus a
+  share of the gathered fortune. A failure adds fortune; full fortune (5 + 5 × level) guarantees
+  success. Fortune is lost at midnight UTC.
+- Chips: 1 per pirate level from beaten pirate bases, or 5 dark matter each.
+
+## System lords
+
+- The owner with the most points in a solar system is its lord (from 1,000 points on).
+- Rank = 1 + log2(points / 1,000), at most 21 (Grand Marshal).
+- The lord's planets in that system get +rank % weapons, shields and armour and +2 × rank % mine
+  output. Lords are worked out once a minute.

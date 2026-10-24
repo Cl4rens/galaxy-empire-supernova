@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse, Response
 
 from . import accounts, acs, alliances, bookmarks, chat, checkin, combat, crypto, db, faq, fleets, gifts, mails
-from . import flagships, kryptons, notices, player, quests, ranking, repairs
+from . import ecm, flagships, kryptons, lordship, notices, player, quests, ranking, repairs
 from . import economy as eco
 from . import planet as planet_rules
 from . import universe
@@ -1003,6 +1003,36 @@ async def flagship_research_start(world_id: int, request: Request, player_id: in
 @router.post("/flagship_researches/speedup.json")
 def flagship_research_speedup(player_id: int = Depends(current_player)):
     return error("Speeding up is not available on Supernova")
+
+
+# --- Electronic counter measures and system lords ------------------------------------------
+
+
+@router.get("/electronic_warfare/info.json")
+def ecm_info(player_id: int = Depends(current_player)):
+    with db.player_state(player_id) as state:
+        return encrypted_json(ecm.view(state))
+
+
+@router.post("/electronic_warfare/level_up")
+async def ecm_level_up(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    now = time.time()
+    try:
+        with db.player_state(player_id) as state:
+            result = ecm.level_up(state, params.get("auto_buy") == "1")
+            return encrypted_json(dict(result, empire=player.empire_summary(state),
+                                       planet=planet_rules.client_view(state["empire"], now)))
+    except ValueError as e:
+        return error(str(e))
+
+
+@router.get("/systems/lord_config")
+@router.post("/systems/lord_config")
+def lord_config(player_id: int = Depends(current_player)):
+    return encrypted_json({"lord_configs": lordship.owned_systems(player_id), "lord_des": (
+        "The strongest player in a solar system is its lord. The rank grows with the lord's points and "
+        "strengthens the lord's planets in that system.")})
 
 
 # --- Ship repair ---------------------------------------------------------------------------

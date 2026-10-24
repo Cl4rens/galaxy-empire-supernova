@@ -16,7 +16,7 @@ import time
 
 from . import combat, config, db, ranking
 from . import economy as eco
-from . import flagships, kryptons, mails, npc, protection, quests, repairs
+from . import ecm, flagships, kryptons, lordship, mails, npc, protection, quests, repairs
 from . import planet as planet_rules
 from . import universe
 
@@ -458,11 +458,14 @@ def _side(name: str, empire: dict, units: dict[int, int], planet: dict | None = 
     planet = planet or {}
     behemoths = units.get(flagships.BEHEMOTH, 0)
     behemoth_bonus = flagships.attack_bonus(behemoths, flagships.behemoth_limit(state)) if state and behemoths else 0
+    ecm_bonus = ecm.percent(state) if state else 0
+    lord = lordship.bonus(planet, empire.get("user_id", 0)) if planet and empire.get("user_id") else {}
     return combat.Side(name, units, planet_rules.research_level(empire, eco.WEAPONS_TECH),
                        planet_rules.research_level(empire, eco.SHIELDING_TECH),
                        planet_rules.research_level(empire, eco.ARMOUR_TECH),
-                       kryptons.bonus(planet, "attack") + behemoth_bonus, kryptons.bonus(planet, "shield"),
-                       kryptons.bonus(planet, "armour"))
+                       kryptons.bonus(planet, "attack") + behemoth_bonus + ecm_bonus + lord.get("increase_attack", 0),
+                       kryptons.bonus(planet, "shield") + ecm_bonus + lord.get("increase_shield", 0),
+                       kryptons.bonus(planet, "armour") + ecm_bonus + lord.get("increase_armour", 0))
 
 
 def _salvage(player_id: int, debris: dict, own_units: dict[int, int], enemy_lost: dict[int, int],
@@ -690,21 +693,23 @@ def _attack_pirates(row) -> str:
                      _tech_bonus(owner_state["empire"]), pirates, pirate_bonus)
     salvage_note = _salvage(row["owner_id"], result["debris"], _ships(row), result["defend_lost"])
     loot = {res: 0 for res in RESOURCES}
-    stones = 0
+    stones = chips = 0
     if result["winner"] == "attacker":
         space = eco.cargo_capacity(result["attacker_left"])
         loot = combat.plunder({r: 2 * v for r, v in base["loot"].items()}, space)  # all of it, if it fits
         if base["fleet"]:
             npc.beat_pirates(*target, row["arrival_time"])
             stones = kryptons.pirate_stones(level)
+            chips = level
             with db.player_state(row["owner_id"]) as state:
                 kryptons.add_stones(state, stones)
+                ecm.add_chips(state, chips)
     add_debris(*target, result["debris"]["metal"], result["debris"]["crystal"])
     info = _event_info(row, row["arrival_time"])
     info["end_planet_name"] = npc.pirate_name(level)
     notes = [_loot_text(loot)] if result["winner"] == "attacker" else []
     if stones:
-        notes.append(f"Krypton stones: {stones:,}")
+        notes.append(f"Krypton stones: {stones:,}, ECM chips: {chips}")
     if salvage_note:
         notes.append(salvage_note)
     body = {"mission_type": ATTACK_PIRATES, "is_returning": False, "event_info": info,

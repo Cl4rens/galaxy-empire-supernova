@@ -169,16 +169,22 @@ def system_view(galaxy: int, system: int, viewer_id: int = 0) -> dict:
             metal, crystal = debris[position]
             pirate.update(has_debris=True, debris_desc=f"Debris: {metal:,} metal, {crystal:,} crystal")
         planets.append(pirate)
-    return {
+    from . import lordship
+    view = {
         "system_id": system_id(galaxy, system),
         "galaxy_position": galaxy,
         "system_position": system,
         "planets": planets,
     }
+    lord = lordship.system_info(galaxy, system)
+    if lord:
+        view["lord_info"] = lord
+    return view
 
 
 def galaxy_map(galaxy: int, x: int, y: int) -> dict:
     """The systems around map tile (x, y), with their number of players."""
+    from . import lordship
     counts = dict(db.connect().execute(
         "SELECT system, COUNT(DISTINCT player_id) FROM planets WHERE galaxy = ? GROUP BY system", (galaxy,)).fetchall())
     debris = dict(db.connect().execute(
@@ -197,7 +203,7 @@ def galaxy_map(galaxy: int, x: int, y: int) -> dict:
                 "galaxy_position": galaxy,
                 "system_position": system,
                 "user_count": counts.get(system, 0),
-                "lord_info": {"lord_name": "", "lord_level": 0},
+                "lord_info": lordship.system_info(galaxy, system) or {"lord_name": "", "lord_level": 0},
                 "debris_planets": debris.get(system, 0),
                 "strong_planets": 0,
                 "weak_planets": 0,

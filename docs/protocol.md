@@ -593,6 +593,15 @@ cannot send them.
 
 The client assumes 250 alloy fragments per Behemoth.
 
+### ECM and system lords
+
+| Request | Answer |
+|---------|--------|
+| `GET electronic_warfare/info.json` | `{curr_lvl, max_lvl, curr_bless, chip_own, curr_effect, next_effect, can_auto_up, item_info}`; an effect is `{enhence (fraction), chip_cost, full_bless}` |
+| `POST electronic_warfare/level_up` `auto_buy` | the same view plus `empire` and `planet`; `auto_buy=1` buys missing chips with dark matter |
+| `GET systems/{galaxy}/{system}` | also `lord_info: {lord_level, lord_name}` when the system has a lord (the galaxy map always sends `lord_info`) |
+| `GET systems/lord_config` | `{lord_configs: {"g:s": {level, effect: {increase_attack, increase_shield, increase_armour, increase_metal, increase_crystal, increase_deuterium}}}, lord_des}` for the systems the player rules |
+
 ### Errors
 
 For a status other than 200 the client shows the response body **as text** (or the `<title>` of
