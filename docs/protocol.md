@@ -531,6 +531,23 @@ Kryptons are drawn by `krypton_type` and stars (`krypton_rank`): types 1 weapon,
 `{krypton_type, krypton_rank, krypton_level}`. Battle reports show the krypton bonuses in
 `attack_krypton_bonus` and `defend_krypton_bonus`.
 
+### Ship repair
+
+Opened from the robotics factory ("Repair ships").
+
+| Request | Answer |
+|---------|--------|
+| `GET repair_events/<planet_id>` | `{base_info: {finished_time, handing_over, switch_repair, all_switch, switch_resolve}, fleets_info: [{fleet_type, fleet_count, single_r_time}], planet: {current_server_time}}`; `all_switch: false` closes the screen |
+| `POST repair_events/` `planet_id, fleet_type, fleet_count` (comma lists) | start: `{finish_time, damaged_fleets, planet, command}` |
+| `POST repair_events/handing_over?planet_id=` | `{repair_fleets: [{fleet_type, fleet_count}], planet, command}` |
+| `POST repair_events/resolve` `fleet_type, fleet_count` | `{resolve_fleets, resolve_value: {metal, crystal}}` (question) |
+| `POST repair_events/make_sure_for_resolve` | dismantle: `{damaged_fleets, planet, command}` |
+| `POST repair_events/change_repair_switch` `switch` | `{sw_repair}` |
+| `POST repair_events/repair_right_now`, `repair_speed_up` | instant repair for credits; Supernova answers an error |
+
+`command` is `{update: {fleets}, planet, empire}`. In battle reports the defender's
+`defender_repair_sw: 1` shows "Ship Repair 50%" instead of the recovery ratio.
+
 ### Errors
 
 For a status other than 200 the client shows the response body **as text** (or the `<title>` of

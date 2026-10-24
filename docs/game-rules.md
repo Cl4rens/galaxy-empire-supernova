@@ -365,3 +365,12 @@ The original rules are lost; Supernova's own:
   (3 times). Dark matter is found on expeditions.
 - **Krypton research** (levels 1-10) costs 20 × (level + 1) dark matter and takes
   (level + 1) hours / speed.
+
+## Ship repair
+
+As the client's help text says: when ship repair is switched on (the default), 50 % of the
+ships a defender loses at a planet stay there as damaged ships. Repairing costs no resources:
+each ship takes half its build time with the planet's robotics factory, all selected ships one
+after another. Repaired ships wait in the dock until the player takes them over. Damaged ships
+can also be dismantled for 30 % of their metal and crystal cost. Defense units are rebuilt as
+before (70 %) and cannot be repaired.

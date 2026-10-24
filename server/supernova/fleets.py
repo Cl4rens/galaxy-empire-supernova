@@ -16,7 +16,7 @@ import time
 
 from . import combat, config, db, ranking
 from . import economy as eco
-from . import kryptons, mails, npc, quests
+from . import kryptons, mails, npc, quests, repairs
 from . import planet as planet_rules
 from . import universe
 
@@ -513,6 +513,7 @@ def _attack(row, target_owner: int, state: dict, planet: dict) -> str:
     for f in planet["fleets"]:
         if f["fleet_type"] in defend_units:
             f["amount"] = result["defender_left"].get(f["fleet_type"], 0) + result["rebuilt"].get(f["fleet_type"], 0)
+    repaired = repairs.add_damaged(planet, result["defend_lost"])
     loot = {res: 0 for res in RESOURCES}
     if result["winner"] == "attacker":
         loot = combat.plunder(planet, eco.cargo_capacity(result["attacker_left"]))
@@ -529,8 +530,10 @@ def _attack(row, target_owner: int, state: dict, planet: dict) -> str:
     notes = [_loot_text(loot)] if result["winner"] == "attacker" else []
     if moon:
         notes.append("The debris gathered into a moon.")
+    if repaired:
+        info["defender_recover_ratio"] = 0
     body = {"mission_type": ATTACK, "is_returning": False, "event_info": info, "notify_message": " ".join(notes),
-            "attack_result": dict(result["report"], loot=loot)}
+            "attack_result": dict(result["report"], loot=loot), "defender_repair_sw": int(bool(repaired))}
     subject = f"Battle report [{info['end_planet_pos']}]"
     mails.send(row["owner_id"], mails.REPORT, mails.SENDER_FLEET, attacker_name, subject, body, row["arrival_time"])
     mails.send(target_owner, mails.REPORT, mails.SENDER_FLEET, defender_name, subject, body, row["arrival_time"])

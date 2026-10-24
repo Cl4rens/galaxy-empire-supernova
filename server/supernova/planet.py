@@ -477,7 +477,7 @@ def client_view(empire: dict, now: float) -> dict:
     """The main_planet object as the client expects it."""
     planet = empire["main_planet"]
     rates = production(planet, empire)
-    hidden = ("buildings", "building_events", "last_update", "moon", "last_scan", "krypton_bonus")
+    hidden = ("buildings", "building_events", "last_update", "moon", "last_scan", "krypton_bonus", "repair")
     view = {k: v for k, v in planet.items() if k not in hidden}
     view.update({res: int(planet[res]) for res in RESOURCES})
     view.update({f"{res}_max": capacity(planet, res) for res in RESOURCES})

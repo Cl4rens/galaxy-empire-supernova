@@ -13,7 +13,8 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse, Response
 
 from . import accounts, alliances, bookmarks, chat, checkin, crypto, db, faq, fleets, gifts, mails, notices
-from . import kryptons, player, quests, ranking
+from . import kryptons, player, quests, ranking, repairs
+from . import economy as eco
 from . import planet as planet_rules
 from . import universe
 
@@ -863,6 +864,88 @@ async def krypton_shop_buy(world_id: int, request: Request, player_id: int = Dep
     params = await form(request)
     return krypton_call(player_id, lambda state, now: kryptons.buy(
         state, params.get("type", ""), _int(params, "times", 1), now))
+
+
+# --- Ship repair ---------------------------------------------------------------------------
+
+
+def repair_call(player_id: int, planet_id, act) -> Response:
+    """act(planet, state, now) -> dict; the answer gets the client's "command" block."""
+    now = time.time()
+    try:
+        with db.player_state(player_id) as state:
+            empire = state["empire"]
+            if planet_id and str(planet_id).isdigit():
+                planet_rules.switch_planet(empire, int(planet_id))
+            planet_rules.tick(empire, now)
+            planet = empire["main_planet"]
+            result = act(planet, state, now)
+            view = planet_rules.client_view(empire, now)
+            command = {"update": {"fleets": [planet_rules.fleet_view(planet, f) for f in planet["fleets"]]},
+                       "planet": view, "empire": player.empire_summary(state)}
+            return encrypted_json(dict(result, command=command, planet=view,
+                                       damaged_fleets=repairs.view(planet, now)["fleets_info"]))
+    except planet_rules.GameError as e:
+        return error(str(e))
+
+
+@router.post("/repair_events/repair_right_now")
+@router.post("/repair_events/repair_speed_up")
+def repair_instant(player_id: int = Depends(current_player)):
+    return error("Instant repair is not available on Supernova")
+
+
+@router.post("/repair_events/handing_over")
+async def repair_hand_over(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+
+    def act(planet, state, now):
+        ships = repairs.hand_over(planet, now)
+        return {"repair_fleets": [{"fleet_type": t, "fleet_count": n} for t, n in ships.items()]}
+    return repair_call(player_id, params.get("planet_id"), act)
+
+
+@router.post("/repair_events/resolve")
+async def repair_dismantle_ask(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    ships = {int(params.get("fleet_type") or 0): int(params.get("fleet_count") or 0)}
+    if not all(t in eco.UNITS for t in ships):
+        return error("Unknown ship")
+    return encrypted_json({"resolve_fleets": [{"fleet_type": t, "fleet_count": n} for t, n in ships.items()],
+                           "resolve_value": repairs.dismantle_value(ships)})
+
+
+@router.post("/repair_events/make_sure_for_resolve")
+async def repair_dismantle(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    return repair_call(player_id, params.get("planet_id"), lambda planet, state, now: {
+        "resolve_value": repairs.dismantle(planet, params.get("fleet_type", ""), params.get("fleet_count", ""))})
+
+
+@router.post("/repair_events/change_repair_switch")
+async def repair_switch(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    return repair_call(player_id, params.get("planet_id"), lambda planet, state, now: {
+        "sw_repair": repairs.toggle(planet, params.get("switch") == "1")})
+
+
+@router.post("/repair_events/")
+@router.post("/repair_events")
+async def repair_start(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    return repair_call(player_id, params.get("planet_id"), lambda planet, state, now: {
+        "finish_time": repairs.start(planet, params.get("fleet_type", ""), params.get("fleet_count", ""), now)})
+
+
+@router.get("/repair_events/{planet_id}")
+def repair_view(planet_id: int, player_id: int = Depends(current_player)):
+    now = time.time()
+    with db.player_state(player_id) as state:
+        planet = planet_rules.find_planet(state["empire"], planet_id)
+        if planet is None:
+            return error("This is not your planet", 404)
+        planet_rules.tick(state["empire"], now)
+        return encrypted_json(repairs.view(planet, now))
 
 
 # --- Chat ------------------------------------------------------------------------------------

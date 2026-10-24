@@ -170,6 +170,7 @@ Uninstall any old copy of the original game first, because the signatures differ
 - [x] Moons: forming after battles, moon buildings, flights to moons, sensor array, transmit portal
 - [x] Bookmarks, news, daily check-in, gifts, help
 - [x] Kryptons: refining, storage, planet slots, upgrades, research, merchant
+- [x] Ship repair after defending
 - [ ] Support for 64-bit-only devices
 - [ ] Game logic: buildings, research, fleets, combat, alliances
 
