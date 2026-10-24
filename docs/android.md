@@ -26,6 +26,7 @@ password as usual.
 | Device | Android | Result |
 |--------|---------|--------|
 | BlueStacks 5 (Nougat32), all runtime permissions revoked, data cleared | 7.1.1 | starts, no permission dialog, plays |
+| BlueStacks 5 (Tiramisu64, x86_64 with ARM translation), permissions revoked, data cleared | 13 | starts, no permission dialog; tutorial, gifts, building, chat (keyboard input), solar system, background and resume work |
 
 Reports from real devices are welcome (see "Contributing" in the README).
 
