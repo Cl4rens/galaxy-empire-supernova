@@ -14,6 +14,7 @@ from fastapi.responses import PlainTextResponse, Response
 
 from . import crypto, db, player
 from . import planet as planet_rules
+from . import universe
 
 log = logging.getLogger("supernova")
 router = APIRouter(prefix="/world/{world_id}")
@@ -82,10 +83,13 @@ async def guest_login(world_id: int, request: Request):
         player_id = found[0]
     else:
         udid = request.headers.get("openudid", "")
-        player_id, username, _ = db.create_player(player.guest_username, udid, player.new_state)
+        player_id, username, _ = db.create_player(
+            player.guest_username, udid,
+            lambda pid, name: player.new_state(pid, name, universe.place_home(pid, player.HOME_PLANET_NAME)))
         log.info("new guest %s (udid %s)", username, udid)
     now = time.time()
     with db.player_state(player_id) as state:
+        universe.ensure_registered(player_id, state["empire"]["main_planet"])
         planet_rules.tick(state["empire"], now)
         content = player.login_response(state, now)
     return logged_in(player_id, content)
@@ -284,6 +288,40 @@ def fleets_build_info(planet_id: int, fleet_id: int, player_id: int = Depends(cu
         if changed is None:
             return error("Unknown unit", 404)
         return fleet_update(state, changed, now)
+
+
+# --- Galaxy map and solar systems ------------------------------------------------------
+
+
+@router.get("/systems/{sid}/locate")
+def locate_system(sid: int, player_id: int = Depends(current_player)):
+    """Map tile of a system, used to center the galaxy map."""
+    _, system = universe.system_from_id(sid)
+    x, y = universe.map_coordinates(system)
+    return encrypted_json({"system_coordinate_x": x, "system_coordinate_y": y})
+
+
+@router.get("/systems/{system_position}/{galaxy_position}")
+def system_by_position(system_position: int, galaxy_position: int, player_id: int = Depends(current_player)):
+    """Note the order in the URL: system first, then galaxy."""
+    if not universe.valid_system(galaxy_position, system_position):
+        return error("This system does not exist", 404)
+    return encrypted_json(universe.system_view(galaxy_position, system_position))
+
+
+@router.get("/systems/{sid}")
+def system_by_id(sid: int, player_id: int = Depends(current_player)):
+    galaxy, system = universe.system_from_id(sid)
+    if not universe.valid_system(galaxy, system):
+        return error("This system does not exist", 404)
+    return encrypted_json(universe.system_view(galaxy, system))
+
+
+@router.get("/galaxy_map.json")
+def galaxy_map(galaxy_position: int, x: int, y: int, player_id: int = Depends(current_player)):
+    if not 1 <= galaxy_position <= universe.GALAXIES:
+        return error("This galaxy does not exist", 404)
+    return encrypted_json(universe.galaxy_map(galaxy_position, x, y))
 
 
 # --- Features we do not implement yet, answered with their "nothing here" values ---------

@@ -139,3 +139,11 @@ immediately.
 | 20 | Plasma Cannon | 50,000 | 50,000 | 30,000 | Shipyard 8, Plasma 7 |
 | 21 | Small Shield Dome | 10,000 | 10,000 | 0 | Shipyard 1, Shielding 2 |
 | 22 | Large Shield Dome | 50,000 | 50,000 | 0 | Shipyard 6, Shielding 6 |
+
+## Universe
+
+- 9 galaxies × 499 solar systems × 15 planet positions, as in OGame. Position 16 of every
+  system is the expedition point, 17–21 are pirate bases (shown, not attackable yet).
+- New players get a home planet in galaxy 1 at position 4–12 of a random system. The range of
+  systems grows with the number of planets (10 + planets), so early players live close together
+  instead of being spread over 4,491 systems.

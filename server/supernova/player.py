@@ -9,20 +9,24 @@ import time
 
 from . import economy as eco
 from . import planet as planet_rules
+from . import universe
 
 # Planet lots 1-3 are reserved for the mines; free building lots are 4-15.
 MINE_POSITIONS = {eco.METAL_MINE: 1, eco.CRYSTAL_MINE: 2, eco.DEUTERIUM_MINE: 3}
 
 
 PLANET_TYPE_CAPITAL = 2
+HOME_PLANET_NAME = "Homeworld"
 
 
 def guest_username(player_id: int) -> str:
     return f"Commander{player_id}"
 
 
-def new_state(player_id: int, username: str) -> dict:
-    planet_id = player_id
+def new_state(player_id: int, username: str, home: dict | None = None) -> dict:
+    """`home` is where universe.place_home put the planet; without it (tests) a fixed spot."""
+    home = home or {"planet_id": player_id, "galaxy": 1, "system": player_id % 499 + 1, "position": 8}
+    planet_id = home["planet_id"]
     buildings = [
         {
             "building_id": planet_id * 100 + btype,
@@ -40,12 +44,13 @@ def new_state(player_id: int, username: str) -> dict:
         {"research_id": player_id * 100 + rtype, "research_type": rtype, "research_level": 0}
         for rtype in eco.RESEARCHES
     ]
-    position = {"galaxy_position": 1, "system_position": player_id % 499 + 1, "planet_position": 8}
+    position = {"galaxy_position": home["galaxy"], "system_position": home["system"],
+                "planet_position": home["position"]}
     main_planet = {
         "planet_id": planet_id,
-        "planet_name": "Homeworld",
+        "planet_name": HOME_PLANET_NAME,
         "planet_type": PLANET_TYPE_CAPITAL,
-        "system_id": position["system_position"],
+        "system_id": universe.system_id(home["galaxy"], home["system"]),
         **position,
         "metal": 500,
         "crystal": 500,

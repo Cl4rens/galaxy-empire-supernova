@@ -19,6 +19,15 @@ CREATE TABLE IF NOT EXISTS players (
     created_at INTEGER NOT NULL,
     state      TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS planets (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id  INTEGER NOT NULL REFERENCES players(id),
+    galaxy     INTEGER NOT NULL,
+    system     INTEGER NOT NULL,
+    position   INTEGER NOT NULL,
+    name       TEXT NOT NULL,
+    UNIQUE (galaxy, system, position)
+);
 CREATE TABLE IF NOT EXISTS sessions (
     token      TEXT PRIMARY KEY,
     player_id  INTEGER NOT NULL REFERENCES players(id),
@@ -26,8 +35,13 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 """
 
-_lock = threading.Lock()
+_lock = threading.RLock()  # reentrant: universe code runs inside create_player
 _conn: sqlite3.Connection | None = None
+
+
+def lock() -> threading.RLock:
+    """The lock that serializes writes to the database."""
+    return _lock
 
 
 def connect(path: Path | None = None) -> sqlite3.Connection:
