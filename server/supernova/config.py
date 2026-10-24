@@ -20,3 +20,8 @@ REQUIRE_CLIENT_KEY = os.environ.get("SUPERNOVA_REQUIRE_KEY", "1") != "0"
 
 # Game speed: production and build times are multiplied/divided by this.
 SPEED = float(os.environ.get("SUPERNOVA_SPEED", "1"))
+
+# Newbie protection (see protection.py): players below NEWBIE_POINTS are protected; from
+# STRONG_POINTS on, the 1:5 points rule no longer applies.
+NEWBIE_POINTS = int(os.environ.get("SUPERNOVA_NEWBIE_POINTS", "5000"))
+STRONG_POINTS = int(os.environ.get("SUPERNOVA_STRONG_POINTS", "500000"))

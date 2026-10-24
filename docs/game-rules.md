@@ -374,3 +374,15 @@ each ship takes half its build time with the planet's robotics factory, all sele
 after another. Repaired ships wait in the dock until the player takes them over. Damaged ships
 can also be dismantled for 30 % of their metal and crystal cost. Defense units are rebuilt as
 before (70 %) and cannot be repaired.
+
+## Newbie protection
+
+As in OGame:
+
+- Players below 5,000 points can only be attacked by other players below 5,000 points (and
+  cannot attack stronger players).
+- Nobody can attack a player with less than a fifth of their own points, or more than five
+  times their points, unless the weaker player has at least 500,000 points.
+
+Espionage, transport and pirate bases are not affected. Operators can change the limits with
+`SUPERNOVA_NEWBIE_POINTS` and `SUPERNOVA_STRONG_POINTS`.

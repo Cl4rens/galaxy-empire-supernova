@@ -16,7 +16,7 @@ import time
 
 from . import combat, config, db, ranking
 from . import economy as eco
-from . import kryptons, mails, npc, quests, repairs
+from . import kryptons, mails, npc, protection, quests, repairs
 from . import planet as planet_rules
 from . import universe
 
@@ -138,7 +138,7 @@ def allowed_missions(player_id: int, origin: dict, target: tuple[int, int, int],
     else:
         if ESPIONAGE_PROBE in ships:
             missions.append(ESPIONAGE)
-        if any(combat.STATS[t].weapon > 0 for t in ships):
+        if any(combat.STATS[t].weapon > 0 for t in ships) and                 protection.can_attack(player_id, row["player_id"]) == protection.ATTACK_OK:
             missions.append(ATTACK)
     return missions
 
@@ -175,6 +175,11 @@ def send(player_id: int, state: dict, params: dict, now: float) -> None:
     moon = targets_moon(params)
     info = plan(empire, player_id, ships, target, percent, origin, moon)
     if mission not in info["missions"]:
+        target_row = target_planet(target, moon)
+        if mission == ATTACK and target_row and target_row["player_id"] != player_id:
+            verdict = protection.can_attack(player_id, target_row["player_id"])
+            if verdict != protection.ATTACK_OK:
+                raise FleetError(protection.MESSAGES[verdict])
         raise FleetError("This mission is not possible here")
     if mission == TRANSMIT:
         _transmit(empire, origin, target, ships, now)
@@ -444,6 +449,31 @@ def _side(name: str, empire: dict, units: dict[int, int], planet: dict | None = 
                        planet_rules.research_level(empire, eco.ARMOUR_TECH),
                        kryptons.bonus(planet, "attack"), kryptons.bonus(planet, "shield"),
                        kryptons.bonus(planet, "armour"))
+
+
+def unit_info(empire: dict, planet: dict, ftype: int) -> dict:
+    """The unit info screen: values with the empire's technologies and the planet's kryptons."""
+    side = _side("", empire, {ftype: 1}, planet)
+    stats = combat.STATS[ftype]
+
+    def bonus(base: float, factor: float) -> int:
+        return round(base * factor) - round(base)
+
+    names = {**{t: r.name for t, r in eco.UNITS.items()}, **eco.SPECIAL_UNITS}
+    rapid = [{"unit_name": names.get(t, str(t)), "damage_rate": n, "bonus_damage_rate": 0}
+             for t, n in combat.RAPID_FIRE.get(ftype, {}).items()]
+    rapid += [{"unit_name": names.get(t, str(t)), "damage_rate": -n, "bonus_damage_rate": 0}
+              for t, against in combat.RAPID_FIRE.items() for target, n in against.items() if target == ftype]
+    info = {"fatal_damage_list": rapid,
+            "armour": round(stats.hull), "bonus_armour": bonus(stats.hull, side.armour_factor()),
+            "shield": stats.shield, "bonus_shield": bonus(stats.shield, side.shield_factor()),
+            "attack": stats.weapon, "bonus_attack": bonus(stats.weapon, side.weapon_factor()),
+            "speed": 0, "bonus_speed": 0, "capacity": 0, "fuel_usage": 0}
+    if ftype in eco.SHIPS:
+        ship = eco.SHIPS[ftype]
+        speed = eco.ship_speed(ftype, _research_levels(empire))
+        info.update(speed=ship.speed, bonus_speed=speed - ship.speed, capacity=ship.cargo, fuel_usage=ship.fuel)
+    return info
 
 
 def _krypton_bonus(side: combat.Side) -> dict:

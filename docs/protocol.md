@@ -548,6 +548,19 @@ Opened from the robotics factory ("Repair ships").
 `command` is `{update: {fleets}, planet, empire}`. In battle reports the defender's
 `defender_repair_sw: 1` shows "Ship Repair 50%" instead of the recovery ratio.
 
+### Newbie protection, unit info, buffs
+
+- System views carry `can_attack` per planet slot, from the viewer's side: 0 attack possible,
+  1 the target is too strong, 2 the target is too weak (newbie protection). The client then
+  shows the planet as weak/strong and refuses the attack. `is_protected` (1 = shield, from a
+  shop item) also blocks attacks.
+- `GET fleets/<fleet_id>` (unit info screen): `{fatal_damage_list: [{unit_name, damage_rate,
+  bonus_damage_rate}], armour, bonus_armour, shield, bonus_shield, attack, bonus_attack, speed,
+  bonus_speed, capacity, fuel_usage}`. A positive `damage_rate` is rapid fire against the unit,
+  a negative one rapid fire from it; the client prints the number as it is.
+- `GET users/my_buffs_ext?planet_id=` answers `{buff_list: [{buffer_name, end_time,
+  buffer_desc, buff_type}], krypton_buffs: [{description}], kryptons}`.
+
 ### Errors
 
 For a status other than 200 the client shows the response body **as text** (or the `<title>` of

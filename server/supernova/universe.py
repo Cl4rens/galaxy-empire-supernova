@@ -136,7 +136,7 @@ def _debris_in(galaxy: int, system: int) -> dict[int, tuple[int, int]]:
     return {r["position"]: (r["metal"], r["crystal"]) for r in rows if r["metal"] or r["crystal"]}
 
 
-def system_view(galaxy: int, system: int) -> dict:
+def system_view(galaxy: int, system: int, viewer_id: int = 0) -> dict:
     """One solar system: 15 planet positions, the expedition point and 5 pirate bases."""
     occupied = {row["position"]: row for row in _planets_in(galaxy, system)}
     planets = []
@@ -144,6 +144,9 @@ def system_view(galaxy: int, system: int) -> dict:
         row = occupied.get(position)
         if row:
             slot = _slot(galaxy, system, position, row["name"], row["id"], row["player_id"], row["username"])
+            if viewer_id:
+                from . import protection
+                slot["can_attack"] = protection.can_attack(viewer_id, row["player_id"])
             if row["moon_id"]:
                 slot["moon_array"] = [{"moon_id": row["moon_id"], "moon_name": row["moon_name"]}]
             planets.append(slot)

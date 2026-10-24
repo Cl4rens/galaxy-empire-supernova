@@ -12,8 +12,8 @@ from urllib.parse import parse_qs
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse, Response
 
-from . import accounts, alliances, bookmarks, chat, checkin, crypto, db, faq, fleets, gifts, mails, notices
-from . import kryptons, player, quests, ranking, repairs
+from . import accounts, alliances, bookmarks, chat, checkin, combat, crypto, db, faq, fleets, gifts, mails
+from . import kryptons, notices, player, quests, ranking, repairs
 from . import economy as eco
 from . import planet as planet_rules
 from . import universe
@@ -196,6 +196,29 @@ async def planet_info_at(world_id: int, request: Request, player_id: int = Depen
         "temp_max": 150 - 12 * min(position, universe.PLANET_POSITIONS),
         "temp_min": 110 - 12 * min(position, universe.PLANET_POSITIONS),
     })
+
+
+@router.get("/fleets/{fleet_id}")
+def unit_info(fleet_id: int, player_id: int = Depends(current_player)):
+    with db.player_state(player_id) as state:
+        empire = state["empire"]
+        for planet in planet_rules.bodies(empire):
+            f = next((f for f in planet["fleets"] if f["fleet_id"] == fleet_id), None)
+            if f and f["fleet_type"] in combat.STATS:
+                kryptons.sync_planets(state)
+                return encrypted_json(fleets.unit_info(empire, planet, f["fleet_type"]))
+    return error("Unknown unit", 404)
+
+
+@router.get("/users/my_buffs_ext")
+def buffs(planet_id: int = 0, player_id: int = Depends(current_player)):
+    """Active buffs (none yet: they come from shop items) and the planet's krypton bonuses."""
+    with db.player_state(player_id) as state:
+        kryptons.sync_planets(state)
+        planet = planet_rules.find_planet(state["empire"], planet_id) or state["empire"]["main_planet"]
+        storage = kryptons.storage_view(state)
+        found = next((b["buffs"] for b in storage["kryptons"]["all_buffs"] if b["planet_id"] == planet["planet_id"]), [])
+        return encrypted_json({"buff_list": [], "krypton_buffs": found, "kryptons": planet["kryptons"]})
 
 
 @router.get("/planets/{planet_id}.json")
@@ -1060,7 +1083,7 @@ def system_by_position(system_position: int, galaxy_position: int, player_id: in
     """Note the order in the URL: system first, then galaxy."""
     if not universe.valid_system(galaxy_position, system_position):
         return error("This system does not exist", 404)
-    return encrypted_json(universe.system_view(galaxy_position, system_position))
+    return encrypted_json(universe.system_view(galaxy_position, system_position, player_id))
 
 
 @router.get("/systems/{sid}")
@@ -1068,7 +1091,7 @@ def system_by_id(sid: int, player_id: int = Depends(current_player)):
     galaxy, system = universe.system_from_id(sid)
     if not universe.valid_system(galaxy, system):
         return error("This system does not exist", 404)
-    return encrypted_json(universe.system_view(galaxy, system))
+    return encrypted_json(universe.system_view(galaxy, system, player_id))
 
 
 @router.get("/galaxy_map.json")
