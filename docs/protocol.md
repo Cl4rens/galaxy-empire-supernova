@@ -208,7 +208,44 @@ The shipyard screen has three tabs (`GameFleetDefine:getFleetIndexByType`): civi
 (9-14), warships (1-8, 23-26, 28, 29, 31) and defense (15-22, 27, 30). The client hides the build
 button for types 24-26, 28 and 29, and sends type 23 to the krypton shop.
 
+### Galaxy map and solar systems
 
+| Request | Response |
+|---------|----------|
+| `GET systems/<system_id>` | a solar system (`system_id` = (galaxy − 1) × 499 + system) |
+| `GET systems/<system_position>/<galaxy_position>` | the same, by position — note the order: system first |
+| `GET systems/<system_id>/locate` | `{system_coordinate_x, system_coordinate_y}`: the system's tile on the galaxy map |
+| `GET galaxy_map.json?galaxy_position=..&x=..&y=..` | `{"systems": [...]}`: the tiles around (x, y) |
+
+A **solar system** is `{system_id, galaxy_position, system_position, planets, lord_info?,
+safe_explore_times?}`. The client expects all 21 slots in `planets`: 1–15 planets, 16 the
+expedition point, 17–21 pirate bases (their name is shown as `"<planet_name> LV <pirate_level>"`).
+Slots it does not get keep the placeholder text of the Flash UI. Each slot:
+
+```
+{id, galaxy_position, system_position, planet_position, planet_name, empire_id, user_name,
+ alliance_id, alliance_name, has_debris, is_protected, can_attack, moon_array, kryptons,
+ planet_icon, pirate_level, next_refresh_time}
+```
+
+- An empty slot has `id` and `empire_id` 0.
+- `kryptons` must be a list for every slot, even empty ones; the client iterates it.
+- `planet_icon` must be 0 unless a special icon is wanted.
+- `lord_info` (system ruler) is optional here.
+
+The **galaxy map** is a grid of 34 × 34 tiles per galaxy (`TILE_W` 338, `TILE_H` 274), one
+system per tile. Supernova lays the 499 systems out row by row: system *n* is tile
+((n − 1) mod 34, (n − 1) div 34). A tile:
+
+```
+{system_id, system_coordinate_x, system_coordinate_y, galaxy_position, system_position,
+ user_count, lord_info: {lord_name, lord_level}, debris_planets, strong_planets, weak_planets,
+ active_planets}
+```
+
+Here `lord_info` is required (the client reads `lord_info.lord_name`).
+
+### Errors
 
 For a status other than 200 the client shows the response body **as text** (or the `<title>` of
 an HTML page) in a message box. Send plain text, not JSON.

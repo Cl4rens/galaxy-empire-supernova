@@ -4,8 +4,8 @@ A fan-made effort to bring the discontinued mobile game **Galaxy Empire** (tap4f
 with a reimplemented game server.
 
 > **Status: early development.** A patched client logs in as a guest, builds and upgrades
-> buildings, produces resources, researches technologies and builds ships and defense. Sending
-> fleets and everything beyond are not there yet.
+> buildings, produces resources, researches technologies, builds ships and defense, and sees the
+> other players on the galaxy map. Sending fleets and everything beyond are not there yet.
 
 > **Disclaimer:** This is a non-commercial fan project. It is not affiliated with, endorsed by, or
 > connected to tap4fun or any rights holder. All trademarks belong to their respective owners.
@@ -146,7 +146,8 @@ Uninstall any old copy of the original game first, because the signatures differ
 - [x] Buildings and resource production (rules: [`docs/game-rules.md`](docs/game-rules.md))
 - [x] Research
 - [x] Shipyard: ships and defense
-- [ ] Galaxy map, fleet missions, combat
+- [x] Galaxy map and solar systems
+- [ ] Fleet missions, combat, colonization
 - [ ] Tutorial quests
 - [ ] Support for 64-bit-only devices
 - [ ] Game logic: buildings, research, fleets, combat, alliances
