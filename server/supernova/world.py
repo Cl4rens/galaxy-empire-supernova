@@ -237,6 +237,55 @@ async def cancel_research(world_id: int, event_id: int, request: Request,
         return error(str(e))
 
 
+# --- Shipyard -----------------------------------------------------------------------------
+
+
+def fleet_update(state: dict, changed: dict, now: float) -> Response:
+    """Answer for shipyard actions: the changed unit type plus the refreshed empire and planet."""
+    planet_now = state["empire"]["main_planet"]
+    return encrypted_json({
+        "update": {"fleets": [planet_rules.fleet_view(planet_now, changed)]},
+        "empire": player.empire_summary(state),
+        "planet": planet_rules.client_view(state["empire"], now),
+    })
+
+
+@router.post("/fleet_building_events.json")
+async def start_fleet_order(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    now = time.time()
+    try:
+        with db.player_state(player_id) as state:
+            changed = planet_rules.start_fleet_order(state["empire"], state, int(params["fleet_id"]),
+                                                     int(params["fleet_count"]), now)
+            return fleet_update(state, changed, now)
+    except planet_rules.GameError as e:
+        return error(str(e))
+
+
+@router.post("/fleet_building_events/{event_id}/cancel.json")
+async def cancel_fleet_order(world_id: int, event_id: int, player_id: int = Depends(current_player)):
+    now = time.time()
+    try:
+        with db.player_state(player_id) as state:
+            changed = planet_rules.cancel_fleet_order(state["empire"], event_id, now)
+            return fleet_update(state, changed, now)
+    except planet_rules.GameError as e:
+        return error(str(e))
+
+
+@router.get("/planets/{planet_id}/fleets_build_info")
+def fleets_build_info(planet_id: int, fleet_id: int, player_id: int = Depends(current_player)):
+    """Requested when a shipyard order's timer runs out on the client."""
+    now = time.time()
+    with db.player_state(player_id) as state:
+        planet_rules.tick(state["empire"], now)
+        changed = next((f for f in state["empire"]["main_planet"]["fleets"] if f["fleet_id"] == fleet_id), None)
+        if changed is None:
+            return error("Unknown unit", 404)
+        return fleet_update(state, changed, now)
+
+
 # --- Features we do not implement yet, answered with their "nothing here" values ---------
 
 

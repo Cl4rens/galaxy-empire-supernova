@@ -98,3 +98,44 @@ Cost to research level *L+1*: `base × factor^L`. Research needs a research lab;
 technologies) belong to other screens and are not part of the lab.
 
 Energy Technology raises the output of the fusion reactor.
+
+## Shipyard
+
+Ships and defense are built in the shipyard, one unit after another. Each order of *n* units is
+added to the shipyard queue; orders run back to back, and every finished unit is available
+immediately.
+
+- **Time per unit** (hours) = (metal + crystal) / (2500 × (1 + shipyard level) × 2^nanite level)
+  / speed, at least 1 second.
+- **Cancelling** an order refunds the units that are not built yet; later orders move up.
+- The **shipyard and the nanite factory cannot be upgraded while the shipyard is working**, and
+  nothing can be ordered while one of them is being upgraded.
+- **Shield domes** exist only once per planet.
+- Every **solar satellite** produces 25 energy (OGame: depends on the planet temperature).
+- Interceptors (23) come from the krypton shop, and behemoths (24) cannot be built; both are
+  listed but not buildable here.
+
+| Type | Unit | Metal | Crystal | Deuterium | Requires |
+|-----:|------|------:|--------:|----------:|----------|
+| 1 | Light Fighter | 3,000 | 1,000 | 0 | Shipyard 1, Combustion Drive 1 |
+| 2 | Heavy Fighter | 6,000 | 4,000 | 0 | Shipyard 3, Armour 2, Impulse Drive 2 |
+| 3 | Cruiser | 20,000 | 7,000 | 2,000 | Shipyard 5, Impulse Drive 4, Ion 2 |
+| 4 | Battleship | 45,000 | 15,000 | 0 | Shipyard 7, Hyperspace Drive 4 |
+| 5 | Battlecruiser | 30,000 | 40,000 | 15,000 | Shipyard 8, Hyperspace Technology 5, Hyperspace Drive 5, Laser 12 |
+| 6 | Bomber | 50,000 | 25,000 | 15,000 | Shipyard 8, Impulse Drive 6, Plasma 5 |
+| 7 | Destroyer | 60,000 | 50,000 | 15,000 | Shipyard 9, Hyperspace Drive 6, Hyperspace Technology 5 |
+| 8 | Deathstar | 5,000,000 | 4,000,000 | 1,000,000 | Shipyard 12, Hyperspace Drive 7, Hyperspace Technology 6, Anti-Gravity 1 |
+| 9 | Small Cargo | 2,000 | 2,000 | 0 | Shipyard 2, Combustion Drive 2 |
+| 10 | Large Cargo | 6,000 | 6,000 | 0 | Shipyard 4, Combustion Drive 6 |
+| 11 | Colony Ship | 10,000 | 20,000 | 10,000 | Shipyard 4, Impulse Drive 3 |
+| 12 | Recycler | 10,000 | 6,000 | 2,000 | Shipyard 4, Combustion Drive 6, Shielding 2 |
+| 13 | Espionage Probe | 0 | 1,000 | 0 | Shipyard 3, Combustion Drive 3, Espionage 2 |
+| 14 | Solar Satellite | 0 | 2,000 | 500 | Shipyard 1 |
+| 15 | Rocket Launcher | 2,000 | 0 | 0 | Shipyard 1 |
+| 16 | Light Laser | 1,500 | 500 | 0 | Shipyard 2, Energy 1, Laser 3 |
+| 17 | Heavy Laser | 6,000 | 2,000 | 0 | Shipyard 4, Energy 3, Laser 6 |
+| 18 | Gauss Cannon | 20,000 | 15,000 | 2,000 | Shipyard 6, Energy 6, Weapons 3, Shielding 1 |
+| 19 | Ion Cannon | 5,000 | 3,000 | 0 | Shipyard 4, Ion 4 |
+| 20 | Plasma Cannon | 50,000 | 50,000 | 30,000 | Shipyard 8, Plasma 7 |
+| 21 | Small Shield Dome | 10,000 | 10,000 | 0 | Shipyard 1, Shielding 2 |
+| 22 | Large Shield Dome | 50,000 | 50,000 | 0 | Shipyard 6, Shielding 6 |

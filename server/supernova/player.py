@@ -13,32 +13,6 @@ from . import planet as planet_rules
 # Planet lots 1-3 are reserved for the mines; free building lots are 4-15.
 MINE_POSITIONS = {eco.METAL_MINE: 1, eco.CRYSTAL_MINE: 2, eco.DEUTERIUM_MINE: 3}
 
-FLEETS = {
-    1: "Light Fighter",
-    2: "Heavy Fighter",
-    3: "Cruiser",
-    4: "Battleship",
-    5: "Battlecruiser",
-    6: "Bomber",
-    7: "Destroyer",
-    8: "Deathstar",
-    9: "Small Cargo",
-    10: "Large Cargo",
-    11: "Colony Ship",
-    12: "Recycler",
-    13: "Espionage Probe",
-    14: "Solar Satellite",
-    15: "Rocket Launcher",
-    16: "Light Laser",
-    17: "Heavy Laser",
-    18: "Gauss Cannon",
-    19: "Ion Cannon",
-    20: "Plasma Cannon",
-    21: "Small Shield Dome",
-    22: "Large Shield Dome",
-    23: "Interceptor",
-    24: "Behemoth",
-}
 
 PLANET_TYPE_CAPITAL = 2
 
@@ -59,14 +33,8 @@ def new_state(player_id: int, username: str) -> dict:
         for btype in eco.BUILDINGS
     ]
     fleets = [
-        {
-            "fleet_id": planet_id * 100 + ftype,
-            "fleet_type": ftype,
-            "fleet_name": name,
-            "amount": 0,
-            "amount_limit": 0,
-        }
-        for ftype, name in FLEETS.items()
+        {"fleet_id": planet_id * 100 + ftype, "fleet_type": ftype, "amount": 0}
+        for ftype in [*eco.UNITS, *eco.SPECIAL_UNITS]
     ]
     researches = [
         {"research_id": player_id * 100 + rtype, "research_type": rtype, "research_level": 0}

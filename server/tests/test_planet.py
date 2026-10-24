@@ -166,3 +166,72 @@ def test_lab_list_hides_types_handled_elsewhere():
     types = {r["research_type"] for r in view["researches"]}
     assert not types & set(eco.NOT_IN_LAB)
     assert eco.ENERGY_TECH in types
+
+
+def fleet_id(state, ftype):
+    return planet.fleet(state["empire"]["main_planet"], ftype)["fleet_id"]
+
+
+def player_with_shipyard():
+    state = new_player()
+    p = state["empire"]["main_planet"]
+    p.update(metal=1_000_000, crystal=1_000_000, deuterium=1_000_000)
+    planet.building(p, eco.SHIPYARD).update(building_level=2, building_position_index=6)
+    planet.building(p, eco.ROBOTICS_FACTORY).update(building_level=2, building_position_index=7)
+    return state
+
+
+def test_shipyard_delivers_units_one_by_one():
+    state = player_with_shipyard()
+    empire = state["empire"]
+    p = empire["main_planet"]
+    planet.start_fleet_order(empire, state, fleet_id(state, 15), 5, T0)  # rocket launchers
+    assert p["metal"] == 1_000_000 - 5 * 2000
+    order = p["fleet_building_events"][0]
+    unit = order["unit_seconds"]
+    planet.tick(empire, T0 + 2 * unit + 1)
+    assert planet.fleet(p, 15)["amount"] == 2
+    assert planet.fleet_event_view(order)["building_count"] == 3
+    planet.tick(empire, T0 + 5 * unit)
+    assert planet.fleet(p, 15)["amount"] == 5 and p["fleet_building_events"] == []
+
+
+def test_shipyard_queue_and_cancel_refunds_unbuilt_units():
+    state = player_with_shipyard()
+    empire = state["empire"]
+    p = empire["main_planet"]
+    planet.start_fleet_order(empire, state, fleet_id(state, 15), 4, T0)
+    planet.start_fleet_order(empire, state, fleet_id(state, eco.SOLAR_SATELLITE), 2, T0)
+    first, second = p["fleet_building_events"]
+    assert second["start_time"] == first["finish_time"]
+
+    unit = first["unit_seconds"]
+    planet.cancel_fleet_order(empire, first["event_id"], T0 + unit)  # one launcher already built
+    assert planet.fleet(p, 15)["amount"] == 1
+    assert p["metal"] == 1_000_000 - 2000  # three unbuilt launchers refunded
+    assert p["fleet_building_events"][0]["start_time"] == int(T0 + unit)
+
+
+def test_solar_satellites_produce_energy():
+    state = player_with_shipyard()
+    p = state["empire"]["main_planet"]
+    before = planet.production(p, state["empire"])["energy_max"]
+    planet.fleet(p, eco.SOLAR_SATELLITE)["amount"] = 4
+    assert planet.production(p, state["empire"])["energy_max"] == before + 4 * eco.SOLAR_SATELLITE_ENERGY
+
+
+def test_shipyard_rules():
+    state = player_with_shipyard()
+    empire = state["empire"]
+    with pytest.raises(planet.GameError, match="Requirements"):
+        planet.start_fleet_order(empire, state, fleet_id(state, eco.LIGHT_FIGHTER), 1, T0)  # needs combustion
+    with pytest.raises(planet.GameError, match="cannot be built"):
+        planet.start_fleet_order(empire, state, fleet_id(state, 24), 1, T0)  # behemoth
+    research = next(r for r in empire["researches"] if r["research_type"] == eco.SHIELDING_TECH)
+    research["research_level"] = 2
+    planet.start_fleet_order(empire, state, fleet_id(state, eco.SMALL_SHIELD_DOME), 1, T0)
+    with pytest.raises(planet.GameError, match="Only one"):
+        planet.start_fleet_order(empire, state, fleet_id(state, eco.SMALL_SHIELD_DOME), 1, T0)
+    shipyard = planet.building(empire["main_planet"], eco.SHIPYARD)["building_id"]
+    with pytest.raises(planet.GameError, match="shipyard is working"):
+        planet.start_building_event(empire, state, shipyard, planet.EVENT_UPGRADE, None, T0)

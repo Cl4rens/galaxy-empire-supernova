@@ -154,3 +154,59 @@ def research_cost(rtype: int, level: int) -> tuple[int, int, int]:
 def research_seconds(metal: int, crystal: int, lab: int) -> int:
     hours = (metal + crystal) / (1000 * (1 + lab))
     return max(1, math.floor(hours * 3600 / config.SPEED))
+
+
+# --- Ships and defense --------------------------------------------------------------------
+
+LIGHT_FIGHTER, SMALL_CARGO, SOLAR_SATELLITE = 1, 9, 14
+SMALL_SHIELD_DOME, LARGE_SHIELD_DOME = 21, 22
+
+# Energy one solar satellite delivers (OGame: depends on the planet's temperature).
+SOLAR_SATELLITE_ENERGY = 25
+
+# Units that exist only once per planet.
+UNIQUE_UNITS = (SMALL_SHIELD_DOME, LARGE_SHIELD_DOME)
+
+# Per unit: costs and requirements. factor is unused (always 1).
+UNITS: dict[int, BuildingRule] = {
+    1: BuildingRule("Light Fighter", 3000, 1000, 0, 1, {SHIPYARD: 1}, {COMBUSTION_DRIVE: 1}),
+    2: BuildingRule("Heavy Fighter", 6000, 4000, 0, 1, {SHIPYARD: 3}, {ARMOUR_TECH: 2, IMPULSE_DRIVE: 2}),
+    3: BuildingRule("Cruiser", 20000, 7000, 2000, 1, {SHIPYARD: 5}, {IMPULSE_DRIVE: 4, ION_TECH: 2}),
+    4: BuildingRule("Battleship", 45000, 15000, 0, 1, {SHIPYARD: 7}, {HYPERSPACE_DRIVE: 4}),
+    5: BuildingRule("Battlecruiser", 30000, 40000, 15000, 1, {SHIPYARD: 8},
+                    {HYPERSPACE_TECH: 5, HYPERSPACE_DRIVE: 5, LASER_TECH: 12}),
+    6: BuildingRule("Bomber", 50000, 25000, 15000, 1, {SHIPYARD: 8}, {IMPULSE_DRIVE: 6, PLASMA_TECH: 5}),
+    7: BuildingRule("Destroyer", 60000, 50000, 15000, 1, {SHIPYARD: 9},
+                    {HYPERSPACE_DRIVE: 6, HYPERSPACE_TECH: 5}),
+    8: BuildingRule("Deathstar", 5000000, 4000000, 1000000, 1, {SHIPYARD: 12},
+                    {HYPERSPACE_DRIVE: 7, HYPERSPACE_TECH: 6, ANTI_GRAVITY: 1}),
+    9: BuildingRule("Small Cargo", 2000, 2000, 0, 1, {SHIPYARD: 2}, {COMBUSTION_DRIVE: 2}),
+    10: BuildingRule("Large Cargo", 6000, 6000, 0, 1, {SHIPYARD: 4}, {COMBUSTION_DRIVE: 6}),
+    11: BuildingRule("Colony Ship", 10000, 20000, 10000, 1, {SHIPYARD: 4}, {IMPULSE_DRIVE: 3}),
+    12: BuildingRule("Recycler", 10000, 6000, 2000, 1, {SHIPYARD: 4}, {COMBUSTION_DRIVE: 6, SHIELDING_TECH: 2}),
+    13: BuildingRule("Espionage Probe", 0, 1000, 0, 1, {SHIPYARD: 3}, {COMBUSTION_DRIVE: 3, ESPIONAGE_TECH: 2}),
+    14: BuildingRule("Solar Satellite", 0, 2000, 500, 1, {SHIPYARD: 1}, {}),
+    15: BuildingRule("Rocket Launcher", 2000, 0, 0, 1, {SHIPYARD: 1}, {}),
+    16: BuildingRule("Light Laser", 1500, 500, 0, 1, {SHIPYARD: 2}, {ENERGY_TECH: 1, LASER_TECH: 3}),
+    17: BuildingRule("Heavy Laser", 6000, 2000, 0, 1, {SHIPYARD: 4}, {ENERGY_TECH: 3, LASER_TECH: 6}),
+    18: BuildingRule("Gauss Cannon", 20000, 15000, 2000, 1, {SHIPYARD: 6},
+                     {ENERGY_TECH: 6, WEAPONS_TECH: 3, SHIELDING_TECH: 1}),
+    19: BuildingRule("Ion Cannon", 5000, 3000, 0, 1, {SHIPYARD: 4}, {ION_TECH: 4}),
+    20: BuildingRule("Plasma Cannon", 50000, 50000, 30000, 1, {SHIPYARD: 8}, {PLASMA_TECH: 7}),
+    21: BuildingRule("Small Shield Dome", 10000, 10000, 0, 1, {SHIPYARD: 1}, {SHIELDING_TECH: 2}),
+    22: BuildingRule("Large Shield Dome", 50000, 50000, 0, 1, {SHIPYARD: 6}, {SHIELDING_TECH: 6}),
+}
+
+# Units the client offers elsewhere (krypton shop) or never lets players build.
+SPECIAL_UNITS = {23: "Interceptor", 24: "Behemoth"}
+
+
+def unit_cost(utype: int) -> tuple[int, int, int]:
+    rule = UNITS[utype]
+    return rule.metal, rule.crystal, rule.deuterium
+
+
+def unit_seconds(utype: int, shipyard: int, nanite: int) -> int:
+    metal, crystal, _ = unit_cost(utype)
+    hours = (metal + crystal) / (2500 * (1 + shipyard) * 2 ** nanite)
+    return max(1, math.floor(hours * 3600 / config.SPEED))

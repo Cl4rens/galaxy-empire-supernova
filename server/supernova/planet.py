@@ -29,6 +29,10 @@ def level(planet: dict, btype: int) -> int:
     return building(planet, btype)["building_level"]
 
 
+def fleet(planet: dict, ftype: int) -> dict:
+    return next(f for f in planet["fleets"] if f["fleet_type"] == ftype)
+
+
 def research_level(empire: dict, rtype: int) -> int:
     return next((r["research_level"] for r in empire["researches"] if r["research_type"] == rtype), 0)
 
@@ -41,10 +45,11 @@ def production(planet: dict, empire: dict) -> dict:
         eco.DEUTERIUM_MINE: planet["deuterium_mine_percent"] / 100,
     }
     solar = eco.solar_energy(level(planet, eco.SOLAR_PLANT)) * planet["solar_plant_percent"] / 100
+    satellites = fleet(planet, eco.SOLAR_SATELLITE)["amount"] * eco.SOLAR_SATELLITE_ENERGY
     fusion_level = level(planet, eco.FUSION_REACTOR)
     fusion_pct = planet["fusion_reactor_percent"] / 100
     fusion = eco.fusion_energy(fusion_level, research_level(empire, eco.ENERGY_TECH)) * fusion_pct
-    produced = solar + fusion
+    produced = solar + fusion + satellites
     used = sum(eco.mine_energy(m, level(planet, m)) * pct[m] for m in eco.MINES)
     factor = min(1.0, produced / used) if used > 0 else 1.0
 
@@ -58,6 +63,7 @@ def production(planet: dict, empire: dict) -> dict:
         * config.SPEED,
         "solar_energy": solar,
         "fusion_energy": fusion,
+        "satellite_energy": satellites,
         "energy_max": produced,
         "energy_used": used,
     }
@@ -98,27 +104,48 @@ def _finish_research(empire: dict, event: dict) -> None:
     research["research_level"] += 1
 
 
+def _deliver_fleets(planet: dict, now: float) -> None:
+    """Hand over every ship/defense unit of the shipyard queue finished by `now`."""
+    for order in list(planet["fleet_building_events"]):
+        if order["start_time"] > now:
+            break
+        done = min(order["total_count"], int((now - order["start_time"]) // order["unit_seconds"]))
+        fleet(planet, order["fleet_type"])["amount"] += done - order["delivered"]
+        order["delivered"] = done
+        if done < order["total_count"]:
+            break
+        planet["fleet_building_events"].remove(order)
+
+
 def tick(empire: dict, now: float | None = None) -> None:
-    """Bring the main planet up to `now`: production, finished constructions and research.
+    """Bring the main planet up to `now`: production, constructions, research and shipyard.
 
     Events are applied in time order, with production calculated in between, because they
-    change production (mines, energy technology).
+    change production (mines, energy technology, solar satellites).
     """
     planet = empire["main_planet"]
     now = time.time() if now is None else now
     t = planet["last_update"]
-    queue = [(e["finish_time"], planet["building_events"], e, _finish_event, planet)
+
+    def done(events, event, finish, target):
+        def apply(at):
+            finish(target, event)
+            events.remove(event)
+        return apply
+
+    queue = [(e["finish_time"], done(planet["building_events"], e, _finish_event, planet))
              for e in planet["building_events"]]
-    queue += [(e["finish_time"], empire["research_upgrading_events"], e, _finish_research, empire)
+    queue += [(e["finish_time"], done(empire["research_upgrading_events"], e, _finish_research, empire))
               for e in empire["research_upgrading_events"]]
-    for finish_time, events, event, finish, target in sorted(queue, key=lambda q: q[0]):
+    queue += [(e["finish_time"], lambda at: _deliver_fleets(planet, at)) for e in planet["fleet_building_events"]]
+    for finish_time, apply in sorted(queue, key=lambda q: q[0]):
         if finish_time > now:
             break
         _accrue(planet, empire, finish_time - t)
         t = max(t, finish_time)
-        finish(target, event)
-        events.remove(event)
+        apply(finish_time)
     _accrue(planet, empire, now - t)
+    _deliver_fleets(planet, now)
     planet["last_update"] = max(t, now)
 
 
@@ -148,6 +175,9 @@ def start_building_event(empire: dict, state: dict, building_id: int, event_type
         raise GameError("Another building is already under construction")
     if empire["research_upgrading_events"] and building_id == building(planet, eco.RESEARCH_LAB)["building_id"]:
         raise GameError("The research lab cannot be upgraded while research is running")
+    if planet["fleet_building_events"] and building_id in (building(planet, eco.SHIPYARD)["building_id"],
+                                                           building(planet, eco.NANITE_FACTORY)["building_id"]):
+        raise GameError("This building cannot be upgraded while the shipyard is working")
     b = next((b for b in planet["buildings"] if b["building_id"] == building_id), None)
     if b is None:
         raise GameError("Unknown building")
@@ -253,6 +283,74 @@ def cancel_research(empire: dict, event_id: int, now: float) -> dict:
     return next(r for r in empire["researches"] if r["research_id"] == event["research_id"])
 
 
+def _reschedule_shipyard(planet: dict, now: float) -> None:
+    """Let the shipyard queue run back to back again, e.g. after an order was cancelled."""
+    previous_end = None
+    for order in planet["fleet_building_events"]:
+        running = order["start_time"] <= now and previous_end is None
+        if not running:
+            order["start_time"] = int(max(now, previous_end or now))
+        order["finish_time"] = order["start_time"] + order["total_count"] * order["unit_seconds"]
+        previous_end = order["finish_time"]
+
+
+def start_fleet_order(empire: dict, state: dict, fleet_id: int, count: int, now: float) -> dict:
+    """Queue `count` ships or defense units in the shipyard. Returns the fleet entry."""
+    planet = empire["main_planet"]
+    tick(empire, now)
+    f = next((f for f in planet["fleets"] if f["fleet_id"] == fleet_id), None)
+    if f is None or f["fleet_type"] not in eco.UNITS:
+        raise GameError("This unit cannot be built in the shipyard")
+    if count < 1:
+        raise GameError("Nothing to build")
+    ftype = f["fleet_type"]
+    if level(planet, eco.SHIPYARD) < 1:
+        raise GameError("You need a shipyard")
+    busy = {building(planet, eco.SHIPYARD)["building_id"], building(planet, eco.NANITE_FACTORY)["building_id"]}
+    if any(e["building_id"] in busy for e in planet["building_events"]):
+        raise GameError("The shipyard is being upgraded")
+    if not _requirements_met(planet, empire, ftype, eco.UNITS):
+        raise GameError("Requirements not met")
+    if ftype in eco.UNIQUE_UNITS:
+        queued = sum(o["total_count"] - o["delivered"] for o in planet["fleet_building_events"]
+                     if o["fleet_type"] == ftype)
+        if f["amount"] + queued + count > 1:
+            raise GameError("Only one of these can be built")
+    unit_cost = eco.unit_cost(ftype)
+    _pay(planet, tuple(c * count for c in unit_cost))
+    seconds = eco.unit_seconds(ftype, level(planet, eco.SHIPYARD), level(planet, eco.NANITE_FACTORY))
+    queue_end = max((o["finish_time"] for o in planet["fleet_building_events"]), default=now)
+    start = int(max(now, queue_end))
+    planet["fleet_building_events"].append({
+        "event_id": _next_event_id(state),
+        "fleet_id": fleet_id,
+        "fleet_type": ftype,
+        "total_count": count,
+        "delivered": 0,
+        "unit_seconds": seconds,
+        "unit_cost": list(unit_cost),
+        "start_time": start,
+        "finish_time": start + count * seconds,
+        "total_time": count * seconds,
+    })
+    return f
+
+
+def cancel_fleet_order(empire: dict, event_id: int, now: float) -> dict:
+    """Cancel a shipyard order; units not built yet are refunded. Returns the fleet entry."""
+    planet = empire["main_planet"]
+    tick(empire, now)
+    order = next((o for o in planet["fleet_building_events"] if o["event_id"] == event_id), None)
+    if order is None:
+        raise GameError("This order has already finished")
+    planet["fleet_building_events"].remove(order)
+    remaining = order["total_count"] - order["delivered"]
+    for res, amount in zip(RESOURCES, order["unit_cost"]):
+        planet[res] += amount * remaining
+    _reschedule_shipyard(planet, now)
+    return fleet(planet, order["fleet_type"])
+
+
 # --- What the client sees -----------------------------------------------------------------
 
 
@@ -307,6 +405,8 @@ def client_view(empire: dict, now: float) -> dict:
         "energy_max": round(rates["energy_max"]),
         "energy_used": round(rates["energy_used"]),
         "solar_plant_energy": round(rates["solar_energy"]),
+        "fleets": [fleet_view(planet, f) for f in planet["fleets"]],
+        "fleet_building_events": [fleet_event_view(e) for e in planet["fleet_building_events"]],
         "fusion_energy": round(rates["fusion_energy"]),
         "buildings": [building_view(planet, b) for b in planet["buildings"]],
         "building_events": [event_view(planet, e) for e in planet["building_events"]],
@@ -356,4 +456,41 @@ def researches_view(empire: dict) -> dict:
                        if r["research_type"] in eco.RESEARCHES],
         "research_upgrading_events": [research_event_view(empire, e)
                                       for e in empire["research_upgrading_events"]],
+    }
+
+
+def fleet_view(planet: dict, f: dict) -> dict:
+    ftype = f["fleet_type"]
+    view = dict(f, amount_limit=f["amount"])
+    if ftype in eco.UNITS:
+        rule = eco.UNITS[ftype]
+        view.update({
+            "fleet_name": rule.name,
+            "metal_require": rule.metal,
+            "crystal_require": rule.crystal,
+            "deuterium_require": rule.deuterium,
+            "up_time": eco.unit_seconds(ftype, level(planet, eco.SHIPYARD), level(planet, eco.NANITE_FACTORY)),
+            "tech_tree": _tech_tree(rule),
+        })
+    else:
+        # Not buildable here; the client hides the build button for these types.
+        view.update({
+            "fleet_name": eco.SPECIAL_UNITS.get(ftype, f"Unit {ftype}"),
+            "metal_require": 0, "crystal_require": 0, "deuterium_require": 0, "up_time": 0,
+            "tech_tree": {"buildings_tree": [], "researches_tree": []},
+        })
+    return view
+
+
+def fleet_event_view(order: dict) -> dict:
+    return {
+        "event_id": order["event_id"],
+        "fleet_id": order["fleet_id"],
+        "fleet_type": order["fleet_type"],
+        "fleet_name": eco.UNITS[order["fleet_type"]].name,
+        "building_count": order["total_count"] - order["delivered"],
+        "start_time": order["start_time"],
+        "finish_time": order["finish_time"],
+        "total_time": order["total_time"],
+        "finished": False,
     }

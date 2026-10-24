@@ -187,7 +187,28 @@ The lab screen groups researches into three tabs by type
 (`GameResearchDefine:getResearchIndexByType`); unknown types land in the first tab, so the
 server only lists lab researches.
 
-### Errors
+### Shipyard
+
+| Request | Meaning |
+|---------|---------|
+| `POST fleet_building_events.json` with `planet_id`, `fleet_id`, `fleet_count` | order units |
+| `POST fleet_building_events/<event_id>/cancel.json` with `planet_id` | cancel an order |
+| `GET planets/<planet_id>/fleets_build_info?fleet_id=..&event_id=..` | sent when an order's timer runs out |
+
+All answer `{"update": {"fleets": [changed unit type]}, "empire": {...}, "planet": {...}}`.
+
+Unit fields (`main_planet.fleets`): `fleet_id`, `fleet_type`, `fleet_name`, `amount`,
+`amount_limit`, `metal_require`, `crystal_require`, `deuterium_require` (per unit), `up_time`
+(seconds per unit), `tech_tree`, optionally `items` (e.g. `[["guidance_chip", n]]`).
+Orders live in `main_planet.fleet_building_events`:
+`{event_id, fleet_id, fleet_type, fleet_name, building_count (units left), start_time,
+finish_time, total_time, finished: false}`.
+
+The shipyard screen has three tabs (`GameFleetDefine:getFleetIndexByType`): civil ships
+(9-14), warships (1-8, 23-26, 28, 29, 31) and defense (15-22, 27, 30). The client hides the build
+button for types 24-26, 28 and 29, and sends type 23 to the krypton shop.
+
+
 
 For a status other than 200 the client shows the response body **as text** (or the `<title>` of
 an HTML page) in a message box. Send plain text, not JSON.
