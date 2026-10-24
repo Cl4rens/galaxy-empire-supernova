@@ -4,7 +4,8 @@ Steps:
   1. verify the APK is a supported version (SHA-256)
   2. patch the gateway address in AutoUpdateInit (data1.pak and data1_64.pak)
      and switch the gateway from https to http
-  3. rebuild the APK and sign it with a debug key (uber-apk-signer, needs Java)
+  3. patch the client code so it runs on current Android versions (see compat.py)
+  4. rebuild the APK and sign it with a debug key (uber-apk-signer, needs Java)
 
 Usage: python tools/patch_apk.py apk/galaxy-empire-1-9-36.apk --server 192.168.0.10:8000
 """
@@ -21,6 +22,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
+import compat
 import lua51
 import pak
 
@@ -83,7 +85,7 @@ def patch_game_data(game_zip: bytes, gateway: bytes) -> bytes:
     return out.getvalue()
 
 
-def rebuild_apk(original: Path, target: Path, gateway: bytes) -> None:
+def rebuild_apk(original: Path, target: Path, gateway: bytes, dex: bytes | None) -> None:
     src = zipfile.ZipFile(original)
     with zipfile.ZipFile(target, "w") as dst:
         for info in src.infolist():
@@ -92,13 +94,15 @@ def rebuild_apk(original: Path, target: Path, gateway: bytes) -> None:
             data = src.read(info)
             if info.filename == "assets/tap4fun.zip":
                 data = patch_game_data(data, gateway)
+            elif info.filename == "classes.dex" and dex is not None:
+                data = dex
             dst.writestr(info, data, compress_type=info.compress_type)
 
 
 def find_java(explicit: str | None) -> str:
     candidates = [explicit, os.environ.get("JAVA_HOME") and str(Path(os.environ["JAVA_HOME"]) / "bin" / "java")]
     candidates += [shutil.which("java")]
-    candidates += [str(p) for p in TOOLS_DIR.glob("jdk*/bin/java*")]
+    candidates += [str(p.resolve()) for p in TOOLS_DIR.glob("jdk*/bin/java*")]
     for candidate in candidates:
         if candidate and shutil.which(candidate):
             return candidate
@@ -136,6 +140,8 @@ def main() -> None:
     parser.add_argument("--out", type=Path, default=Path("build/galaxy-empire-supernova.apk"))
     parser.add_argument("--java", help="path to the java executable")
     parser.add_argument("--force", action="store_true", help="patch even if the APK version is unknown")
+    parser.add_argument("--no-compat", action="store_true",
+                        help="keep the original client code (it crashes on Android 6+ without granted permissions)")
     args = parser.parse_args()
 
     digest = sha256(args.apk)
@@ -149,10 +155,12 @@ def main() -> None:
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     unsigned = args.out.with_name(args.out.stem + "-unsigned.apk")
+    java = find_java(args.java)
+    dex = None if args.no_compat else compat.patched_dex(java, args.apk, TOOLS_DIR)
     print(f"Patching gateway -> http://{args.server}/")
-    rebuild_apk(args.apk, unsigned, args.server.encode())
+    rebuild_apk(args.apk, unsigned, args.server.encode(), dex)
 
-    sign(find_java(args.java), unsigned, args.out)
+    sign(java, unsigned, args.out)
     unsigned.unlink()
     print(f"Done: {args.out}")
 

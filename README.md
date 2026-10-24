@@ -134,8 +134,14 @@ python tools/patch_apk.py apk/galaxy-empire-1-9-36.apk --server <host>:<port>
 | Android emulator / BlueStacks on the same PC | `10.0.2.2:8000` |
 | Phone in the same Wi-Fi              | your PC's LAN IP, e.g. `192.168.0.10:8000` |
 
-The patcher downloads [uber-apk-signer](https://github.com/patrickfav/uber-apk-signer) on first
-use to sign the APK. The result is `build/galaxy-empire-supernova.apk`.
+The patcher downloads [uber-apk-signer](https://github.com/patrickfav/uber-apk-signer) and
+[apktool](https://github.com/iBotPeaches/Apktool) on first use. Besides the server address it
+patches the client code so it runs on current Android versions without crashing or asking for
+permissions; see [`docs/android.md`](docs/android.md). The result is
+`build/galaxy-empire-supernova.apk`.
+
+**Device requirement:** the game engine exists only for 32-bit ARM. Phones without 32-bit
+support (e.g. Google Pixel 7 and newer) cannot run it; PCs can use an emulator like BlueStacks.
 
 ### 5. Install and play
 
@@ -171,7 +177,8 @@ Uninstall any old copy of the original game first, because the signatures differ
 - [x] Bookmarks, news, daily check-in, gifts, help
 - [x] Kryptons: refining, storage, planet slots, upgrades, research, merchant
 - [x] Ship repair after defending
-- [ ] Support for 64-bit-only devices
+- [x] Runs on Android 6-16 without crashes or permission dialogs
+- [ ] Support for 64-bit-only devices (needs a 64-bit game engine)
 - [ ] Game logic: buildings, research, fleets, combat, alliances
 
 ## What we know so far
