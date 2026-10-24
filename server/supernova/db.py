@@ -5,6 +5,7 @@ import secrets
 import sqlite3
 import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 from . import config
@@ -86,3 +87,17 @@ def create_session(player_id: int) -> str:
 def session_player(token: str) -> int | None:
     row = connect().execute("SELECT player_id FROM sessions WHERE token = ?", (token,)).fetchone()
     return row["player_id"] if row else None
+
+
+_player_locks: dict[int, threading.Lock] = {}
+
+
+@contextmanager
+def player_state(player_id: int):
+    """Load a player's state for changing it; saved when the block ends without error."""
+    with _lock:
+        lock = _player_locks.setdefault(player_id, threading.Lock())
+    with lock:
+        state = load_state(player_id)
+        yield state
+        save_state(player_id, state)

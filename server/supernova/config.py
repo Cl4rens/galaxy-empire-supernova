@@ -17,3 +17,6 @@ WORLD_NAME = os.environ.get("SUPERNOVA_WORLD_NAME", "Supernova")
 
 # For CI and tests only: start without an APK. World endpoints then answer 503.
 REQUIRE_CLIENT_KEY = os.environ.get("SUPERNOVA_REQUIRE_KEY", "1") != "0"
+
+# Game speed: production and build times are multiplied/divided by this.
+SPEED = float(os.environ.get("SUPERNOVA_SPEED", "1"))

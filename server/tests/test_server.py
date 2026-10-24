@@ -43,8 +43,7 @@ def test_guest_login_and_session():
     state = decrypt_json(new_guest)
     username = state["username"]
     assert state["empire"]["main_planet"]["current_server_time"] > 0
-    assert any(b["building_type"] == 1 and b["building_level"] == 1
-               for b in state["empire"]["main_planet"]["buildings"])
+    assert {b["building_type"] for b in state["empire"]["main_planet"]["buildings"]} >= {1, 2, 3}
 
     # Like the game client, the test client sends the session cookie back automatically.
     assert world.SESSION_COOKIE in client.cookies
@@ -62,3 +61,21 @@ def test_guest_login_and_session():
 
 def test_requires_session():
     assert TestClient(app).get("/world/1/passive_events").status_code == 401
+
+
+def test_build_metal_mine():
+    c = TestClient(app)
+    state = decrypt_json(c.post("/world/1/trials.json", content="username="))
+    p = state["empire"]["main_planet"]
+    mine = next(b for b in p["buildings"] if b["building_type"] == 1)
+    body = f"planet_id={p['planet_id']}&building_id={mine['building_id']}&event_type=1&building_index=1"
+    result = decrypt_json(c.post("/world/1/building_events.json", content=body))
+    assert result["planet"]["metal"] == p["metal"] - mine["up_metal_require"]
+    event = result["planet"]["building_events"][0]
+    assert event["building_id"] == mine["building_id"] and event["finished"] is False
+
+    again = c.post("/world/1/building_events.json", content=body)
+    assert again.status_code == 400 and "already" in again.text
+
+    cancel = decrypt_json(c.post(f"/world/1/building_events/{event['event_id']}.json", content="_method=delete"))
+    assert cancel["planet"]["building_events"] == []

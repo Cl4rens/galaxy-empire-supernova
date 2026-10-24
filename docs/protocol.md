@@ -140,7 +140,34 @@ string as key; the Java side truncates it to the same 32 bytes.
 | `GET gc/current` | `{"status": 0}` (no galaxy challenge running) |
 | `GET promotions/my_newbie_invite_info` | `{"my_code": "..."}` |
 
-### Errors
+### Buildings
+
+| Request | Meaning |
+|---------|---------|
+| `POST building_events.json` with `planet_id`, `building_id`, `event_type` (1 = upgrade, 2 = tear down), `building_index` (lot, for a new building) | start a construction |
+| `POST building_events/<event_id>.json` with `_method=delete` | cancel it |
+| `GET planets/<planet_id>/build_info.json?bid=<building_id>` | sent when the client's timer for that building runs out |
+| `POST building_events/<event_id>/sprint` | finish instantly for premium currency (not implemented) |
+
+All of them answer `{"update": {"buildings": [changed building]}, "empire": {...}, "planet": {...}}`;
+the client merges `empire` and `planet` into its state.
+
+Extra building fields the UI reads: `up_metal_require`, `up_crystal_require`,
+`up_deuterium_require`, `up_time`, `up_extra_energy` (additional energy of the next level),
+`down_*_require`, `down_time` and `tech_tree` =
+`{"buildings_tree": [{unit_type, unit_level}], "researches_tree": [...]}`.
+
+A building event: `{event_id, building_id, building_type, event_type, start_time, finish_time,
+total_time, finished: false, building_name, building_level, building_position_index}`. The client
+counts down from `finish_time` (server time) on its own.
+
+Extra planet fields: `metal_perhour`, `crystal_perhour`, `deuterium_perhour`,
+`solar_plant_percent`, `solar_plant_energy`, `fusion_reactor_percent`, `fusion_energy`.
+
+The client never counts resources up by itself; it only shows what the server sends. The
+heartbeat therefore asks it to reload the planet every time.
+
+
 
 For a status other than 200 the client shows the response body **as text** (or the `<title>` of
 an HTML page) in a message box. Send plain text, not JSON.

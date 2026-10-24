@@ -10,6 +10,7 @@ services:
       - supernova-data:/data
     environment:
       SUPERNOVA_WORLD_NAME: Supernova
+      SUPERNOVA_SPEED: "1"   # game speed: production and build times
     restart: unless-stopped
 
 volumes:

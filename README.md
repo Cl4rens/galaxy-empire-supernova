@@ -3,8 +3,8 @@
 A fan-made effort to bring the discontinued mobile game **Galaxy Empire** (tap4fun) back to life
 with a reimplemented game server.
 
-> **Status: early development.** Not playable yet. A patched client connects to our server,
-> logs in as a guest and shows its home planet. Building, research and fleets come next.
+> **Status: early development.** A patched client logs in as a guest, builds and upgrades
+> buildings and produces resources. Research, fleets and everything beyond are not there yet.
 
 > **Disclaimer:** This is a non-commercial fan project. It is not affiliated with, endorsed by, or
 > connected to tap4fun or any rights holder. All trademarks belong to their respective owners.
@@ -132,7 +132,9 @@ Uninstall any old copy of the original game first, because the signatures differ
 - [x] Patcher: verify → patch → re-sign
 - [x] Minimal server: update check and world list (client reaches the title screen)
 - [x] Guest login, sessions, heartbeat, player state
-- [ ] Buildings, resource production, research, fleets
+- [x] Buildings and resource production (rules: [`docs/game-rules.md`](docs/game-rules.md))
+- [ ] Research, shipyard, fleets
+- [ ] Tutorial quests
 - [ ] Support for 64-bit-only devices
 - [ ] Game logic: buildings, research, fleets, combat, alliances
 

@@ -7,30 +7,11 @@ Values for a fresh account are best guesses until we know the original numbers.
 import secrets
 import time
 
-# building_type -> English name. Moon buildings (17-19) are not on a normal planet.
-BUILDINGS = {
-    1: "Metal Mine",
-    2: "Crystal Mine",
-    3: "Deuterium Synthesizer",
-    4: "Solar Plant",
-    5: "Fusion Reactor",
-    6: "Metal Storage",
-    7: "Crystal Storage",
-    8: "Deuterium Tank",
-    9: "Robotics Factory",
-    10: "Shipyard",
-    11: "Research Lab",
-    12: "Alliance Depot",
-    13: "Radar Center",
-    14: "Nanite Factory",
-    15: "Sensor Array",
-    16: "Transmit Portal",
-    20: "Krypton Lab",
-    21: "Pioneer Lab",
-}
+from . import economy as eco
+from . import planet as planet_rules
 
-# Planet positions 1-3 are taken by the mines; free building lots are 4-15.
-MINE_POSITIONS = {1: 1, 2: 2, 3: 3}
+# Planet lots 1-3 are reserved for the mines; free building lots are 4-15.
+MINE_POSITIONS = {eco.METAL_MINE: 1, eco.CRYSTAL_MINE: 2, eco.DEUTERIUM_MINE: 3}
 
 RESEARCHES = {
     1: "Energy Technology",
@@ -95,11 +76,10 @@ def new_state(player_id: int, username: str) -> dict:
         {
             "building_id": planet_id * 100 + btype,
             "building_type": btype,
-            "building_name": name,
-            "building_level": 1 if btype in MINE_POSITIONS else 0,
+            "building_level": 0,
             "building_position_index": MINE_POSITIONS.get(btype, 0),
         }
-        for btype, name in BUILDINGS.items()
+        for btype in eco.BUILDINGS
     ]
     fleets = [
         {
@@ -130,14 +110,12 @@ def new_state(player_id: int, username: str) -> dict:
         "metal": 500,
         "crystal": 500,
         "deuterium": 0,
-        "metal_max": 10000,
-        "crystal_max": 10000,
-        "deuterium_max": 10000,
-        "energy_max": 0,
-        "energy_used": 0,
+        "last_update": time.time(),
         "metal_mine_percent": 100,
         "crystal_mine_percent": 100,
         "deuterium_mine_percent": 100,
+        "solar_plant_percent": 100,
+        "fusion_reactor_percent": 100,
         "buildings": buildings,
         "fleets": fleets,
         "building_events": [],
@@ -187,6 +165,7 @@ def new_state(player_id: int, username: str) -> dict:
         "buff_commander": 0,
     }
     return {
+        "state_version": 1,
         "user_id": player_id,
         "empire_id": player_id,
         "username": username,
@@ -201,9 +180,18 @@ def new_state(player_id: int, username: str) -> dict:
     }
 
 
-def login_response(state: dict) -> dict:
-    response = dict(state)
-    response["empire"] = dict(state["empire"])
-    response["empire"]["main_planet"] = dict(state["empire"]["main_planet"], current_server_time=int(time.time()))
+def empire_view(state: dict, now: float) -> dict:
+    """The empire object as the client expects it."""
+    return dict(state["empire"], main_planet=planet_rules.client_view(state["empire"], now))
+
+
+def empire_summary(state: dict) -> dict:
+    """Empire fields without the planet, for responses that send the planet separately."""
+    return {k: v for k, v in state["empire"].items() if k != "main_planet"}
+
+
+def login_response(state: dict, now: float) -> dict:
+    response = {k: v for k, v in state.items() if k not in ("empire", "next_event_id")}
+    response["empire"] = empire_view(state, now)
     response["checkin_days"] = 0
     return response

@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse, Response
 
 from . import crypto, db, player
+from . import planet as planet_rules
 
 log = logging.getLogger("supernova")
 router = APIRouter(prefix="/world/{world_id}")
@@ -78,12 +79,16 @@ async def guest_login(world_id: int, request: Request):
         found = db.find_player(username)
         if not found:
             return error("Unknown guest account", 404)
-        player_id, state = found
+        player_id = found[0]
     else:
         udid = request.headers.get("openudid", "")
-        player_id, username, state = db.create_player(player.guest_username, udid, player.new_state)
+        player_id, username, _ = db.create_player(player.guest_username, udid, player.new_state)
         log.info("new guest %s (udid %s)", username, udid)
-    return logged_in(player_id, player.login_response(state))
+    now = time.time()
+    with db.player_state(player_id) as state:
+        planet_rules.tick(state["empire"], now)
+        content = player.login_response(state, now)
+    return logged_in(player_id, content)
 
 
 # --- Player state -------------------------------------------------------------------------
@@ -91,16 +96,21 @@ async def guest_login(world_id: int, request: Request):
 
 @router.get("/passive_events")
 def heartbeat(player_id: int = Depends(current_player)):
-    """Polled every few seconds. empire/planet = 1 makes the client reload that part."""
-    return encrypted_json({"heartBeatRate": HEARTBEAT_SECONDS, "empire": 0, "planet": 0, "refresh": {}})
+    """Polled every few seconds. empire/planet = 1 makes the client reload that part.
+
+    The client does not count resources up by itself, so it reloads the planet every time.
+    """
+    return encrypted_json({"heartBeatRate": HEARTBEAT_SECONDS, "empire": 0, "planet": 1, "refresh": {}})
 
 
 @router.get("/planets/{planet_id}")
 def planet(planet_id: int, player_id: int = Depends(current_player)):
-    main_planet = db.load_state(player_id)["empire"]["main_planet"]
-    if main_planet["planet_id"] != planet_id:
-        return error("Unknown planet", 404)
-    return encrypted_json(dict(main_planet, current_server_time=int(time.time())))
+    now = time.time()
+    with db.player_state(player_id) as state:
+        if state["empire"]["main_planet"]["planet_id"] != planet_id:
+            return error("Unknown planet", 404)
+        planet_rules.tick(state["empire"], now)
+        return encrypted_json(planet_rules.client_view(state["empire"], now))
 
 
 # Must come before /users/{user_id}.
@@ -114,7 +124,65 @@ def user(user_id: int, player_id: int = Depends(current_player)):
     if user_id != player_id:
         return error("Unknown user", 404)
     # do=empire is the only variant seen so far.
-    return encrypted_json(db.load_state(player_id)["empire"])
+    now = time.time()
+    with db.player_state(player_id) as state:
+        planet_rules.tick(state["empire"], now)
+        return encrypted_json(player.empire_view(state, now))
+
+
+# --- Buildings ----------------------------------------------------------------------------
+
+
+def building_update(state: dict, changed: dict, now: float) -> Response:
+    """Answer for building actions: the changed building plus the refreshed empire and planet."""
+    planet_now = state["empire"]["main_planet"]
+    return encrypted_json({
+        "update": {"buildings": [planet_rules.building_view(planet_now, changed)]},
+        "empire": player.empire_summary(state),
+        "planet": planet_rules.client_view(state["empire"], now),
+    })
+
+
+@router.post("/building_events.json")
+async def start_building(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    """Upgrade (event_type 1) or tear down (2) a building. New buildings also send their lot."""
+    params = await form(request)
+    now = time.time()
+    try:
+        with db.player_state(player_id) as state:
+            changed = planet_rules.start_building_event(
+                state["empire"], state, int(params["building_id"]), int(params["event_type"]),
+                int(params["building_index"]) if params.get("building_index") else None, now)
+            return building_update(state, changed, now)
+    except planet_rules.GameError as e:
+        return error(str(e))
+
+
+@router.post("/building_events/{event_id}.json")
+async def cancel_building(world_id: int, event_id: int, request: Request,
+                          player_id: int = Depends(current_player)):
+    """The client sends _method=delete to cancel a construction."""
+    if (await form(request)).get("_method") != "delete":
+        return error("Unsupported", 400)
+    now = time.time()
+    try:
+        with db.player_state(player_id) as state:
+            changed = planet_rules.cancel_building_event(state["empire"], event_id, now)
+            return building_update(state, changed, now)
+    except planet_rules.GameError as e:
+        return error(str(e))
+
+
+@router.get("/planets/{planet_id}/build_info.json")
+def build_info(planet_id: int, bid: int, player_id: int = Depends(current_player)):
+    """Requested when a construction timer runs out on the client."""
+    now = time.time()
+    with db.player_state(player_id) as state:
+        planet_rules.tick(state["empire"], now)
+        changed = next((b for b in state["empire"]["main_planet"]["buildings"] if b["building_id"] == bid), None)
+        if changed is None:
+            return error("Unknown building", 404)
+        return building_update(state, changed, now)
 
 
 # --- Features we do not implement yet, answered with their "nothing here" values ---------
