@@ -163,7 +163,7 @@ Uninstall any old copy of the original game first, because the signatures differ
 - [x] Alliances: found, apply, ranks, alliance mail
 - [x] Tutorial quests, renaming and giving up planets
 - [x] Chat: world and alliance channels
-- [x] Moons: forming after battles, moon buildings, flights to moons
+- [x] Moons: forming after battles, moon buildings, flights to moons, sensor array, transmit portal
 - [ ] Support for 64-bit-only devices
 - [ ] Game logic: buildings, research, fleets, combat, alliances
 

@@ -482,10 +482,10 @@ async def prepare_fleet(world_id: int, request: Request, player_id: int = Depend
     try:
         with db.player_state(player_id) as state:
             empire = state["empire"]
-            ships = fleets.parse_ships(empire["main_planet"], params.get("fleet_ids", ""),
-                                       params.get("fleet_cnt_ids", ""))
+            origin = fleets.origin_planet(empire, params)
+            ships = fleets.parse_ships(origin, params.get("fleet_ids", ""), params.get("fleet_cnt_ids", ""))
             target = fleets.parse_target(params.get("end_p_pos", ""))
-            info = fleets.plan(empire, player_id, ships, target, moon=fleets.targets_moon(params))
+            info = fleets.plan(empire, player_id, ships, target, origin=origin, moon=fleets.targets_moon(params))
     except planet_rules.GameError as e:
         return error(str(e))
     return encrypted_json({k: v for k, v in info.items() if k != "distance"})
@@ -642,6 +642,30 @@ async def alliance_application_change(world_id: int, application_id: int, reques
 @router.get("/acses")
 def alliance_joint_attacks(player_id: int = Depends(current_player)):
     return encrypted_json({"info": [], "planet": {}, "empire": {}})  # joint attacks: not implemented
+
+
+@router.post("/sensor_arrays/scan")
+async def sensor_scan(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    try:
+        with db.player_state(player_id) as state:
+            found = fleets.scan(state["empire"], int(params.get("moon_id") or 0), int(params.get("planet_id") or 0),
+                                time.time())
+    except planet_rules.GameError as e:
+        return error(str(e))
+    return encrypted_json({"data": found})
+
+
+@router.post("/sensor_arrays/save_report_mail")
+async def sensor_save(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    try:
+        with db.player_state(player_id) as state:
+            fleets.save_scan(player_id, state["empire"], int(params.get("moon_id") or 0),
+                             int(params.get("planet_id") or 0))
+    except planet_rules.GameError as e:
+        return error(str(e))
+    return encrypted_json({})
 
 
 # --- Chat ------------------------------------------------------------------------------------

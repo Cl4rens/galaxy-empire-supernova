@@ -22,7 +22,7 @@ def test_ranks_endpoint_orders_by_score():
     c = TestClient(app)
     me = decrypt_json(c.post("/world/1/trials.json", content="username="))
     with db.player_state(me["user_id"]) as state:
-        planet_rules.fleet(state["empire"]["main_planet"], 8)["amount"] = 1  # a deathstar: top score
+        planet_rules.fleet(state["empire"]["main_planet"], 8)["amount"] = 100  # deathstars: top score
     top = decrypt_json(c.get("/world/1/ranks?do=top_users&user_id=1"))["rank"]
     assert top[0]["id"] == me["user_id"] and top[0]["rank"] == 1
     assert top == sorted(top, key=lambda r: -r["score"])

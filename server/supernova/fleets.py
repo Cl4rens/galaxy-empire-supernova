@@ -14,7 +14,7 @@ import logging
 import random
 import time
 
-from . import combat, db, ranking
+from . import combat, config, db, ranking
 from . import economy as eco
 from . import mails, npc, quests
 from . import planet as planet_rules
@@ -23,14 +23,17 @@ from . import universe
 log = logging.getLogger("supernova")
 
 EXPEDITION, COLONY, RECYCLE, TRANSPORT, DEPLOY, ESPIONAGE, ATTACK = 1, 2, 3, 4, 5, 6, 7
+TRANSMIT = 16  # jump through the transmit portals of two own moons
 MISSION_NAMES = {
     EXPEDITION: "Expedition", COLONY: "Colonize", RECYCLE: "Recycle", TRANSPORT: "Transport",
-    DEPLOY: "Deploy", ESPIONAGE: "Espionage", ATTACK: "Attack",
+    DEPLOY: "Deploy", ESPIONAGE: "Espionage", ATTACK: "Attack", TRANSMIT: "Transmit",
 }
 UNDER_ATTACK = 11  # how incoming attacks appear in the defender's flight list
 ATTACK_PIRATES = 13  # report type of battles against pirate bases
 MOON_CHANCE_DEBRIS = 100_000  # each this much debris gives 1 % moon chance ...
 MOON_CHANCE_MAX = 20  # ... up to this many percent
+SCAN_DEUTERIUM = 5000  # a sensor array scan costs this much deuterium
+PORTAL_RECHARGE_SECONDS = 3600  # at transmit portal level 1, before game speed
 QUEST_ACTIONS = {ESPIONAGE: quests.ESPIONAGE, EXPEDITION: quests.EXPEDITION, TRANSPORT: quests.TRANSPORT,
                  DEPLOY: quests.DEPLOY, RECYCLE: quests.RECYCLE}
 BE_ESPIONAGE, BE_TRANSPORT = 14, 15  # report types for the target's side
@@ -89,6 +92,14 @@ def target_planet(target: tuple[int, int, int], moon: bool = False):
         (galaxy, system, position, universe.MOON if moon else universe.PLANET)).fetchone()
 
 
+def origin_planet(empire: dict, params: dict) -> dict:
+    start = params.get("start_p_id") or params.get("planet_id")
+    origin = planet_rules.find_planet(empire, int(start)) if start else empire["main_planet"]
+    if origin is None:
+        raise FleetError("This is not your planet")
+    return origin
+
+
 def targets_moon(params: dict) -> bool:
     """The dispatch screen sends planet_type=moon when the player picked the moon."""
     return params.get("planet_type") == "moon"
@@ -122,6 +133,8 @@ def allowed_missions(player_id: int, origin: dict, target: tuple[int, int, int],
     missions = [TRANSPORT] + recycle
     if row["player_id"] == player_id:
         missions.append(DEPLOY)
+        if moon and planet_rules.is_moon(origin) and planet_rules.level(origin, eco.TRANSMIT_PORTAL):
+            missions.append(TRANSMIT)
     else:
         if ESPIONAGE_PROBE in ships:
             missions.append(ESPIONAGE)
@@ -151,10 +164,7 @@ def plan(empire: dict, player_id: int, ships: dict[int, int], target: tuple[int,
 
 def send(player_id: int, state: dict, params: dict, now: float) -> None:
     empire = state["empire"]
-    start = params.get("start_p_id") or params.get("planet_id")
-    origin = planet_rules.find_planet(empire, int(start)) if start else empire["main_planet"]
-    if origin is None:
-        raise FleetError("This is not your planet")
+    origin = origin_planet(empire, params)
     planet_rules.tick(empire, now)
     ships = parse_ships(origin, params.get("fleet_ids", ""), params.get("fleet_cnt_ids", ""))
     target = parse_target(params.get("end_p_pos", ""))
@@ -166,6 +176,9 @@ def send(player_id: int, state: dict, params: dict, now: float) -> None:
     info = plan(empire, player_id, ships, target, percent, origin, moon)
     if mission not in info["missions"]:
         raise FleetError("This mission is not possible here")
+    if mission == TRANSMIT:
+        _transmit(empire, origin, target, ships, now)
+        return
     if mission == COLONY and len(empire["planets"]) >= max_planets(empire):
         raise FleetError("Research more Astrophysics to rule more planets")
     if mission == EXPEDITION:
@@ -201,6 +214,93 @@ def send(player_id: int, state: dict, params: dict, now: float) -> None:
             (player_id, origin["planet_id"], target_id, *target, mission,
              json.dumps({str(t): n for t, n in ships.items()}), json.dumps(cargo),
              int(now), int(now) + flight, int(now) + 2 * flight))
+
+
+def portal_recharge_seconds(portal_level: int) -> int:
+    return max(60, int(PORTAL_RECHARGE_SECONDS * 0.7 ** (portal_level - 1) / config.SPEED))
+
+
+def _transmit(empire: dict, origin: dict, target: tuple[int, int, int], ships: dict[int, int], now: float) -> None:
+    """Move ships at once between two own moons with transmit portals, which then recharge."""
+    row = target_planet(target, moon=True)
+    destination = planet_rules.find_planet(empire, row["id"]) if row else None
+    if destination is None or not planet_rules.level(destination, eco.TRANSMIT_PORTAL):
+        raise FleetError("The target moon needs a transmit portal")
+    for moon in (origin, destination):
+        if moon["transmit_recharge_event"]:
+            raise FleetError("The transmit portal is still recharging")
+    if any(ftype not in eco.SHIPS for ftype in ships):
+        raise FleetError("Only ships can pass the transmit portal")
+    for ftype, n in ships.items():
+        planet_rules.fleet(origin, ftype)["amount"] -= n
+        planet_rules.fleet(destination, ftype)["amount"] += n
+    for moon in (origin, destination):
+        seconds = portal_recharge_seconds(planet_rules.level(moon, eco.TRANSMIT_PORTAL))
+        moon["transmit_recharge_event"] = [{"start_time": int(now), "finish_time": int(now) + seconds,
+                                            "total_time": seconds}]
+
+
+def scan(empire: dict, moon_id: int, planet_id: int, now: float) -> list[dict]:
+    """Sensor array: the flights from and to a planet in range of the moon. The result is kept
+    in the moon's "last_scan" so the player can save it as a mail."""
+    moon = planet_rules.find_planet(empire, moon_id)
+    if moon is None or not planet_rules.is_moon(moon) or not planet_rules.level(moon, eco.SENSOR_ARRAY):
+        raise FleetError("You need a moon with a sensor array")
+    target = db.connect().execute("SELECT * FROM planets WHERE id = ?", (planet_id,)).fetchone()
+    if target is None:
+        raise FleetError("There is nothing to scan")
+    if target["galaxy"] != moon["galaxy_position"] or \
+            abs(target["system"] - moon["system_position"]) > planet_rules.sensor_range(moon):
+        raise FleetError("The target is out of the sensor array's range")
+    planet_rules.tick(empire, now)
+    if moon["deuterium"] < SCAN_DEUTERIUM:
+        raise FleetError(f"A scan needs {SCAN_DEUTERIUM:,} deuterium")
+    moon["deuterium"] -= SCAN_DEUTERIUM
+    rows = db.connect().execute(
+        "SELECT * FROM fleet_events WHERE origin_planet_id = ? OR target_planet_id = ? ORDER BY id",
+        (planet_id, planet_id)).fetchall()
+    found = []
+    for row in rows:
+        origin = db.connect().execute("SELECT * FROM planets WHERE id = ?", (row["origin_planet_id"],)).fetchone()
+        start_name, start_pos = _planet_label(row["origin_planet_id"], origin["galaxy"], origin["system"],
+                                              origin["position"])
+        end_name, end_pos = _planet_label(row["target_planet_id"], row["target_galaxy"], row["target_system"],
+                                          row["target_position"])
+        returning = row["status"] == "returning"
+        ships = _ships(row)
+        found.append({
+            "mission": row["mission"],
+            "start_planet_name": start_name, "start_position": start_pos,
+            "end_planet_name": end_name, "end_position": end_pos,
+            "start_time": row["turn_time"] if returning else row["start_time"],
+            "finish_time": row["return_time"] if returning else row["arrival_time"],
+            "is_returning": int(returning),
+            "amount": sum(ships.values()),
+            "fleets": [{"fleet_type": t, "name": eco.UNITS[t].name if t in eco.UNITS else str(t), "fleet_count": n}
+                       for t, n in ships.items()],
+        })
+    moon["last_scan"] = {"planet_id": planet_id, "planet_name": target["name"], "time": int(now), "flights": found,
+                         "position": f"{target['galaxy']}:{target['system']}:{target['position']}"}
+    return found
+
+
+def save_scan(player_id: int, empire: dict, moon_id: int, planet_id: int) -> None:
+    """Mail the moon's last scan of `planet_id` to the player."""
+    moon = planet_rules.find_planet(empire, moon_id)
+    last = moon.get("last_scan") if moon else None
+    if not last or last["planet_id"] != planet_id:
+        raise FleetError("Scan the planet first")
+    body = {"head": "Scan report ", "head_name": f"{last['planet_name']} [{last['position']}]", "body": [{
+        "title": "Flight ",
+        "mission": MISSION_NAMES.get(f["mission"], ""),
+        "mission_type": f["mission"],
+        "time_left": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(f["finish_time"])),
+        "from_name": f["start_planet_name"], "from_position": f["start_position"],
+        "to_name": f["end_planet_name"], "to_position": f["end_position"],
+        "fleets": f["fleets"],
+    } for f in last["flights"]]}
+    mails.send(player_id, mails.SCAN, mails.SENDER_SENSOR, _username(player_id),
+               f"Scan report [{last['position']}]", body, last["time"])
 
 
 def planet_has_flights(planet_id: int) -> bool:

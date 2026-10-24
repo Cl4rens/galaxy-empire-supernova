@@ -326,4 +326,10 @@ count. Players can skip the tutorial; skipping pays nothing.
   moons and moon buildings not on planets.
 - Fleets can fly to moons (transport, deploy, espionage, attack). A planet and its moon are 5
   distance units apart.
+- **Sensor array:** scans the flights from and to a planet up to level² - 1 systems away in the
+  moon's galaxy. Each scan costs 5,000 deuterium from the moon; saving the result as a mail is
+  free.
+- **Transmit portal:** ships jump at once and without fuel between two own moons that both have
+  a portal. Afterwards both portals recharge for 60 min × 0.7^(level - 1) / speed (at least
+  1 minute).
 - Giving up a colony gives up its moon too.

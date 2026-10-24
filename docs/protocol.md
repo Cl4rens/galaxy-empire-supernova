@@ -468,6 +468,17 @@ The moon screen (`Moon.tfs`) has one place per building type and finds it with
 Fleets sent to a moon carry `planet_type=moon` (otherwise `planet`) in
 `fleet_hanging_events/prepare_hanging` and `fleet_hanging_events.json`.
 
+- **Sensor array:** `POST sensor_arrays/scan` `moon_id, planet_id` answers `{"data": [...]}`, the
+  flights from and to the planet: `mission, start_planet_name, start_position, end_planet_name,
+  end_position, start_time, finish_time, is_returning` (**0/1**, the client compares with 0),
+  `amount, fleets: [{name, fleet_count}]`. `main_planet.senor_array_range` (sic) is shown on the
+  building. `POST sensor_arrays/save_report_mail` (same parameters) stores the scan as a mail of
+  `message_type` 6 with body `{head, head_name, body: [{title, mission, mission_type, time_left,
+  from_name, from_position, to_name, to_position, fleets}]}`.
+- **Transmit portal:** mission 16 (`FM_TRANSMIT`), sent from a moon to another own moon with
+  `planet_type=moon`. Both portals then recharge; `main_planet.transmit_recharge_event` holds
+  `[{start_time, finish_time, total_time}]` while they do.
+
 ### Errors
 
 For a status other than 200 the client shows the response body **as text** (or the `<title>` of

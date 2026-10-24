@@ -75,6 +75,12 @@ def fields(planet: dict) -> tuple[int, int]:
     return used, PLANET_FIELDS
 
 
+def sensor_range(moon: dict) -> int:
+    """Systems a sensor array sees on each side (OGame: level² - 1)."""
+    lv = level(moon, eco.SENSOR_ARRAY)
+    return lv * lv - 1 if lv else -1
+
+
 def buildable_here(planet: dict, btype: int) -> bool:
     return (btype in eco.MOON_BUILDINGS) == is_moon(planet)
 
@@ -181,6 +187,8 @@ def tick(empire: dict, now: float | None = None) -> None:
     now = time.time() if now is None else now
     for planet in bodies(empire):
         _tick_planet(empire, planet, now)
+        planet["transmit_recharge_event"] = [e for e in planet.get("transmit_recharge_event", [])
+                                             if e["finish_time"] > now]
 
 
 def _research_planet(empire: dict, event: dict) -> dict:
@@ -468,7 +476,8 @@ def client_view(empire: dict, now: float) -> dict:
     """The main_planet object as the client expects it."""
     planet = empire["main_planet"]
     rates = production(planet, empire)
-    view = {k: v for k, v in planet.items() if k not in ("buildings", "building_events", "last_update")}
+    hidden = ("buildings", "building_events", "last_update", "moon", "last_scan")
+    view = {k: v for k, v in planet.items() if k not in hidden}
     view.update({res: int(planet[res]) for res in RESOURCES})
     view.update({f"{res}_max": capacity(planet, res) for res in RESOURCES})
     view.update({f"{res}_perhour": round(rates[res]) for res in RESOURCES})
@@ -484,6 +493,7 @@ def client_view(empire: dict, now: float) -> dict:
         "building_events": [event_view(planet, e) for e in planet["building_events"]],
         "current_server_time": int(now),
         # Planet info screen; temperature as in OGame by position.
+        "senor_array_range": max(0, sensor_range(planet)) if is_moon(planet) else 0,
         "field_current": fields(planet)[0],
         "field_max": fields(planet)[1],
         "temp_max": 150 - 12 * planet["planet_position"],

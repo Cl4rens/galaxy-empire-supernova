@@ -10,8 +10,9 @@ import time
 
 from . import db
 
-REPORT, SYSTEM, USER, ALLIANCE, EXPLORE = 1, 2, 3, 4, 5  # message_type
+REPORT, SYSTEM, USER, ALLIANCE, EXPLORE, SCAN = 1, 2, 3, 4, 5, 6  # message_type
 SENDER_FLEET = "Fleet Command"
+SENDER_SENSOR = "Sensor Array"
 
 
 def send(recipient_id: int, message_type: int, sender: str, recipient_name: str, subject: str,

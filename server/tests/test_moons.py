@@ -1,7 +1,9 @@
 """Moons: forming after battles, the moon screen, moon buildings and flights to moons."""
 
+import math
 import sqlite3
 
+import pytest
 from fastapi.testclient import TestClient
 
 from supernova import db, fleets, mails, player, universe
@@ -109,3 +111,71 @@ def test_old_planet_tables_get_the_kind_column():
     db._migrate(conn)
     conn.execute("INSERT INTO planets (player_id, galaxy, system, position, name, kind) VALUES (1, 1, 2, 3, 'Moon', 1)")
     assert conn.execute("SELECT COUNT(*) FROM planets").fetchone()[0] == 2
+
+
+def moon_with(pid, planet, **levels):
+    with db.player_state(pid) as s:
+        p = next(x for x in s["empire"]["planets"] if x["planet_id"] == planet["planet_id"])
+        moon = player.add_moon(pid, p)
+        for btype, lv in levels.items():
+            planet_rules.building(moon, int(btype))["building_level"] = lv
+        moon.update(deuterium=20_000)
+    return moon["planet_id"]
+
+
+def test_sensor_array_scans_flights_in_range():
+    watcher, sender, receiver = new_player_with_cargo(0), new_player_with_cargo(), new_player_with_cargo(0)
+    home = db.load_state(watcher)["empire"]["planets"][0]
+    moon_id = moon_with(watcher, home, **{str(eco.SENSOR_ARRAY): 1, str(eco.MOON_BASE): 1})
+    target_id = db.load_state(receiver)["empire"]["planets"][0]["planet_id"]
+    with db.player_state(sender) as s:
+        fleets.send(sender, s, {"fleet_ids": f"{planet_rules.fleet(s['empire']['main_planet'], 9)['fleet_id']},",
+                                "fleet_cnt_ids": "2,", "end_p_pos": ",".join(map(str, position(receiver))),
+                                "mission": str(fleets.TRANSPORT), "speed_ratio": "100"}, 2_000_000_000.0)
+
+    with db.player_state(watcher) as s:
+        moon = planet_rules.find_planet(s["empire"], moon_id)
+        sensor = planet_rules.building(moon, eco.SENSOR_ARRAY)
+        distance = abs(position(receiver)[1] - home["system_position"])
+        if distance > 0:  # level 1 sees only its own system
+            with pytest.raises(fleets.FleetError, match="range"):
+                fleets.scan(s["empire"], moon_id, target_id, 2_000_000_001.0)
+            sensor["building_level"] = math.isqrt(distance) + 1  # range is level² - 1
+        found = fleets.scan(s["empire"], moon_id, target_id, 2_000_000_001.0)
+        assert moon["deuterium"] <= 20_000 - fleets.SCAN_DEUTERIUM
+        sensor["building_level"] = 1  # keep this player's score small for the ranking tests
+    assert found[0]["mission"] == fleets.TRANSPORT and found[0]["amount"] == 2 and found[0]["is_returning"] == 0
+    assert found[0]["fleets"][0]["name"] == "Small Cargo"
+
+    with db.player_state(watcher) as s:
+        fleets.save_scan(watcher, s["empire"], moon_id, target_id)
+    mail = mails.undelivered(watcher)[-1]
+    assert mail["message_type"] == mails.SCAN and mail["body"]["body"][0]["fleets"][0]["fleet_count"] == 2
+
+
+def test_transmit_portal_moves_ships_and_recharges():
+    c = TestClient(app, headers={"openudid": "jumper"})
+    state = decrypt_json(c.post("/world/1/trials.json", content="username="))
+    pid = state["user_id"]
+    with db.player_state(pid) as s:
+        research = next(r for r in s["empire"]["researches"] if r["research_type"] == eco.ASTROPHYSICS)
+        research["research_level"] = 1
+        s["empire"]["main_planet"].update(metal=10_000, crystal=10_000, deuterium=10_000)
+    from .test_colonies import colonize, free_position
+    colonize(pid, free_position(pid))
+    home, colony = db.load_state(pid)["empire"]["planets"]
+    portal = {str(eco.TRANSMIT_PORTAL): 1, str(eco.MOON_BASE): 1}
+    a, b = moon_with(pid, home, **portal), moon_with(pid, colony, **portal)
+    with db.player_state(pid) as s:
+        moon_a = planet_rules.find_planet(s["empire"], a)
+        planet_rules.fleet(moon_a, 2)["amount"] = 7
+        fid = planet_rules.fleet(moon_a, 2)["fleet_id"]
+    target = ",".join(map(str, (colony["galaxy_position"], colony["system_position"], colony["planet_position"])))
+    params = f"start_p_id={a}&fleet_ids={fid},&fleet_cnt_ids=7,&end_p_pos={target}&planet_type=moon&speed_ratio=100"
+    assert fleets.TRANSMIT in decrypt_json(c.get(f"/world/1/fleet_hanging_events/prepare_hanging?{params}"))["missions"]
+    decrypt_json(c.post("/world/1/fleet_hanging_events.json", content=f"{params}&mission={fleets.TRANSMIT}"))
+    s = db.load_state(pid)
+    assert planet_rules.fleet(planet_rules.find_planet(s["empire"], b), 2)["amount"] == 7
+    assert planet_rules.find_planet(s["empire"], a)["transmit_recharge_event"]
+    again = c.post("/world/1/fleet_hanging_events.json", content=f"{params}&mission={fleets.TRANSMIT}")
+    assert again.status_code == 400
