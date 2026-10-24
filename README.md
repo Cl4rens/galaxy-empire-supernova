@@ -152,7 +152,8 @@ Uninstall any old copy of the original game first, because the signatures differ
 - [x] Fleet missions: transport, deploy, recall
 - [x] Mailbox and espionage
 - [x] Combat: attacks, battle reports, loot, debris fields
-- [ ] Recycling, colonization, pirates, expeditions
+- [x] Recycling debris fields
+- [ ] Colonization, pirates, expeditions
 - [ ] Tutorial quests
 - [ ] Support for 64-bit-only devices
 - [ ] Game logic: buildings, research, fleets, combat, alliances

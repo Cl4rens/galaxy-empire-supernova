@@ -156,6 +156,8 @@ Ships fly between planets; defense units and solar satellites cannot fly. Implem
 - **Deploy:** moves ships and cargo to another planet of your own; they stay there.
 - **Espionage:** needs at least one espionage probe; probes return after the report.
 - **Attack:** needs armed ships; fights the planet's ships and defense (see Combat).
+- **Recycle:** recyclers collect a debris field up to their cargo space (20,000 each), metal
+  first; the rest stays for later.
 
 Every arrival and return sends a report to the mailbox; the target of a transport or of
 espionage is notified too.

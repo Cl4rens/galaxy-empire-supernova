@@ -232,6 +232,7 @@ Slots it does not get keep the placeholder text of the Flash UI. Each slot:
 - `kryptons` must be a list for every slot, even empty ones; the client iterates it.
 - `planet_icon` must be 0 unless a special icon is wanted.
 - `lord_info` (system ruler) is optional here.
+- A slot with `has_debris: true` offers "Recycle"; the confirmation dialog shows `debris_desc`.
 
 The **galaxy map** is a grid of 34 × 34 tiles per galaxy (`TILE_W` 338, `TILE_H` 274), one
 system per tile. Supernova lays the 499 systems out row by row: system *n* is tile
@@ -309,6 +310,7 @@ For reports `body` is an object; `body.mission_type` picks the layout:
 | 6 | espionage | `event_info`, `probe_result` |
 | 14 | spied on | `event_info: {espionage_user, espionage_planet_pos, be_espionage_user, be_espionage_planet_pos}` |
 | 7 | battle | `event_info`, `notify_message`, `attack_result` (see below) |
+| 3 | recycling | `event_info` (collected amounts in `resource_*`), `total_garbage: {garbage_metal, garbage_crystal, garbage_deuterium}` (field before collecting) |
 
 `event_info`: `{mission, mission_name, start_planet_name, start_planet_pos, end_planet_name,
 end_planet_pos, finish_time, resource_metal, resource_crystal, resource_deuterium,

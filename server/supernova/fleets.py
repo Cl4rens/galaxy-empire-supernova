@@ -4,7 +4,7 @@ Flights are stored in the fleet_events table, not in the player state, because a
 change another player's planet. A background task in the server calls `process_due` every
 second, so missions also complete while their owner is offline.
 
-Implemented missions: transport, deploy, espionage and attack. Arrivals and returns send reports to
+Implemented missions: transport, deploy, espionage, attack and recycle. Arrivals and returns send reports to
 the mailbox.
 """
 
@@ -28,6 +28,7 @@ MISSION_NAMES = {
 UNDER_ATTACK = 11  # how incoming attacks appear in the defender's flight list
 BE_ESPIONAGE, BE_TRANSPORT = 14, 15  # report types for the target's side
 ESPIONAGE_PROBE = 13
+RECYCLER = 12
 RESOURCES = planet_rules.RESOURCES
 
 
@@ -80,11 +81,18 @@ def target_planet(target: tuple[int, int, int]):
         (galaxy, system, position)).fetchone()
 
 
+def debris_at(target: tuple[int, int, int]) -> dict[str, int]:
+    row = db.connect().execute("SELECT metal, crystal FROM debris WHERE galaxy = ? AND system = ? AND position = ?",
+                               target).fetchone()
+    return {"metal": row["metal"], "crystal": row["crystal"]} if row else {"metal": 0, "crystal": 0}
+
+
 def allowed_missions(player_id: int, origin: dict, target: tuple[int, int, int], ships: dict[int, int]) -> list[int]:
+    recycle = [RECYCLE] if RECYCLER in ships and any(debris_at(target).values()) else []
     row = target_planet(target)
     if row is None or row["id"] == origin["planet_id"]:
-        return []  # colonize, expedition, pirates: not implemented yet
-    missions = [TRANSPORT]
+        return recycle  # colonize, expedition, pirates: not implemented yet
+    missions = [TRANSPORT] + recycle
     if row["player_id"] == player_id:
         missions.append(DEPLOY)
     else:
@@ -140,13 +148,15 @@ def send(player_id: int, state: dict, params: dict, now: float) -> None:
         planet_rules.fleet(origin, ftype)["amount"] -= n
 
     flight = info["total_time"]
+    target_row = target_planet(target)
+    target_id = target_row["id"] if target_row else None  # empty space, e.g. a debris field
     conn = db.connect()
     with db.lock(), conn:
         conn.execute(
             "INSERT INTO fleet_events (owner_id, origin_planet_id, target_planet_id, target_galaxy, target_system, "
             "target_position, mission, ships, cargo, start_time, arrival_time, return_time, status) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'outbound')",
-            (player_id, origin["planet_id"], target_planet(target)["id"], *target, mission,
+            (player_id, origin["planet_id"], target_id, *target, mission,
              json.dumps({str(t): n for t, n in ships.items()}), json.dumps(cargo),
              int(now), int(now) + flight, int(now) + 2 * flight))
 
@@ -360,8 +370,37 @@ def _attack(row, target_owner: int, state: dict) -> str:
     return "returning"
 
 
+def _recycle(row) -> str:
+    """Recyclers collect debris up to their cargo space, metal first."""
+    target = (row["target_galaxy"], row["target_system"], row["target_position"])
+    ships = _ships(row)
+    space = eco.SHIPS[RECYCLER].cargo * ships.get(RECYCLER, 0)
+    conn = db.connect()
+    with db.lock(), conn:
+        field = debris_at(target)
+        metal = min(field["metal"], space)
+        crystal = min(field["crystal"], space - metal)
+        conn.execute("UPDATE debris SET metal = metal - ?, crystal = crystal - ? "
+                     "WHERE galaxy = ? AND system = ? AND position = ?", (metal, crystal, *target))
+        conn.execute("DELETE FROM debris WHERE metal <= 0 AND crystal <= 0")
+        cargo = json.loads(row["cargo"])
+        cargo["metal"] += metal
+        cargo["crystal"] += crystal
+        conn.execute("UPDATE fleet_events SET cargo = ? WHERE id = ?", (json.dumps(cargo), row["id"]))
+    info = _event_info(row, row["arrival_time"])
+    info.update(resource_metal=metal, resource_crystal=crystal, resource_deuterium=0)
+    mails.send(row["owner_id"], mails.REPORT, mails.SENDER_FLEET, _username(row["owner_id"]),
+               f"Recycling report [{info['end_planet_pos']}]",
+               {"mission_type": RECYCLE, "is_returning": False, "event_info": info,
+                "total_garbage": {"garbage_metal": field["metal"], "garbage_crystal": field["crystal"],
+                                  "garbage_deuterium": 0}}, row["arrival_time"])
+    return "returning"
+
+
 def _arrive(row) -> str:
     """Apply the mission at the target. Returns the new status of the flight."""
+    if row["mission"] == RECYCLE:
+        return _recycle(row)
     cargo = json.loads(row["cargo"])
     target_owner = _planet_owner(row["target_planet_id"])
     if target_owner is None:

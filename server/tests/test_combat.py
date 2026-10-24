@@ -75,3 +75,21 @@ def test_attack_mission():
     p = db.load_state(attacker)["empire"]["main_planet"]
     assert p["metal"] >= 50_000 + loot["metal"] - 100
     assert 25 <= planet_rules.fleet(p, 3)["amount"] <= 30
+
+
+def test_recycling_collects_debris():
+    collector, owner = new_player_with_cargo(0), new_player_with_cargo(0)
+    target = position(owner)
+    fleets.add_debris(*target, 30_000, 10_000)
+    with db.player_state(collector) as state:
+        planet_rules.fleet(state["empire"]["main_planet"], fleets.RECYCLER)["amount"] = 1
+        assert fleets.RECYCLE in fleets.plan(state["empire"], collector, {fleets.RECYCLER: 1}, target)["missions"]
+        rid = planet_rules.fleet(state["empire"]["main_planet"], fleets.RECYCLER)["fleet_id"]
+        fleets.send(collector, state, {"fleet_ids": f"{rid},", "fleet_cnt_ids": "1,", "mission": str(fleets.RECYCLE),
+                                       "end_p_pos": ",".join(map(str, target)), "speed_ratio": "100"}, 2_000_000_000.0)
+    fleets.process_due(fleets.events_view(collector)[0]["finish_time"])
+    assert fleets.debris_at(target) == {"metal": 10_000, "crystal": 10_000}  # 20,000 cargo, metal first
+    report = mails.undelivered(collector)[0]["body"]
+    assert report["event_info"]["resource_metal"] == 20_000 and report["total_garbage"]["garbage_metal"] == 30_000
+    fleets.process_due(fleets.events_view(collector)[0]["finish_time"])
+    assert db.load_state(collector)["empire"]["main_planet"]["metal"] >= 70_000
