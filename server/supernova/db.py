@@ -66,6 +66,17 @@ CREATE TABLE IF NOT EXISTS debris (
     crystal  INTEGER NOT NULL,
     PRIMARY KEY (galaxy, system, position)
 );
+CREATE TABLE IF NOT EXISTS pirate_bases (
+    galaxy       INTEGER NOT NULL,
+    system       INTEGER NOT NULL,
+    position     INTEGER NOT NULL,
+    beaten_until REAL NOT NULL,
+    PRIMARY KEY (galaxy, system, position)
+);
+CREATE TABLE IF NOT EXISTS expeditions (
+    player_id  INTEGER NOT NULL,
+    started_at INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS sessions (
     token      TEXT PRIMARY KEY,
     player_id  INTEGER NOT NULL REFERENCES players(id),

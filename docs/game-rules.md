@@ -257,3 +257,25 @@ Battles follow OGame (`server/supernova/combat.py`):
 | Plasma Cannon | 3,000 | 300 | 10,000 |
 | Small Shield Dome | 1 | 2,000 | 2,000 |
 | Large Shield Dome | 1 | 10,000 | 10,000 |
+
+## Pirates and expeditions
+
+These are Supernova's own rules; the original values are unknown (`server/supernova/npc.py`).
+
+**Pirate bases** sit at positions 17–21 of every system, level 1–5. A base of level *L* defends
+with *L*² × (8 light fighters, 3 heavy fighters, 1 cruiser, 10 rocket launchers, 4 light lasers),
+fights with weapons/shielding/armour technology *L*, and holds *L*² × (6,000 metal, 4,000 crystal,
+1,500 deuterium). Beating it gives the loot (as far as the cargo space allows) and leaves the
+base empty for 4 hours / game speed; the galaxy view shows the countdown. Pirate bases can be
+spied on and leave debris like any battle.
+
+**Expeditions** fly to position 16. Each player can start 10 per day. Outcomes:
+
+| Chance | Outcome |
+|-------:|---------|
+| 35 % | resources: 10–50 % of the fleet's value, as far as the cargo space allows |
+| 15 % | ships join the fleet |
+| 8 % | 50–300 dark matter |
+| 12 % | pirate ambush (a battle) |
+| 29 % | nothing |
+| 1 % | black hole: the fleet is lost |

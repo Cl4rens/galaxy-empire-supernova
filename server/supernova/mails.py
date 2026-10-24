@@ -10,7 +10,7 @@ import time
 
 from . import db
 
-REPORT, SYSTEM, USER, ALLIANCE = 1, 2, 3, 4  # message_type
+REPORT, SYSTEM, USER, ALLIANCE, EXPLORE = 1, 2, 3, 4, 5  # message_type
 SENDER_FLEET = "Fleet Command"
 
 

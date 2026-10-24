@@ -143,10 +143,15 @@ def system_view(galaxy: int, system: int) -> dict:
             slot["has_debris"] = True
             slot["debris_desc"] = f"Debris: {metal:,} metal, {crystal:,} crystal"
     planets.append(_slot(galaxy, system, EXPEDITION_POSITION, "Expedition"))
-    # Pirate bases (NPC planets). Shown so the client has all 21 slots; not attackable yet.
-    for level, position in enumerate(PIRATE_POSITIONS, start=1):
+    # Pirate bases (NPC planets), see npc.py.
+    from . import npc
+    for position in PIRATE_POSITIONS:
+        base = npc.pirate_base(galaxy, system, position)
         pirate = _slot(galaxy, system, position, "Pirates")
-        pirate["pirate_level"] = level
+        pirate.update(pirate_level=base["level"], next_refresh_time=base["next_refresh_time"])
+        if position in debris:
+            metal, crystal = debris[position]
+            pirate.update(has_debris=True, debris_desc=f"Debris: {metal:,} metal, {crystal:,} crystal")
         planets.append(pirate)
     return {
         "system_id": system_id(galaxy, system),
