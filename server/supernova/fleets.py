@@ -16,7 +16,7 @@ import time
 
 from . import combat, config, db, ranking
 from . import economy as eco
-from . import mails, npc, quests
+from . import kryptons, mails, npc, quests
 from . import planet as planet_rules
 from . import universe
 
@@ -436,10 +436,19 @@ def _tech_bonus(empire: dict) -> dict:
     }
 
 
-def _side(name: str, empire: dict, units: dict[int, int]) -> combat.Side:
+def _side(name: str, empire: dict, units: dict[int, int], planet: dict | None = None) -> combat.Side:
+    """A player's side; `planet` (where the fleet starts or the defense stands) adds its krypton bonuses."""
+    planet = planet or {}
     return combat.Side(name, units, planet_rules.research_level(empire, eco.WEAPONS_TECH),
                        planet_rules.research_level(empire, eco.SHIELDING_TECH),
-                       planet_rules.research_level(empire, eco.ARMOUR_TECH))
+                       planet_rules.research_level(empire, eco.ARMOUR_TECH),
+                       kryptons.bonus(planet, "attack"), kryptons.bonus(planet, "shield"),
+                       kryptons.bonus(planet, "armour"))
+
+
+def _krypton_bonus(side: combat.Side) -> dict:
+    return {"attack_bonus_percent": side.attack_percent, "shield_bonus_percent": side.shield_percent,
+            "armour_bonus_percent": side.armour_percent}
 
 
 def _battle(row, attacker: combat.Side, attacker_bonus: dict, defender: combat.Side, defender_bonus: dict) -> dict:
@@ -455,7 +464,6 @@ def _battle(row, attacker: combat.Side, attacker_bonus: dict, defender: combat.S
     if result["rebuilt"]:
         rounds.append({"attack_recovered_fleets": [], "defend_recovered_fleets": combat._fleet_list(result["rebuilt"]),
                        "attack_survived_fleets": [], "defend_survived_fleets": []})
-    no_krypton = {"attack_bonus_percent": 0, "shield_bonus_percent": 0, "armour_bonus_percent": 0}
     result["report"] = {
         "attacker_name": attacker.name,
         "defender_name": defender.name,
@@ -469,8 +477,8 @@ def _battle(row, attacker: combat.Side, attacker_bonus: dict, defender: combat.S
         "defend_bonus_info": {"tech_bonus": defender_bonus},
         "attack_bonus": attacker_bonus,
         "defend_bonus": defender_bonus,
-        "attack_krypton_bonus": no_krypton,
-        "defend_krypton_bonus": no_krypton,
+        "attack_krypton_bonus": _krypton_bonus(attacker),
+        "defend_krypton_bonus": _krypton_bonus(defender),
         "round": rounds,
         "debirs": result["debris"],
     }
@@ -498,8 +506,10 @@ def _attack(row, target_owner: int, state: dict, planet: dict) -> str:
     attacker_name, defender_name = _username(row["owner_id"]), _username(target_owner)
     defend_units = {f["fleet_type"]: f["amount"] for f in planet["fleets"]
                     if f["amount"] and f["fleet_type"] in combat.STATS}
-    result = _battle(row, _side(attacker_name, owner_state["empire"], _ships(row)), _tech_bonus(owner_state["empire"]),
-                     _side(defender_name, state["empire"], defend_units), _tech_bonus(state["empire"]))
+    origin = planet_rules.find_planet(owner_state["empire"], row["origin_planet_id"])
+    result = _battle(row, _side(attacker_name, owner_state["empire"], _ships(row), origin),
+                     _tech_bonus(owner_state["empire"]),
+                     _side(defender_name, state["empire"], defend_units, planet), _tech_bonus(state["empire"]))
     for f in planet["fleets"]:
         if f["fleet_type"] in defend_units:
             f["amount"] = result["defender_left"].get(f["fleet_type"], 0) + result["rebuilt"].get(f["fleet_type"], 0)
@@ -549,19 +559,27 @@ def _attack_pirates(row) -> str:
     pirates = npc.pirate_side(base["fleet"], level)
     pirate_bonus = {"attack_bonus_percent": 10 * level, "shield_bonus_percent": 10 * level,
                     "armour_bonus_percent": 10 * level}
-    result = _battle(row, _side(attacker_name, owner_state["empire"], _ships(row)), _tech_bonus(owner_state["empire"]),
-                     pirates, pirate_bonus)
+    origin = planet_rules.find_planet(owner_state["empire"], row["origin_planet_id"])
+    result = _battle(row, _side(attacker_name, owner_state["empire"], _ships(row), origin),
+                     _tech_bonus(owner_state["empire"]), pirates, pirate_bonus)
     loot = {res: 0 for res in RESOURCES}
+    stones = 0
     if result["winner"] == "attacker":
         space = eco.cargo_capacity(result["attacker_left"])
         loot = combat.plunder({r: 2 * v for r, v in base["loot"].items()}, space)  # all of it, if it fits
         if base["fleet"]:
             npc.beat_pirates(*target, row["arrival_time"])
+            stones = kryptons.pirate_stones(level)
+            with db.player_state(row["owner_id"]) as state:
+                kryptons.add_stones(state, stones)
     add_debris(*target, result["debris"]["metal"], result["debris"]["crystal"])
     info = _event_info(row, row["arrival_time"])
     info["end_planet_name"] = npc.pirate_name(level)
+    notes = [_loot_text(loot)] if result["winner"] == "attacker" else []
+    if stones:
+        notes.append(f"Krypton stones: {stones:,}")
     body = {"mission_type": ATTACK_PIRATES, "is_returning": False, "event_info": info,
-            "notify_message": _loot_text(loot) if result["winner"] == "attacker" else "",
+            "notify_message": ", ".join(notes),
             "attack_result": dict(result["report"], loot=loot)}
     mails.send(row["owner_id"], mails.REPORT, mails.SENDER_FLEET, attacker_name,
                f"Battle report [{info['end_planet_pos']}]", body, row["arrival_time"])

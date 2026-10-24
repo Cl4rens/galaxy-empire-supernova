@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse, Response
 
 from . import accounts, alliances, bookmarks, chat, checkin, crypto, db, faq, fleets, gifts, mails, notices
-from . import player, quests, ranking
+from . import kryptons, player, quests, ranking
 from . import planet as planet_rules
 from . import universe
 
@@ -708,6 +708,161 @@ async def sensor_save(world_id: int, request: Request, player_id: int = Depends(
     except planet_rules.GameError as e:
         return error(str(e))
     return encrypted_json({})
+
+
+# --- Kryptons -------------------------------------------------------------------------------
+
+
+def krypton_call(player_id: int, act, with_empire: bool = False) -> Response:
+    """Run act(state, now) under the player's lock; game errors become error answers."""
+    now = time.time()
+    try:
+        with db.player_state(player_id) as state:
+            planet_rules.tick(state["empire"], now)
+            kryptons.sync_planets(state)
+            result = act(state, now)
+            if with_empire:
+                result = dict(result, empire=player.empire_summary(state),
+                              planet=planet_rules.client_view(state["empire"], now))
+            return encrypted_json(result)
+    except planet_rules.GameError as e:
+        return error(str(e))
+
+
+def _int(params: dict, key: str, default: int = 0) -> int:
+    value = params.get(key, "")
+    return int(value) if str(value).lstrip("-").isdigit() else default
+
+
+@router.api_route("/alchemy", methods=["GET", "POST"])
+def refinery(player_id: int = Depends(current_player)):
+    return krypton_call(player_id, lambda state, now: kryptons.refinery_view(state))
+
+
+@router.api_route("/alchemy/save_to_db", methods=["GET", "POST"])
+def refinery_save(player_id: int = Depends(current_player)):
+    return encrypted_json({})  # everything is saved at once
+
+
+@router.api_route("/alchemy/fuse_krypton", methods=["GET", "POST"])
+async def refine(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    return krypton_call(player_id, lambda state, now: kryptons.refine(
+        state, _int(params, "times", 1), params.get("auto_d") == "1", now))
+
+
+@router.api_route("/alchemy/move", methods=["GET", "POST"])
+async def refinery_collect(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    return krypton_call(player_id, lambda state, now: kryptons.collect(
+        state, _int(params, "buff"), _int(params, "level"), _int(params, "star")))
+
+
+@router.api_route("/alchemy/destroy_crypton", methods=["GET", "POST"])
+async def refinery_break_down(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    key = (_int(params, "buff"), _int(params, "level"), _int(params, "star")) if "buff" in params else None
+    return krypton_call(player_id, lambda state, now: kryptons.break_down_tray(state, key))
+
+
+@router.api_route("/kryptons", methods=["GET", "POST"])
+def krypton_storage(player_id: int = Depends(current_player)):
+    return krypton_call(player_id, lambda state, now: kryptons.storage_view(state))
+
+
+@router.post("/kryptons/unlock_package")
+async def krypton_unlock_storage(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    confirm = params.get("show_info") != "1"
+    return krypton_call(player_id, lambda state, now: kryptons.unlock_storage(state, _int(params, "count", 1), confirm),
+                        with_empire=confirm)
+
+
+@router.post("/kryptons/{planet_id}/unlock_planet_hole")
+async def krypton_unlock_holes(world_id: int, planet_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    confirm = params.get("show_info") != "1"
+    return krypton_call(player_id, lambda state, now: kryptons.unlock_holes(
+        state, planet_id, _int(params, "unlock_index", 1), confirm), with_empire=confirm)
+
+
+@router.post("/kryptons/{item_id}/inset_into_planet")
+async def krypton_set(world_id: int, item_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+
+    def act(state, now):
+        kryptons.set_into_planet(state, item_id, _int(params, "planet_id"))
+        return {}
+    return krypton_call(player_id, act, with_empire=True)
+
+
+@router.post("/kryptons/{item_id}/outset_from_planet")
+def krypton_take(item_id: int, player_id: int = Depends(current_player)):
+    def act(state, now):
+        kryptons.take_from_planet(state, item_id)
+        return {"price": -1}  # taking a krypton out is free and done at once
+    return krypton_call(player_id, act, with_empire=True)
+
+
+@router.post("/kryptons/{item_id}/upgrade")
+def krypton_upgrade(item_id: int, player_id: int = Depends(current_player)):
+    return krypton_call(player_id, lambda state, now: {"energy_for_update": kryptons.upgrade(state, item_id)},
+                        with_empire=True)
+
+
+@router.post("/kryptons/{item_id}/conversion")
+async def krypton_break_down(world_id: int, item_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+
+    def act(state, now):
+        if params.get("show_info") == "1":
+            return {"energy_info": kryptons.conversion_energy(kryptons._item(kryptons.account(state), item_id))}
+        return {"energy": kryptons.break_down_item(state, item_id)}
+    return krypton_call(player_id, act)
+
+
+@router.get("/planets/{planet_id}/kryptons")
+def planet_kryptons(planet_id: int, player_id: int = Depends(current_player)):
+    def act(state, now):
+        planet = planet_rules.find_planet(state["empire"], planet_id)
+        if planet is None:
+            raise planet_rules.GameError("This is not your planet")
+        return {"kryptons": planet["kryptons"], "hole_count": kryptons.holes(kryptons.account(state), planet_id)}
+    return krypton_call(player_id, act)
+
+
+@router.get("/krypton_researches")
+def krypton_research(player_id: int = Depends(current_player)):
+    return krypton_call(player_id, lambda state, now: kryptons.research_view(state, now))
+
+
+@router.post("/krypton_researches/upgrade")
+def krypton_research_start(player_id: int = Depends(current_player)):
+    return krypton_call(player_id, lambda state, now: kryptons.start_research(state, now))
+
+
+@router.post("/krypton_researches/speedup")
+def krypton_research_speedup(player_id: int = Depends(current_player)):
+    return error("Speeding up is not available on Supernova")
+
+
+@router.api_route("/crypton_sale", methods=["GET", "POST"])
+def krypton_shop(player_id: int = Depends(current_player)):
+    return krypton_call(player_id, lambda state, now: kryptons.shop_view(state, now))
+
+
+@router.api_route("/crypton_sale/price", methods=["GET", "POST"])
+async def krypton_shop_price(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    return krypton_call(player_id, lambda state, now: {
+        "message": kryptons.price_message(params.get("type", ""), _int(params, "times", 1))})
+
+
+@router.api_route("/crypton_sale/exchange", methods=["GET", "POST"])
+async def krypton_shop_buy(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    return krypton_call(player_id, lambda state, now: kryptons.buy(
+        state, params.get("type", ""), _int(params, "times", 1), now))
 
 
 # --- Chat ------------------------------------------------------------------------------------

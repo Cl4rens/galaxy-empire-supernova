@@ -343,3 +343,25 @@ count. Players can skip the tutorial; skipping pays nothing.
   first tutorial quest.
 - Gifts the operator sends with the admin tool are credited to the home planet at once and
   announced by mail.
+
+## Kryptons
+
+The original rules are lost; Supernova's own:
+
+- **Refining** costs 200 krypton stones × refinery stage (1-5) and puts a krypton into the
+  tray (18 places). After each refining the stage goes up by one (50 %) or back to 1. A krypton
+  gets 1 star plus one per stage with 30 % chance each (+3 % per krypton research level), at
+  most 6 stars. With "auto break-down" kryptons of 4 stars or less turn into energy at once.
+- From the tray kryptons are **collected** into the storage (18 places, up to 54 for 300 stones
+  each) or **broken down** into 10 × 2^(stars-1) krypton energy.
+- Kryptons are **set into planets** (1 slot, up to 5; the n-th extra slot costs 1,000 × n
+  stones) and taken out for free. **Upgrading** to the next level costs 20 × stars × level
+  energy (levels 1-10); breaking down an upgraded krypton returns half of that energy.
+- **Effects**, per krypton: 2 % per star + 1 % per level above 1. Weapon, shield and armour
+  kryptons strengthen the planet's defense and fleets starting from it; metal, crystal and gas
+  kryptons raise the planet's mine output.
+- **Krypton stones** come from beaten pirate bases (50 × level × (level + 1)) and the krypton
+  merchant, who sells 1,000 stones for 10 dark matter (10 times a day) or 6,000 for 50
+  (3 times). Dark matter is found on expeditions.
+- **Krypton research** (levels 1-10) costs 20 × (level + 1) dark matter and takes
+  (level + 1) hours / speed.

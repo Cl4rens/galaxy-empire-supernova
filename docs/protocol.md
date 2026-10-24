@@ -502,6 +502,35 @@ after the last `/` exists in `data2`; Supernova points them at the client's own
 gifts (red dot on the gift button). `empire.gift_id` is the oldest unclaimed system gift; the
 client only opens the gift window from quest 1.
 
+### Kryptons
+
+The krypton lab (building 20) has three screens. All requests below answer encrypted JSON;
+`account` is `[{crypton_type: 1 (stones), number}, {crypton_type: 2 (energy), number}]`.
+
+| Request | Answer |
+|---------|--------|
+| `GET alchemy?user_id=` | refinery: `{expire, cost, level (stage 1-5), account, crypton: [tray]}`; tray entries `{b: type, l: level, s: stars, title, des1, des2, upcost, energy}` |
+| `POST alchemy/fuse_krypton` `times, auto_d` | the same plus `code, msg, data: {array: [new tray entries], crypton}` |
+| `GET alchemy/move?buff=&level=&star=` | collect a tray krypton: `{code, expire, msg}` |
+| `GET alchemy/destroy_crypton` (`buff, level, star` for one) | break down: `{code, expire, stones, energy, msg}` |
+| `GET kryptons` | `{kryptons: {planet: [...], package: [...], all_buffs: [{planet_id, buffs: [{description}]}]}, planet_hole: [{planet_id, planet_name, hole_count}], krypton_stone, krypton_energy, package_count}`; items `{id, type, rank, level, planet_id, sort, name, description, effect_description, energy_for_update}` |
+| `POST kryptons/<id>/inset_into_planet` `planet_id` | `{empire, planet}` |
+| `POST kryptons/<id>/outset_from_planet` | `{price: -1, empire, planet}` (`price` ≥ 0 asks for confirmation) |
+| `POST kryptons/<id>/upgrade` | `{energy_for_update, empire, planet}` |
+| `POST kryptons/<id>/conversion` `show_info=1/0` | `{energy_info}` (question) or `{energy}` |
+| `POST kryptons/<planet_id>/unlock_planet_hole` `unlock_index, show_info` | `{show_info, show_message}` or `{empire, planet}` |
+| `POST kryptons/unlock_package` `count, show_info` | `{show_info, price}` or `{empire}` |
+| `GET planets/<id>/kryptons` | `{kryptons, hole_count}` |
+| `GET krypton_researches`, `POST krypton_researches/upgrade` | `{research: {research_name, research_level, finished, up_dark_matter_require, up_time, finish_time, total_time}, resource: {stone, energy}}` |
+| `GET crypton_sale?user_id=` | shop: `{data: [{type, title, description, times, max_times, exchange: {base}, image}], dk_balance, gu_balance, stone_balance}` |
+| `GET crypton_sale/price?type=&times=` | `{message}` |
+| `GET crypton_sale/exchange?type=&times=` | `{code, msg}` or `{code: 0, dk_balance, gu_balance, stone_balance, data}` |
+
+Kryptons are drawn by `krypton_type` and stars (`krypton_rank`): types 1 weapon, 2 shield,
+3 armour, 4 metal, 5 crystal, 6 gas. `main_planet.kryptons` lists the planet's kryptons as
+`{krypton_type, krypton_rank, krypton_level}`. Battle reports show the krypton bonuses in
+`attack_krypton_bonus` and `defend_krypton_bonus`.
+
 ### Errors
 
 For a status other than 200 the client shows the response body **as text** (or the `<title>` of

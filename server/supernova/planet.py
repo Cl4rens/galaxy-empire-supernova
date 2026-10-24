@@ -119,7 +119,8 @@ def production(planet: dict, empire: dict) -> dict:
     factor = min(1.0, produced / used) if used > 0 else 1.0
 
     def mine(btype: int, resource: str) -> float:
-        return eco.BASE_PRODUCTION[resource] + eco.mine_output(btype, level(planet, btype)) * pct[btype] * factor
+        krypton = 1 + planet.get("krypton_bonus", {}).get(resource, 0) / 100
+        return eco.BASE_PRODUCTION[resource] + eco.mine_output(btype, level(planet, btype)) * pct[btype] * factor * krypton
 
     return {
         "metal": mine(eco.METAL_MINE, "metal") * config.SPEED,
@@ -476,7 +477,7 @@ def client_view(empire: dict, now: float) -> dict:
     """The main_planet object as the client expects it."""
     planet = empire["main_planet"]
     rates = production(planet, empire)
-    hidden = ("buildings", "building_events", "last_update", "moon", "last_scan")
+    hidden = ("buildings", "building_events", "last_update", "moon", "last_scan", "krypton_bonus")
     view = {k: v for k, v in planet.items() if k not in hidden}
     view.update({res: int(planet[res]) for res in RESOURCES})
     view.update({f"{res}_max": capacity(planet, res) for res in RESOURCES})

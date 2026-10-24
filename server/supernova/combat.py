@@ -63,6 +63,18 @@ class Side:
     weapons: int = 0  # technology levels
     shielding: int = 0
     armour: int = 0
+    attack_percent: int = 0  # krypton bonuses
+    shield_percent: int = 0
+    armour_percent: int = 0
+
+    def weapon_factor(self) -> float:
+        return 1 + 0.1 * self.weapons + self.attack_percent / 100
+
+    def shield_factor(self) -> float:
+        return 1 + 0.1 * self.shielding + self.shield_percent / 100
+
+    def armour_factor(self) -> float:
+        return 1 + 0.1 * self.armour + self.armour_percent / 100
 
     def count(self) -> int:
         return sum(self.units.values())
@@ -73,8 +85,8 @@ def _expand(side: Side) -> list[list]:
     units = []
     for utype, n in side.units.items():
         s = STATS[utype]
-        hull = s.hull * (1 + 0.1 * side.armour)
-        units += [[utype, hull, s.shield * (1 + 0.1 * side.shielding)] for _ in range(n)]
+        hull = s.hull * side.armour_factor()
+        units += [[utype, hull, s.shield * side.shield_factor()] for _ in range(n)]
     return units
 
 
@@ -84,13 +96,13 @@ def _fire(shooters: list, side: Side, targets: list, target_side: Side, rng: ran
     if not targets:
         return 0, 0, 0
     for utype, _, _ in shooters:
-        weapon = STATS[utype].weapon * (1 + 0.1 * side.weapons)
+        weapon = STATS[utype].weapon * side.weapon_factor()
         rapid = RAPID_FIRE.get(utype, {})
         while True:
             target = targets[rng.randrange(len(targets))]
             shots += 1
             ttype, hull, shield = target
-            max_shield = STATS[ttype].shield * (1 + 0.1 * target_side.shielding)
+            max_shield = STATS[ttype].shield * target_side.shield_factor()
             if hull > 0 and weapon >= 0.01 * max_shield:
                 hit = weapon
                 if shield >= hit:
