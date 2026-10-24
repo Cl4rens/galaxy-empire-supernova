@@ -4,7 +4,8 @@ A fan-made effort to bring the discontinued mobile game **Galaxy Empire** (tap4f
 with a reimplemented game server.
 
 > **Status: early development.** A patched client logs in as a guest, builds and upgrades
-> buildings and produces resources. Research, fleets and everything beyond are not there yet.
+> buildings, produces resources and researches technologies. Fleets and everything beyond are
+> not there yet.
 
 > **Disclaimer:** This is a non-commercial fan project. It is not affiliated with, endorsed by, or
 > connected to tap4fun or any rights holder. All trademarks belong to their respective owners.
@@ -101,6 +102,16 @@ python -m uvicorn supernova.app:app --host 0.0.0.0 --port 8000
 The server reads the client's response key from your APK in `apk/` (or from the path in the
 `SUPERNOVA_APK` environment variable).
 
+Server operators can manage players from the command line (in Docker:
+`docker compose exec supernova python -m supernova.admin ...`):
+
+```sh
+python -m supernova.admin list
+python -m supernova.admin show <username>
+python -m supernova.admin give <username> metal=10000 crystal=5000 deuterium=2000
+python -m supernova.admin set-building <username> <building_type> <level> [lot]
+```
+
 ### 4. Build the patched APK
 
 ```sh
@@ -133,7 +144,8 @@ Uninstall any old copy of the original game first, because the signatures differ
 - [x] Minimal server: update check and world list (client reaches the title screen)
 - [x] Guest login, sessions, heartbeat, player state
 - [x] Buildings and resource production (rules: [`docs/game-rules.md`](docs/game-rules.md))
-- [ ] Research, shipyard, fleets
+- [x] Research
+- [ ] Shipyard, fleets
 - [ ] Tutorial quests
 - [ ] Support for 64-bit-only devices
 - [ ] Game logic: buildings, research, fleets, combat, alliances

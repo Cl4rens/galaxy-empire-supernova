@@ -114,6 +114,19 @@ def planet(planet_id: int, player_id: int = Depends(current_player)):
 
 
 # Must come before /users/{user_id}.
+@router.get("/users/research_info.json")
+def research_info(research_id: int, player_id: int = Depends(current_player)):
+    """Requested when a research timer runs out on the client."""
+    now = time.time()
+    with db.player_state(player_id) as state:
+        planet_rules.tick(state["empire"], now)
+        research = next((r for r in state["empire"]["researches"] if r["research_id"] == research_id), None)
+        if research is None:
+            return error("Unknown research", 404)
+        return research_update(state, research, now)
+
+
+# Must come before /users/{user_id}.
 @router.get("/users/first_charge_misc")
 def first_charge(player_id: int = Depends(current_player)):
     return encrypted_json({"first_charge": False})
@@ -183,6 +196,45 @@ def build_info(planet_id: int, bid: int, player_id: int = Depends(current_player
         if changed is None:
             return error("Unknown building", 404)
         return building_update(state, changed, now)
+
+
+# --- Research -----------------------------------------------------------------------------
+
+
+def research_update(state: dict, changed: dict, now: float) -> Response:
+    """Answer for research actions: the changed research plus the refreshed empire and planet."""
+    return encrypted_json({
+        "update": {"researches": [planet_rules.research_view(state["empire"], changed)]},
+        "empire": player.empire_summary(state),
+        "planet": planet_rules.client_view(state["empire"], now),
+    })
+
+
+@router.post("/research_upgrading_events.json")
+async def start_research(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    now = time.time()
+    try:
+        with db.player_state(player_id) as state:
+            research = planet_rules.start_research(state["empire"], state, int(params["research_id"]), now)
+            return research_update(state, research, now)
+    except planet_rules.GameError as e:
+        return error(str(e))
+
+
+@router.post("/research_upgrading_events/{event_id}")
+async def cancel_research(world_id: int, event_id: int, request: Request,
+                          player_id: int = Depends(current_player)):
+    """The client sends _method=delete to cancel research."""
+    if (await form(request)).get("_method") != "delete":
+        return error("Unsupported", 400)
+    now = time.time()
+    try:
+        with db.player_state(player_id) as state:
+            research = planet_rules.cancel_research(state["empire"], event_id, now)
+            return research_update(state, research, now)
+    except planet_rules.GameError as e:
+        return error(str(e))
 
 
 # --- Features we do not implement yet, answered with their "nothing here" values ---------

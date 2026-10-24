@@ -107,3 +107,62 @@ def test_teardown_frees_the_lot():
     planet.start_building_event(empire, state, solar["building_id"], planet.EVENT_TEARDOWN, None, T0)
     planet.tick(empire, p["building_events"][0]["finish_time"])
     assert solar["building_level"] == 0 and solar["building_position_index"] == 0
+
+
+def research_id(state, rtype):
+    return next(r["research_id"] for r in state["empire"]["researches"] if r["research_type"] == rtype)
+
+
+def rich_player_with_lab():
+    state = new_player()
+    p = state["empire"]["main_planet"]
+    p.update(metal=100_000, crystal=100_000, deuterium=100_000)
+    lab = planet.building(p, eco.RESEARCH_LAB)
+    lab.update(building_level=1, building_position_index=4)
+    return state
+
+
+def test_research_needs_a_lab():
+    state = new_player()
+    state["empire"]["main_planet"].update(crystal=10_000, deuterium=10_000)
+    with pytest.raises(planet.GameError, match="Requirements"):
+        planet.start_research(state["empire"], state, research_id(state, eco.ENERGY_TECH), T0)
+
+
+def test_research_finishes_and_raises_level():
+    state = rich_player_with_lab()
+    empire = state["empire"]
+    planet.start_research(empire, state, research_id(state, eco.ENERGY_TECH), T0)
+    event = empire["research_upgrading_events"][0]
+    assert event["total_time"] == eco.research_seconds(0, 800, 1)
+    planet.tick(empire, event["finish_time"])
+    assert planet.research_level(empire, eco.ENERGY_TECH) == 1
+    assert empire["research_upgrading_events"] == []
+
+
+def test_lab_and_research_block_each_other():
+    state = rich_player_with_lab()
+    empire = state["empire"]
+    lab_id = planet.building(empire["main_planet"], eco.RESEARCH_LAB)["building_id"]
+    planet.start_research(empire, state, research_id(state, eco.ENERGY_TECH), T0)
+    with pytest.raises(planet.GameError, match="research lab"):
+        planet.start_building_event(empire, state, lab_id, planet.EVENT_UPGRADE, None, T0)
+    with pytest.raises(planet.GameError, match="Another research"):
+        planet.start_research(empire, state, research_id(state, eco.COMPUTER_TECH), T0)
+
+
+def test_cancel_research_refunds():
+    state = rich_player_with_lab()
+    empire = state["empire"]
+    p = empire["main_planet"]
+    planet.start_research(empire, state, research_id(state, eco.ENERGY_TECH), T0)
+    assert p["crystal"] == 100_000 - 800
+    planet.cancel_research(empire, empire["research_upgrading_events"][0]["event_id"], T0)
+    assert (p["crystal"], p["deuterium"]) == (100_000, 100_000)
+
+
+def test_lab_list_hides_types_handled_elsewhere():
+    view = planet.researches_view(new_player()["empire"])
+    types = {r["research_type"] for r in view["researches"]}
+    assert not types & set(eco.NOT_IN_LAB)
+    assert eco.ENERGY_TECH in types

@@ -64,3 +64,37 @@ plant can be throttled with its percentage setting.
 
 **Storage capacity** = 5000 × ⌊2.5 × e^(20 × L / 33)⌋. Mines stop producing when the storage is
 full.
+
+## Research
+
+Cost to research level *L+1*: `base × factor^L`. Research needs a research lab; time (hours) =
+(metal + crystal) / (1000 × (1 + research lab level)) / speed, at least 1 second.
+
+- **One research at a time** per empire. Cancelling refunds the full cost.
+- The research lab **cannot be upgraded while research is running**, and research cannot start
+  while the lab is being upgraded.
+
+| Type | Research | Metal | Crystal | Deuterium | Factor | Requires |
+|-----:|----------|------:|--------:|----------:|-------:|----------|
+| 1 | Energy Technology | 0 | 800 | 400 | 2 | Lab 1 |
+| 2 | Laser Technology | 200 | 100 | 0 | 2 | Lab 1, Energy 2 |
+| 3 | Ion Technology | 1,000 | 300 | 100 | 2 | Lab 4, Laser 5, Energy 4 |
+| 4 | Hyperspace Technology | 0 | 4,000 | 2,000 | 2 | Lab 7, Energy 5, Shielding 5 |
+| 5 | Plasma Technology | 2,000 | 4,000 | 1,000 | 2 | Lab 4, Energy 8, Laser 10, Ion 5 |
+| 6 | Combustion Drive | 400 | 0 | 600 | 2 | Lab 1, Energy 1 |
+| 7 | Impulse Drive | 2,000 | 4,000 | 600 | 2 | Lab 2, Energy 1 |
+| 8 | Hyperspace Drive | 10,000 | 20,000 | 6,000 | 2 | Lab 7, Hyperspace Technology 3 |
+| 9 | Espionage Technology | 200 | 1,000 | 200 | 2 | Lab 3 |
+| 10 | Computer Technology | 0 | 400 | 600 | 2 | Lab 1 |
+| 11 | Astrophysics | 4,000 | 8,000 | 4,000 | 1.75 | Lab 3, Espionage 4, Impulse Drive 3 |
+| 14 | Weapons Technology | 800 | 200 | 0 | 2 | Lab 4 |
+| 15 | Shielding Technology | 200 | 600 | 0 | 2 | Lab 6, Energy 3 |
+| 16 | Armour Technology | 1,000 | 0 | 0 | 2 | Lab 2 |
+| 18 | Ultra Temperature Polymerizer\* | 5,000 | 10,000 | 5,000 | 2 | Lab 8, Plasma 3 |
+| 19 | Anti-Gravity\* | 10,000 | 20,000 | 10,000 | 2 | Lab 12, Hyperspace Technology 8 |
+| 22 | Missile Technology\* | 5,000 | 5,000 | 2,000 | 2 | Lab 5, Weapons 5 |
+
+\* No OGame equivalent; values are made up. Types 17 (krypton technology), 20 and 21 (flagship
+technologies) belong to other screens and are not part of the lab.
+
+Energy Technology raises the output of the fusion reactor.

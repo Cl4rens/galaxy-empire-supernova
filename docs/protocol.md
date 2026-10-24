@@ -167,7 +167,27 @@ Extra planet fields: `metal_perhour`, `crystal_perhour`, `deuterium_perhour`,
 The client never counts resources up by itself; it only shows what the server sends. The
 heartbeat therefore asks it to reload the planet every time.
 
+### Research
 
+| Request | Meaning |
+|---------|---------|
+| `POST research_upgrading_events.json` with `planet_id`, `research_id` | start research |
+| `POST research_upgrading_events/<event_id>` with `_method=delete`, `current_planet_id` | cancel it |
+| `GET users/research_info.json?research_id=..&planet_id=..` | sent when the client's research timer runs out |
+
+All answer `{"update": {"researches": [changed research]}, "empire": {...}, "planet": {...}}`.
+
+Research fields: `research_id`, `research_type`, `research_name`, `research_level`,
+`up_metal_require`, `up_crystal_require`, `up_deuterium_require`, `up_time`, `tech_tree`.
+Research events live in `empire.research_upgrading_events`:
+`{event_id, research_id, research_type, research_name, research_level, start_time, finish_time,
+total_time, finished: false}`.
+
+The lab screen groups researches into three tabs by type
+(`GameResearchDefine:getResearchIndexByType`); unknown types land in the first tab, so the
+server only lists lab researches.
+
+### Errors
 
 For a status other than 200 the client shows the response body **as text** (or the `<title>` of
 an HTML page) in a message box. Send plain text, not JSON.

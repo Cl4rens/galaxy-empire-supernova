@@ -103,3 +103,54 @@ def fusion_energy(level: int, energy_tech: int) -> float:
 
 def fusion_deuterium(level: int) -> float:
     return 10 * level * 1.1 ** level
+
+
+# --- Research -----------------------------------------------------------------------------
+
+LASER_TECH, ION_TECH, PLASMA_TECH = 2, 3, 5
+COMBUSTION_DRIVE, IMPULSE_DRIVE, HYPERSPACE_DRIVE = 6, 7, 8
+ESPIONAGE_TECH, ASTROPHYSICS = 9, 11
+WEAPONS_TECH, SHIELDING_TECH, ARMOUR_TECH = 14, 15, 16
+ULTRA_TEMPERATURE_POLYMERIZER, ANTI_GRAVITY, MISSILE_TECH = 18, 19, 22
+
+# Research types the client handles elsewhere (krypton lab, flagship techs), not in the lab.
+NOT_IN_LAB = (17, 20, 21)
+
+RESEARCHES: dict[int, BuildingRule] = {
+    ENERGY_TECH: BuildingRule("Energy Technology", 0, 800, 400, 2, {RESEARCH_LAB: 1}, {}),
+    LASER_TECH: BuildingRule("Laser Technology", 200, 100, 0, 2, {RESEARCH_LAB: 1}, {ENERGY_TECH: 2}),
+    ION_TECH: BuildingRule("Ion Technology", 1000, 300, 100, 2, {RESEARCH_LAB: 4},
+                           {LASER_TECH: 5, ENERGY_TECH: 4}),
+    HYPERSPACE_TECH: BuildingRule("Hyperspace Technology", 0, 4000, 2000, 2, {RESEARCH_LAB: 7},
+                                  {ENERGY_TECH: 5, SHIELDING_TECH: 5}),
+    PLASMA_TECH: BuildingRule("Plasma Technology", 2000, 4000, 1000, 2, {RESEARCH_LAB: 4},
+                              {ENERGY_TECH: 8, LASER_TECH: 10, ION_TECH: 5}),
+    COMBUSTION_DRIVE: BuildingRule("Combustion Drive", 400, 0, 600, 2, {RESEARCH_LAB: 1}, {ENERGY_TECH: 1}),
+    IMPULSE_DRIVE: BuildingRule("Impulse Drive", 2000, 4000, 600, 2, {RESEARCH_LAB: 2}, {ENERGY_TECH: 1}),
+    HYPERSPACE_DRIVE: BuildingRule("Hyperspace Drive", 10000, 20000, 6000, 2, {RESEARCH_LAB: 7},
+                                   {HYPERSPACE_TECH: 3}),
+    ESPIONAGE_TECH: BuildingRule("Espionage Technology", 200, 1000, 200, 2, {RESEARCH_LAB: 3}, {}),
+    COMPUTER_TECH: BuildingRule("Computer Technology", 0, 400, 600, 2, {RESEARCH_LAB: 1}, {}),
+    ASTROPHYSICS: BuildingRule("Astrophysics", 4000, 8000, 4000, 1.75, {RESEARCH_LAB: 3},
+                               {ESPIONAGE_TECH: 4, IMPULSE_DRIVE: 3}),
+    WEAPONS_TECH: BuildingRule("Weapons Technology", 800, 200, 0, 2, {RESEARCH_LAB: 4}, {}),
+    SHIELDING_TECH: BuildingRule("Shielding Technology", 200, 600, 0, 2, {RESEARCH_LAB: 6}, {ENERGY_TECH: 3}),
+    ARMOUR_TECH: BuildingRule("Armour Technology", 1000, 0, 0, 2, {RESEARCH_LAB: 2}, {}),
+    ULTRA_TEMPERATURE_POLYMERIZER: BuildingRule("Ultra Temperature Polymerizer", 5000, 10000, 5000, 2,
+                                                {RESEARCH_LAB: 8}, {PLASMA_TECH: 3}),
+    ANTI_GRAVITY: BuildingRule("Anti-Gravity", 10000, 20000, 10000, 2, {RESEARCH_LAB: 12},
+                               {HYPERSPACE_TECH: 8}),
+    MISSILE_TECH: BuildingRule("Missile Technology", 5000, 5000, 2000, 2, {RESEARCH_LAB: 5}, {WEAPONS_TECH: 5}),
+}
+
+
+def research_cost(rtype: int, level: int) -> tuple[int, int, int]:
+    """Cost to research `level + 1`."""
+    rule = RESEARCHES[rtype]
+    f = rule.factor ** level
+    return math.floor(rule.metal * f), math.floor(rule.crystal * f), math.floor(rule.deuterium * f)
+
+
+def research_seconds(metal: int, crystal: int, lab: int) -> int:
+    hours = (metal + crystal) / (1000 * (1 + lab))
+    return max(1, math.floor(hours * 3600 / config.SPEED))

@@ -93,18 +93,31 @@ def _finish_event(planet: dict, event: dict) -> None:
             b["building_position_index"] = 0  # the lot is free again
 
 
+def _finish_research(empire: dict, event: dict) -> None:
+    research = next(r for r in empire["researches"] if r["research_id"] == event["research_id"])
+    research["research_level"] += 1
+
+
 def tick(empire: dict, now: float | None = None) -> None:
-    """Bring the main planet up to `now`: production and finished building events."""
+    """Bring the main planet up to `now`: production, finished constructions and research.
+
+    Events are applied in time order, with production calculated in between, because they
+    change production (mines, energy technology).
+    """
     planet = empire["main_planet"]
     now = time.time() if now is None else now
     t = planet["last_update"]
-    for event in sorted(planet["building_events"], key=lambda e: e["finish_time"]):
-        if event["finish_time"] > now:
+    queue = [(e["finish_time"], planet["building_events"], e, _finish_event, planet)
+             for e in planet["building_events"]]
+    queue += [(e["finish_time"], empire["research_upgrading_events"], e, _finish_research, empire)
+              for e in empire["research_upgrading_events"]]
+    for finish_time, events, event, finish, target in sorted(queue, key=lambda q: q[0]):
+        if finish_time > now:
             break
-        _accrue(planet, empire, event["finish_time"] - t)
-        t = max(t, event["finish_time"])
-        _finish_event(planet, event)
-        planet["building_events"].remove(event)
+        _accrue(planet, empire, finish_time - t)
+        t = max(t, finish_time)
+        finish(target, event)
+        events.remove(event)
     _accrue(planet, empire, now - t)
     planet["last_update"] = max(t, now)
 
@@ -112,8 +125,8 @@ def tick(empire: dict, now: float | None = None) -> None:
 # --- Actions ------------------------------------------------------------------------------
 
 
-def _requirements_met(planet: dict, empire: dict, btype: int) -> bool:
-    rule = eco.BUILDINGS[btype]
+def _requirements_met(planet: dict, empire: dict, btype: int, rules=eco.BUILDINGS) -> bool:
+    rule = rules[btype]
     return all(level(planet, t) >= lv for t, lv in rule.buildings_required.items()) and all(
         research_level(empire, t) >= lv for t, lv in rule.researches_required.items()
     )
@@ -133,6 +146,8 @@ def start_building_event(empire: dict, state: dict, building_id: int, event_type
     tick(empire, now)
     if planet["building_events"]:
         raise GameError("Another building is already under construction")
+    if empire["research_upgrading_events"] and building_id == building(planet, eco.RESEARCH_LAB)["building_id"]:
+        raise GameError("The research lab cannot be upgraded while research is running")
     b = next((b for b in planet["buildings"] if b["building_id"] == building_id), None)
     if b is None:
         raise GameError("Unknown building")
@@ -160,9 +175,8 @@ def start_building_event(empire: dict, state: dict, building_id: int, event_type
     _pay(planet, cost)
     if event_type == EVENT_UPGRADE and current == 0 and btype not in eco.MINES:
         b["building_position_index"] = lot
-    state["next_event_id"] = state.get("next_event_id", 0) + 1
     planet["building_events"].append({
-        "event_id": state["next_event_id"],
+        "event_id": _next_event_id(state),
         "building_id": building_id,
         "building_type": btype,
         "event_type": event_type,
@@ -190,6 +204,55 @@ def cancel_building_event(empire: dict, event_id: int, now: float) -> dict:
     return b
 
 
+def _next_event_id(state: dict) -> int:
+    state["next_event_id"] = state.get("next_event_id", 0) + 1
+    return state["next_event_id"]
+
+
+def start_research(empire: dict, state: dict, research_id: int, now: float) -> dict:
+    """Start researching the next level. Returns the research."""
+    planet = empire["main_planet"]
+    tick(empire, now)
+    research = next((r for r in empire["researches"] if r["research_id"] == research_id), None)
+    if research is None or research["research_type"] not in eco.RESEARCHES:
+        raise GameError("Unknown research")
+    if empire["research_upgrading_events"]:
+        raise GameError("Another research is already running")
+    lab = building(planet, eco.RESEARCH_LAB)
+    if any(e["building_id"] == lab["building_id"] for e in planet["building_events"]):
+        raise GameError("The research lab is being upgraded")
+    rtype = research["research_type"]
+    if not _requirements_met(planet, empire, rtype, eco.RESEARCHES):
+        raise GameError("Requirements not met")
+    cost = eco.research_cost(rtype, research["research_level"])
+    seconds = eco.research_seconds(cost[0], cost[1], lab["building_level"])
+    _pay(planet, cost)
+    empire["research_upgrading_events"].append({
+        "event_id": _next_event_id(state),
+        "research_id": research_id,
+        "research_type": rtype,
+        "planet_id": planet["planet_id"],
+        "cost": list(cost),
+        "start_time": int(now),
+        "finish_time": int(now) + seconds,
+        "total_time": seconds,
+    })
+    return research
+
+
+def cancel_research(empire: dict, event_id: int, now: float) -> dict:
+    """Cancel running research and refund its cost. Returns the research."""
+    planet = empire["main_planet"]
+    tick(empire, now)
+    event = next((e for e in empire["research_upgrading_events"] if e["event_id"] == event_id), None)
+    if event is None:
+        raise GameError("This research has already finished")
+    empire["research_upgrading_events"].remove(event)
+    for res, amount in zip(RESOURCES, event["cost"]):
+        planet[res] += amount
+    return next(r for r in empire["researches"] if r["research_id"] == event["research_id"])
+
+
 # --- What the client sees -----------------------------------------------------------------
 
 
@@ -207,10 +270,7 @@ def building_view(planet: dict, b: dict) -> dict:
         "up_time": eco.build_seconds(up[0], up[1], robotics, nanite),
         "up_extra_energy": round(eco.mine_energy(btype, lv + 1) - eco.mine_energy(btype, lv))
         if btype in eco.MINES else 0,
-        "tech_tree": {
-            "buildings_tree": [{"unit_type": t, "unit_level": l} for t, l in rule.buildings_required.items()],
-            "researches_tree": [{"unit_type": t, "unit_level": l} for t, l in rule.researches_required.items()],
-        },
+        "tech_tree": _tech_tree(rule),
     })
     if lv > 0:
         down = eco.teardown_cost(btype, lv)
@@ -253,3 +313,47 @@ def client_view(empire: dict, now: float) -> dict:
         "current_server_time": int(now),
     })
     return view
+
+
+def _tech_tree(rule: eco.BuildingRule) -> dict:
+    return {
+        "buildings_tree": [{"unit_type": t, "unit_level": l} for t, l in rule.buildings_required.items()],
+        "researches_tree": [{"unit_type": t, "unit_level": l} for t, l in rule.researches_required.items()],
+    }
+
+
+def research_view(empire: dict, research: dict) -> dict:
+    rtype, lv = research["research_type"], research["research_level"]
+    rule = eco.RESEARCHES[rtype]
+    cost = eco.research_cost(rtype, lv)
+    view = dict(research)
+    view.update({
+        "research_name": rule.name,
+        "up_metal_require": cost[0],
+        "up_crystal_require": cost[1],
+        "up_deuterium_require": cost[2],
+        "up_time": eco.research_seconds(cost[0], cost[1], level(empire["main_planet"], eco.RESEARCH_LAB)),
+        "tech_tree": _tech_tree(rule),
+    })
+    return view
+
+
+def research_event_view(empire: dict, event: dict) -> dict:
+    research = next(r for r in empire["researches"] if r["research_id"] == event["research_id"])
+    view = {k: v for k, v in event.items() if k != "cost"}
+    view.update({
+        "research_name": eco.RESEARCHES[research["research_type"]].name,
+        "research_level": research["research_level"],
+        "finished": False,
+    })
+    return view
+
+
+def researches_view(empire: dict) -> dict:
+    """The research fields of the empire as the client expects them."""
+    return {
+        "researches": [research_view(empire, r) for r in empire["researches"]
+                       if r["research_type"] in eco.RESEARCHES],
+        "research_upgrading_events": [research_event_view(empire, e)
+                                      for e in empire["research_upgrading_events"]],
+    }

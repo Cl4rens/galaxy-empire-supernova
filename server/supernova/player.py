@@ -13,29 +13,6 @@ from . import planet as planet_rules
 # Planet lots 1-3 are reserved for the mines; free building lots are 4-15.
 MINE_POSITIONS = {eco.METAL_MINE: 1, eco.CRYSTAL_MINE: 2, eco.DEUTERIUM_MINE: 3}
 
-RESEARCHES = {
-    1: "Energy Technology",
-    2: "Laser Technology",
-    3: "Ion Technology",
-    4: "Hyperspace Technology",
-    5: "Plasma Technology",
-    6: "Combustion Drive",
-    7: "Impulse Drive",
-    8: "Hyperspace Drive",
-    9: "Espionage Technology",
-    10: "Computer Technology",
-    11: "Astrophysics",
-    14: "Weapons Technology",
-    15: "Shielding Technology",
-    16: "Armour Technology",
-    17: "Krypton Technology",
-    18: "Ultra Temperature Polymerizer",
-    19: "Anti-Gravity",
-    20: "Alloy Detection Technology",
-    21: "Dynamic Power Technology",
-    22: "Missile Technology",
-}
-
 FLEETS = {
     1: "Light Fighter",
     2: "Heavy Fighter",
@@ -92,13 +69,8 @@ def new_state(player_id: int, username: str) -> dict:
         for ftype, name in FLEETS.items()
     ]
     researches = [
-        {
-            "research_id": player_id * 100 + rtype,
-            "research_type": rtype,
-            "research_name": name,
-            "research_level": 0,
-        }
-        for rtype, name in RESEARCHES.items()
+        {"research_id": player_id * 100 + rtype, "research_type": rtype, "research_level": 0}
+        for rtype in eco.RESEARCHES
     ]
     position = {"galaxy_position": 1, "system_position": player_id % 499 + 1, "planet_position": 8}
     main_planet = {
@@ -182,12 +154,16 @@ def new_state(player_id: int, username: str) -> dict:
 
 def empire_view(state: dict, now: float) -> dict:
     """The empire object as the client expects it."""
-    return dict(state["empire"], main_planet=planet_rules.client_view(state["empire"], now))
+    empire = state["empire"]
+    return dict(empire, main_planet=planet_rules.client_view(empire, now), **planet_rules.researches_view(empire))
 
 
 def empire_summary(state: dict) -> dict:
     """Empire fields without the planet, for responses that send the planet separately."""
-    return {k: v for k, v in state["empire"].items() if k != "main_planet"}
+    empire = state["empire"]
+    summary = {k: v for k, v in empire.items() if k != "main_planet"}
+    summary.update(planet_rules.researches_view(empire))
+    return summary
 
 
 def login_response(state: dict, now: float) -> dict:
