@@ -6,6 +6,7 @@
     python -m supernova.admin set-building <username> <building_type> <level> [lot]
     python -m supernova.admin give-fleet <username> 9=5 1=10      (fleet_type=count)
     python -m supernova.admin set-research <username> <research_type> <level>
+    python -m supernova.admin create-moon <username> [planet_id]
     python -m supernova.admin chat-reports
     python -m supernova.admin delete-chat <message_id>
 
@@ -102,6 +103,22 @@ def cmd_set_building(args) -> None:
     print("ok")
 
 
+def cmd_create_moon(args) -> None:
+    from . import player
+
+    pid = player_id(args.username)
+    with db.player_state(pid) as state:
+        planets = state["empire"]["planets"]
+        planet = next((p for p in planets if p["planet_id"] == args.planet_id), None) if args.planet_id else planets[0]
+        if planet is None:
+            raise SystemExit("No such planet")
+        moon = player.add_moon(pid, planet)
+        if moon is None:
+            raise SystemExit("This planet already has a moon")
+    print(f"moon {moon['planet_id']} at {planet['galaxy_position']}:{planet['system_position']}:"
+          f"{planet['planet_position']}")
+
+
 def cmd_chat_reports(args) -> None:
     rows = db.connect().execute(
         "SELECT r.*, p.username AS reporter, a.username AS author FROM chat_reports r "
@@ -149,6 +166,10 @@ def main() -> None:
     setb.add_argument("level", type=int)
     setb.add_argument("lot", type=int, nargs="?")
     setb.set_defaults(func=cmd_set_building)
+    moon = sub.add_parser("create-moon")
+    moon.add_argument("username")
+    moon.add_argument("planet_id", type=int, nargs="?")
+    moon.set_defaults(func=cmd_create_moon)
     sub.add_parser("chat-reports").set_defaults(func=cmd_chat_reports)
     delchat = sub.add_parser("delete-chat")
     delchat.add_argument("message_id", type=int)

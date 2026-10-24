@@ -1,7 +1,7 @@
 """The universe: where every planet is, and the galaxy map and solar system views.
 
 Layout as in the client: 9 galaxies of 499 solar systems, 15 planet positions per system
-(16 is the expedition point, 17-21 pirate planets, not implemented yet). On the client's galaxy
+(16 is the expedition point, 17-21 pirate bases). On the client's galaxy
 map every system is a tile of a 34 x 34 grid.
 """
 
@@ -17,6 +17,7 @@ PIRATE_POSITIONS = range(17, 22)
 MAP_WIDTH = 34
 HOME_POSITIONS = range(4, 13)  # like OGame: home planets sit in the middle of a system
 MAP_RADIUS = 6  # systems around the requested tile returned by galaxy_map.json
+PLANET, MOON = 0, 1  # kinds of entries in the planets table
 
 
 def system_id(galaxy: int, system: int) -> int:
@@ -53,7 +54,7 @@ def place_home(player_id: int, name: str) -> dict:
         for _ in range(1000):
             system = random.randint(1, systems)
             position = random.choice(HOME_POSITIONS)
-            taken = conn.execute("SELECT 1 FROM planets WHERE galaxy = 1 AND system = ? AND position = ?",
+            taken = conn.execute("SELECT 1 FROM planets WHERE galaxy = 1 AND system = ? AND position = ? AND kind = 0",
                                  (system, position)).fetchone()
             if not taken:
                 break
@@ -64,15 +65,16 @@ def place_home(player_id: int, name: str) -> dict:
     return {"planet_id": cur.lastrowid, "galaxy": 1, "system": system, "position": position}
 
 
-def add_planet(player_id: int, galaxy: int, system: int, position: int, name: str) -> int | None:
-    """Register a new planet. Returns its id, or None if the position is taken."""
+def add_planet(player_id: int, galaxy: int, system: int, position: int, name: str,
+               kind: int = PLANET) -> int | None:
+    """Register a new planet or moon. Returns its id, or None if the position is taken."""
     conn = db.connect()
     with db.lock(), conn:
-        if conn.execute("SELECT 1 FROM planets WHERE galaxy = ? AND system = ? AND position = ?",
-                        (galaxy, system, position)).fetchone():
+        if conn.execute("SELECT 1 FROM planets WHERE galaxy = ? AND system = ? AND position = ? AND kind = ?",
+                        (galaxy, system, position, kind)).fetchone():
             return None
-        cur = conn.execute("INSERT INTO planets (player_id, galaxy, system, position, name) VALUES (?, ?, ?, ?, ?)",
-                           (player_id, galaxy, system, position, name))
+        cur = conn.execute("INSERT INTO planets (player_id, galaxy, system, position, name, kind) "
+                           "VALUES (?, ?, ?, ?, ?, ?)", (player_id, galaxy, system, position, name, kind))
     return cur.lastrowid
 
 
@@ -98,9 +100,11 @@ def ensure_registered(player_id: int, planet: dict) -> None:
 
 def _planets_in(galaxy: int, system: int) -> list:
     return db.connect().execute(
-        "SELECT p.id, p.player_id, p.position, p.name, pl.username FROM planets p "
-        "JOIN players pl ON pl.id = p.player_id WHERE p.galaxy = ? AND p.system = ?",
-        (galaxy, system)).fetchall()
+        "SELECT p.id, p.player_id, p.position, p.name, pl.username, m.id AS moon_id, m.name AS moon_name "
+        "FROM planets p JOIN players pl ON pl.id = p.player_id "
+        "LEFT JOIN planets m ON m.galaxy = p.galaxy AND m.system = p.system AND m.position = p.position "
+        "AND m.kind = ? WHERE p.galaxy = ? AND p.system = ? AND p.kind = ?",
+        (MOON, galaxy, system, PLANET)).fetchall()
 
 
 def _slot(galaxy: int, system: int, position: int, name: str = "", planet_id: int = 0,
@@ -139,7 +143,10 @@ def system_view(galaxy: int, system: int) -> dict:
     for position in range(1, PLANET_POSITIONS + 1):
         row = occupied.get(position)
         if row:
-            planets.append(_slot(galaxy, system, position, row["name"], row["id"], row["player_id"], row["username"]))
+            slot = _slot(galaxy, system, position, row["name"], row["id"], row["player_id"], row["username"])
+            if row["moon_id"]:
+                slot["moon_array"] = [{"moon_id": row["moon_id"], "moon_name": row["moon_name"]}]
+            planets.append(slot)
         else:
             planets.append(_slot(galaxy, system, position))
     debris = _debris_in(galaxy, system)

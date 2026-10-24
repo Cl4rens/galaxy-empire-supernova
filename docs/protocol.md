@@ -451,6 +451,23 @@ numbering, which decides where it shows arrows and hints.
 - `main_planet.last_chat` (`"name:words"`) is the line on the planet screen before the chat was
   opened.
 
+### Moons
+
+A moon is a planet entry with `planet_type = 3` and its own `planet_id`; the client enters it
+with `GET planets/<id>.json` and then shows the moon screen. Moons are listed inside their
+planet: `planets_info[].moon_array = [{moon_id, moon_name, moon_field_current, moon_field_max,
+attacked_time, attacked_num}]`, and system views put `moon_array = [{moon_id, moon_name}]` on the
+planet slot. The client always starts on a planet after login.
+
+The moon screen (`Moon.tfs`) has one place per building type and finds it with
+`TT_<building_position_index>`, so moon buildings send their **type** as
+`building_position_index`: 18 moon robotics factory, 17 moon shipyard, 19 moon base,
+15 sensor array, 16 transmit portal, 21 pioneer lab. New moon buildings are started without a
+`building_index`.
+
+Fleets sent to a moon carry `planet_type=moon` (otherwise `planet`) in
+`fleet_hanging_events/prepare_hanging` and `fleet_hanging_events.json`.
+
 ### Errors
 
 For a status other than 200 the client shows the response body **as text** (or the `<title>` of

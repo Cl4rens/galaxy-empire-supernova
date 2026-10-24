@@ -13,6 +13,8 @@ FREE_LOTS = range(4, 16)  # lots 1-3 belong to the mines
 EVENT_UPGRADE, EVENT_TEARDOWN = 1, 2
 FLEET_CATEGORY_SHIP, FLEET_CATEGORY_DEFENSE = 1, 2
 PLANET_FIELDS = 163
+PLANET_TYPE_MOON = 3
+MOON_FIELDS_PER_BASE_LEVEL = 3
 RESOURCES = ("metal", "crystal", "deuterium")
 
 
@@ -35,8 +37,46 @@ def fleet(planet: dict, ftype: int) -> dict:
     return next(f for f in planet["fleets"] if f["fleet_type"] == ftype)
 
 
+def is_moon(planet: dict) -> bool:
+    return planet.get("planet_type") == PLANET_TYPE_MOON
+
+
+def bodies(empire: dict) -> list[dict]:
+    """All planets and moons of the empire. Moons are stored in their planet's "moon"."""
+    return empire["planets"] + [p["moon"] for p in empire["planets"] if p.get("moon")]
+
+
 def find_planet(empire: dict, planet_id: int) -> dict | None:
-    return next((p for p in empire["planets"] if p["planet_id"] == planet_id), None)
+    return next((p for p in bodies(empire) if p["planet_id"] == planet_id), None)
+
+
+def robotics_levels(planet: dict) -> tuple[int, int]:
+    """(robotics factory, nanite factory) levels that speed up constructions here."""
+    if is_moon(planet):
+        return level(planet, eco.MOON_ROBOTICS_FACTORY), 0
+    return level(planet, eco.ROBOTICS_FACTORY), level(planet, eco.NANITE_FACTORY)
+
+
+def shipyard_type(planet: dict) -> int:
+    return eco.MOON_SHIPYARD if is_moon(planet) else eco.SHIPYARD
+
+
+def _requirement_level(planet: dict, btype: int) -> int:
+    if is_moon(planet):
+        btype = {eco.SHIPYARD: eco.MOON_SHIPYARD, eco.ROBOTICS_FACTORY: eco.MOON_ROBOTICS_FACTORY}.get(btype, btype)
+    return level(planet, btype)
+
+
+def fields(planet: dict) -> tuple[int, int]:
+    """(used, available) building fields."""
+    used = sum(b["building_level"] for b in planet["buildings"])
+    if is_moon(planet):
+        return used, 1 + MOON_FIELDS_PER_BASE_LEVEL * level(planet, eco.MOON_BASE)
+    return used, PLANET_FIELDS
+
+
+def buildable_here(planet: dict, btype: int) -> bool:
+    return (btype in eco.MOON_BUILDINGS) == is_moon(planet)
 
 
 def switch_planet(empire: dict, planet_id: int) -> dict:
@@ -55,6 +95,9 @@ def research_level(empire: dict, rtype: int) -> int:
 
 def production(planet: dict, empire: dict) -> dict:
     """Hourly production and energy balance, with game speed applied."""
+    if is_moon(planet):  # moons have no mines and no energy
+        return dict.fromkeys(("metal", "crystal", "deuterium", "solar_energy", "fusion_energy",
+                              "satellite_energy", "energy_max", "energy_used"), 0)
     pct = {
         eco.METAL_MINE: planet["metal_mine_percent"] / 100,
         eco.CRYSTAL_MINE: planet["crystal_mine_percent"] / 100,
@@ -136,7 +179,7 @@ def _deliver_fleets(planet: dict, now: float) -> None:
 def tick(empire: dict, now: float | None = None) -> None:
     """Bring every planet up to `now`: production, constructions, research and shipyard."""
     now = time.time() if now is None else now
-    for planet in empire["planets"]:
+    for planet in bodies(empire):
         _tick_planet(empire, planet, now)
 
 
@@ -177,7 +220,7 @@ def _tick_planet(empire: dict, planet: dict, now: float) -> None:
 
 def _requirements_met(planet: dict, empire: dict, btype: int, rules=eco.BUILDINGS) -> bool:
     rule = rules[btype]
-    return all(level(planet, t) >= lv for t, lv in rule.buildings_required.items()) and all(
+    return all(_requirement_level(planet, t) >= lv for t, lv in rule.buildings_required.items()) and all(
         research_level(empire, t) >= lv for t, lv in rule.researches_required.items()
     )
 
@@ -198,35 +241,39 @@ def start_building_event(empire: dict, state: dict, building_id: int, event_type
         raise GameError("Another building is already under construction")
     if empire["research_upgrading_events"] and building_id == building(planet, eco.RESEARCH_LAB)["building_id"]:
         raise GameError("The research lab cannot be upgraded while research is running")
-    if planet["fleet_building_events"] and building_id in (building(planet, eco.SHIPYARD)["building_id"],
+    if planet["fleet_building_events"] and building_id in (building(planet, shipyard_type(planet))["building_id"],
                                                            building(planet, eco.NANITE_FACTORY)["building_id"]):
         raise GameError("This building cannot be upgraded while the shipyard is working")
     b = next((b for b in planet["buildings"] if b["building_id"] == building_id), None)
     if b is None:
         raise GameError("Unknown building")
     btype, current = b["building_type"], b["building_level"]
+    fixed_lot = btype in eco.MINES or is_moon(planet)  # moon buildings have their own places
 
     if event_type == EVENT_UPGRADE:
+        if not buildable_here(planet, btype):
+            raise GameError("This building cannot be built here")
         if not _requirements_met(planet, empire, btype):
             raise GameError("Requirements not met")
-        if current == 0 and btype not in eco.MINES:
+        used, available = fields(planet)
+        if used >= available and btype != eco.MOON_BASE:
+            raise GameError("No free fields left. Upgrade the moon base." if is_moon(planet) else "No free fields left")
+        if current == 0 and not fixed_lot:
             taken = {x["building_position_index"] for x in planet["buildings"]}
             if lot not in FREE_LOTS or lot in taken:
                 raise GameError("This building lot is not free")
         cost = eco.upgrade_cost(btype, current)
-        seconds = eco.build_seconds(cost[0], cost[1], level(planet, eco.ROBOTICS_FACTORY),
-                                    level(planet, eco.NANITE_FACTORY))
+        seconds = eco.build_seconds(cost[0], cost[1], *robotics_levels(planet))
     elif event_type == EVENT_TEARDOWN:
         if current == 0:
             raise GameError("Nothing to tear down")
         cost = eco.teardown_cost(btype, current)
-        seconds = eco.build_seconds(cost[0], cost[1], level(planet, eco.ROBOTICS_FACTORY),
-                                    level(planet, eco.NANITE_FACTORY))
+        seconds = eco.build_seconds(cost[0], cost[1], *robotics_levels(planet))
     else:
         raise GameError("Unknown event type")
 
     _pay(planet, cost)
-    if event_type == EVENT_UPGRADE and current == 0 and btype not in eco.MINES:
+    if event_type == EVENT_UPGRADE and current == 0 and not fixed_lot:
         b["building_position_index"] = lot
     planet["building_events"].append({
         "event_id": _next_event_id(state),
@@ -327,9 +374,10 @@ def start_fleet_order(empire: dict, state: dict, fleet_id: int, count: int, now:
     if count < 1:
         raise GameError("Nothing to build")
     ftype = f["fleet_type"]
-    if level(planet, eco.SHIPYARD) < 1:
+    if level(planet, shipyard_type(planet)) < 1:
         raise GameError("You need a shipyard")
-    busy = {building(planet, eco.SHIPYARD)["building_id"], building(planet, eco.NANITE_FACTORY)["building_id"]}
+    busy = {building(planet, shipyard_type(planet))["building_id"],
+            building(planet, eco.NANITE_FACTORY)["building_id"]}
     if any(e["building_id"] in busy for e in planet["building_events"]):
         raise GameError("The shipyard is being upgraded")
     if not _requirements_met(planet, empire, ftype, eco.UNITS):
@@ -341,7 +389,7 @@ def start_fleet_order(empire: dict, state: dict, fleet_id: int, count: int, now:
             raise GameError("Only one of these can be built")
     unit_cost = eco.unit_cost(ftype)
     _pay(planet, tuple(c * count for c in unit_cost))
-    seconds = eco.unit_seconds(ftype, level(planet, eco.SHIPYARD), level(planet, eco.NANITE_FACTORY))
+    seconds = eco.unit_seconds(ftype, level(planet, shipyard_type(planet)), level(planet, eco.NANITE_FACTORY))
     queue_end = max((o["finish_time"] for o in planet["fleet_building_events"]), default=now)
     start = int(max(now, queue_end))
     planet["fleet_building_events"].append({
@@ -380,7 +428,7 @@ def cancel_fleet_order(empire: dict, event_id: int, now: float) -> dict:
 def building_view(planet: dict, b: dict) -> dict:
     btype, lv = b["building_type"], b["building_level"]
     rule = eco.BUILDINGS[btype]
-    robotics, nanite = level(planet, eco.ROBOTICS_FACTORY), level(planet, eco.NANITE_FACTORY)
+    robotics, nanite = robotics_levels(planet)
     up = eco.upgrade_cost(btype, lv)
     view = dict(b)
     view.update({
@@ -431,12 +479,13 @@ def client_view(empire: dict, now: float) -> dict:
         "fleets": [fleet_view(planet, f) for f in planet["fleets"]],
         "fleet_building_events": [fleet_event_view(e) for e in planet["fleet_building_events"]],
         "fusion_energy": round(rates["fusion_energy"]),
-        "buildings": [building_view(planet, b) for b in planet["buildings"]],
+        "buildings": [building_view(planet, b) for b in planet["buildings"]
+                      if buildable_here(planet, b["building_type"]) or b["building_level"]],
         "building_events": [event_view(planet, e) for e in planet["building_events"]],
         "current_server_time": int(now),
-        # Planet info screen. Fields are not limited yet; temperature as in OGame by position.
-        "field_current": sum(b["building_level"] for b in planet["buildings"]),
-        "field_max": PLANET_FIELDS,
+        # Planet info screen; temperature as in OGame by position.
+        "field_current": fields(planet)[0],
+        "field_max": fields(planet)[1],
         "temp_max": 150 - 12 * planet["planet_position"],
         "temp_min": 110 - 12 * planet["planet_position"],
     })
@@ -499,7 +548,8 @@ def fleet_view(planet: dict, f: dict) -> dict:
             "metal_require": rule.metal,
             "crystal_require": rule.crystal,
             "deuterium_require": rule.deuterium,
-            "up_time": eco.unit_seconds(ftype, level(planet, eco.SHIPYARD), level(planet, eco.NANITE_FACTORY)),
+            "up_time": eco.unit_seconds(ftype, level(planet, shipyard_type(planet)),
+                                        level(planet, eco.NANITE_FACTORY)),
             "tech_tree": _tech_tree(rule),
         })
     else:

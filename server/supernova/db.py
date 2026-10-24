@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS planets (
     system     INTEGER NOT NULL,
     position   INTEGER NOT NULL,
     name       TEXT NOT NULL,
-    UNIQUE (galaxy, system, position)
+    kind       INTEGER NOT NULL DEFAULT 0,  -- 0 planet, 1 moon
+    UNIQUE (galaxy, system, position, kind)
 );
 CREATE TABLE IF NOT EXISTS fleet_events (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -145,8 +146,31 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
         path.parent.mkdir(parents=True, exist_ok=True)
         _conn = sqlite3.connect(path, check_same_thread=False)
         _conn.row_factory = sqlite3.Row
+        _migrate(_conn)
         _conn.executescript(SCHEMA)
     return _conn
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    columns = [r[1] for r in conn.execute("PRAGMA table_info(planets)")]
+    if columns and "kind" not in columns:  # moons share positions with their planets
+        with conn:
+            conn.executescript("""
+                ALTER TABLE planets RENAME TO planets_old;
+                CREATE TABLE planets (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    player_id  INTEGER NOT NULL REFERENCES players(id),
+                    galaxy     INTEGER NOT NULL,
+                    system     INTEGER NOT NULL,
+                    position   INTEGER NOT NULL,
+                    name       TEXT NOT NULL,
+                    kind       INTEGER NOT NULL DEFAULT 0,
+                    UNIQUE (galaxy, system, position, kind)
+                );
+                INSERT INTO planets (id, player_id, galaxy, system, position, name)
+                    SELECT id, player_id, galaxy, system, position, name FROM planets_old;
+                DROP TABLE planets_old;
+            """)
 
 
 def create_player(username_for_id, udid: str, new_state) -> tuple[int, str, dict]:
@@ -178,8 +202,8 @@ def _decode(text: str) -> dict:
         empire["current_planet_id"] = empire["main_planet"]["planet_id"]
         empire.pop("planets_info", None)
         state["state_version"] = 2
-    current = next((p for p in empire["planets"] if p["planet_id"] == empire.get("current_planet_id")),
-                   empire["planets"][0])
+    bodies = empire["planets"] + [p["moon"] for p in empire["planets"] if p.get("moon")]
+    current = next((p for p in bodies if p["planet_id"] == empire.get("current_planet_id")), empire["planets"][0])
     empire["current_planet_id"] = current["planet_id"]
     empire["main_planet"] = current
     return state

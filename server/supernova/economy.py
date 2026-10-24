@@ -15,6 +15,7 @@ SOLAR_PLANT, FUSION_REACTOR = 4, 5
 METAL_STORAGE, CRYSTAL_STORAGE, DEUTERIUM_STORAGE = 6, 7, 8
 ROBOTICS_FACTORY, SHIPYARD, RESEARCH_LAB = 9, 10, 11
 ALLIANCE_DEPOT, RADAR_CENTER, NANITE_FACTORY, SENSOR_ARRAY, TRANSMIT_PORTAL = 12, 13, 14, 15, 16
+MOON_SHIPYARD, MOON_ROBOTICS_FACTORY, MOON_BASE = 17, 18, 19
 KRYPTON_LAB, PIONEER_LAB = 20, 21
 
 ENERGY_TECH, COMPUTER_TECH, HYPERSPACE_TECH = 1, 10, 4
@@ -47,13 +48,20 @@ BUILDINGS: dict[int, BuildingRule] = {
     RADAR_CENTER: BuildingRule("Radar Center", 20000, 20000, 1000, 2, {SHIPYARD: 1}, {}),
     NANITE_FACTORY: BuildingRule("Nanite Factory", 1000000, 500000, 100000, 2,
                                  {ROBOTICS_FACTORY: 10}, {COMPUTER_TECH: 10}),
-    SENSOR_ARRAY: BuildingRule("Sensor Array", 20000, 40000, 20000, 2, {RADAR_CENTER: 1}, {}),
-    TRANSMIT_PORTAL: BuildingRule("Transmit Portal", 2000000, 4000000, 2000000, 2, {}, {HYPERSPACE_TECH: 7}),
+    SENSOR_ARRAY: BuildingRule("Sensor Array", 20000, 40000, 20000, 2, {MOON_BASE: 1}, {}),
+    TRANSMIT_PORTAL: BuildingRule("Transmit Portal", 2000000, 4000000, 2000000, 2, {MOON_BASE: 1},
+                                  {HYPERSPACE_TECH: 7}),
+    MOON_SHIPYARD: BuildingRule("Moon Shipyard", 400, 200, 100, 2, {MOON_ROBOTICS_FACTORY: 2}, {}),
+    MOON_ROBOTICS_FACTORY: BuildingRule("Moon Robotics Factory", 400, 120, 200, 2, {}, {}),
+    MOON_BASE: BuildingRule("Moon Base", 20000, 40000, 20000, 2, {}, {}),
     KRYPTON_LAB: BuildingRule("Krypton Lab", 10000, 20000, 10000, 2, {RESEARCH_LAB: 5}, {}),
-    PIONEER_LAB: BuildingRule("Pioneer Lab", 50000, 50000, 20000, 2, {RESEARCH_LAB: 8}, {}),
+    PIONEER_LAB: BuildingRule("Pioneer Lab", 50000, 50000, 20000, 2, {MOON_BASE: 1}, {}),
 }
 
 MINES = (METAL_MINE, CRYSTAL_MINE, DEUTERIUM_MINE)
+# Buildings of moons; planets have all others. On a moon the moon shipyard and moon robotics
+# factory stand in for the planet's shipyard and robotics factory.
+MOON_BUILDINGS = (MOON_SHIPYARD, MOON_ROBOTICS_FACTORY, MOON_BASE, SENSOR_ARRAY, TRANSMIT_PORTAL, PIONEER_LAB)
 STORAGE_FOR = {"metal": METAL_STORAGE, "crystal": CRYSTAL_STORAGE, "deuterium": DEUTERIUM_STORAGE}
 
 # Production every planet has without any mine (per hour).

@@ -11,6 +11,7 @@ the mailbox.
 
 import json
 import logging
+import random
 import time
 
 from . import combat, db, ranking
@@ -28,6 +29,8 @@ MISSION_NAMES = {
 }
 UNDER_ATTACK = 11  # how incoming attacks appear in the defender's flight list
 ATTACK_PIRATES = 13  # report type of battles against pirate bases
+MOON_CHANCE_DEBRIS = 100_000  # each this much debris gives 1 % moon chance ...
+MOON_CHANCE_MAX = 20  # ... up to this many percent
 QUEST_ACTIONS = {ESPIONAGE: quests.ESPIONAGE, EXPEDITION: quests.EXPEDITION, TRANSPORT: quests.TRANSPORT,
                  DEPLOY: quests.DEPLOY, RECYCLE: quests.RECYCLE}
 BE_ESPIONAGE, BE_TRANSPORT = 14, 15  # report types for the target's side
@@ -79,11 +82,16 @@ def parse_target(end_p_pos: str) -> tuple[int, int, int]:
     return galaxy, system, position
 
 
-def target_planet(target: tuple[int, int, int]):
+def target_planet(target: tuple[int, int, int], moon: bool = False):
     galaxy, system, position = target
     return db.connect().execute(
-        "SELECT id, player_id, name FROM planets WHERE galaxy = ? AND system = ? AND position = ?",
-        (galaxy, system, position)).fetchone()
+        "SELECT id, player_id, name FROM planets WHERE galaxy = ? AND system = ? AND position = ? AND kind = ?",
+        (galaxy, system, position, universe.MOON if moon else universe.PLANET)).fetchone()
+
+
+def targets_moon(params: dict) -> bool:
+    """The dispatch screen sends planet_type=moon when the player picked the moon."""
+    return params.get("planet_type") == "moon"
 
 
 def debris_at(target: tuple[int, int, int]) -> dict[str, int]:
@@ -92,9 +100,12 @@ def debris_at(target: tuple[int, int, int]) -> dict[str, int]:
     return {"metal": row["metal"], "crystal": row["crystal"]} if row else {"metal": 0, "crystal": 0}
 
 
-def allowed_missions(player_id: int, origin: dict, target: tuple[int, int, int], ships: dict[int, int]) -> list[int]:
+def allowed_missions(player_id: int, origin: dict, target: tuple[int, int, int], ships: dict[int, int],
+                     moon: bool = False) -> list[int]:
     recycle = [RECYCLE] if RECYCLER in ships and any(debris_at(target).values()) else []
-    row = target_planet(target)
+    row = target_planet(target, moon)
+    if row is None and moon:
+        return recycle
     if row is None:
         if COLONY_SHIP in ships and target[2] <= universe.PLANET_POSITIONS:
             return [COLONY] + recycle
@@ -120,13 +131,13 @@ def allowed_missions(player_id: int, origin: dict, target: tuple[int, int, int],
 
 
 def plan(empire: dict, player_id: int, ships: dict[int, int], target: tuple[int, int, int],
-         percent: int = 100, origin: dict | None = None) -> dict:
+         percent: int = 100, origin: dict | None = None, moon: bool = False) -> dict:
     origin = origin or empire["main_planet"]
     levels = _research_levels(empire)
     speed = min(eco.ship_speed(t, levels) for t in ships)
     dist = eco.distance(_position(origin), target)
     return {
-        "missions": allowed_missions(player_id, origin, target, ships),
+        "missions": allowed_missions(player_id, origin, target, ships, moon),
         "speed": speed,
         "distance": dist,
         "total_time": eco.flight_seconds(dist, speed, percent),
@@ -151,7 +162,8 @@ def send(player_id: int, state: dict, params: dict, now: float) -> None:
     percent = int(params.get("speed_ratio", 100))
     if not 10 <= percent <= 100 or percent % 10:
         raise FleetError("Invalid speed")
-    info = plan(empire, player_id, ships, target, percent, origin)
+    moon = targets_moon(params)
+    info = plan(empire, player_id, ships, target, percent, origin, moon)
     if mission not in info["missions"]:
         raise FleetError("This mission is not possible here")
     if mission == COLONY and len(empire["planets"]) >= max_planets(empire):
@@ -173,7 +185,7 @@ def send(player_id: int, state: dict, params: dict, now: float) -> None:
         planet_rules.fleet(origin, ftype)["amount"] -= n
 
     flight = info["total_time"]
-    target_row = target_planet(target)
+    target_row = target_planet(target, moon)
     target_id = target_row["id"] if target_row else None  # empty space, e.g. a debris field
     quest_action = QUEST_ACTIONS.get(mission)
     if mission == ATTACK:
@@ -398,18 +410,34 @@ def _attack(row, target_owner: int, state: dict, planet: dict) -> str:
             planet[res] -= loot[res]
     add_debris(row["target_galaxy"], row["target_system"], row["target_position"],
                result["debris"]["metal"], result["debris"]["crystal"])
+    moon = _maybe_moon(target_owner, planet, result["debris"])
 
     win = result["report"]["win"]
     ranking.record_battle(row["owner_id"], win)
     ranking.record_battle(target_owner, {"win": "lose", "lose": "win"}.get(win, "draw"))
     info = _event_info(row, row["arrival_time"])
-    body = {"mission_type": ATTACK, "is_returning": False, "event_info": info,
-            "notify_message": _loot_text(loot) if result["winner"] == "attacker" else "",
+    notes = [_loot_text(loot)] if result["winner"] == "attacker" else []
+    if moon:
+        notes.append("The debris gathered into a moon.")
+    body = {"mission_type": ATTACK, "is_returning": False, "event_info": info, "notify_message": " ".join(notes),
             "attack_result": dict(result["report"], loot=loot)}
     subject = f"Battle report [{info['end_planet_pos']}]"
     mails.send(row["owner_id"], mails.REPORT, mails.SENDER_FLEET, attacker_name, subject, body, row["arrival_time"])
     mails.send(target_owner, mails.REPORT, mails.SENDER_FLEET, defender_name, subject, body, row["arrival_time"])
     return _fly_home(row, result["attacker_left"], loot)
+
+
+def moon_chance(debris: dict) -> int:
+    """Percent chance that a battle's debris forms a moon."""
+    return min(MOON_CHANCE_MAX, (debris["metal"] + debris["crystal"]) // MOON_CHANCE_DEBRIS)
+
+
+def _maybe_moon(owner: int, planet: dict, debris: dict) -> dict | None:
+    from . import player  # player imports this module
+
+    if planet_rules.is_moon(planet) or planet.get("moon") or random.uniform(0, 100) >= moon_chance(debris):
+        return None
+    return player.add_moon(owner, planet)
 
 
 def _attack_pirates(row) -> str:

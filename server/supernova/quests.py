@@ -44,7 +44,7 @@ class Quest:
 
 
 def _max_level(state: dict, btype: int) -> int:
-    return max(planet_rules.level(p, btype) for p in state["empire"]["planets"])
+    return max(planet_rules.level(p, btype) for p in planet_rules.bodies(state["empire"]))
 
 
 def building(btype: int, lvl: int) -> Target:
@@ -59,7 +59,7 @@ def research(rtype: int, lvl: int) -> Target:
 
 def ships(ftype: int, n: int) -> Target:
     def done(state, _):
-        return sum(planet_rules.fleet(p, ftype)["amount"] for p in state["empire"]["planets"]) >= n
+        return sum(planet_rules.fleet(p, ftype)["amount"] for p in planet_rules.bodies(state["empire"])) >= n
     return Target(f"Build {n} {eco.UNITS[ftype].name}", done)
 
 

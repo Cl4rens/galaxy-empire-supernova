@@ -41,12 +41,15 @@ Cost to upgrade from level *L* to *L+1*: `base × factor^L`.
 | 12 | Alliance Depot | 20,000 | 40,000 | 0 | 2 | |
 | 13 | Radar Center\* | 20,000 | 20,000 | 1,000 | 2 | Shipyard 1 |
 | 14 | Nanite Factory | 1,000,000 | 500,000 | 100,000 | 2 | Robotics Factory 10, Computer Technology 10 |
-| 15 | Sensor Array\* | 20,000 | 40,000 | 20,000 | 2 | Radar Center 1 |
-| 16 | Transmit Portal\* | 2,000,000 | 4,000,000 | 2,000,000 | 2 | Hyperspace Technology 7 |
+| 15 | Sensor Array (moon) | 20,000 | 40,000 | 20,000 | 2 | Moon Base 1 |
+| 16 | Transmit Portal (moon) | 2,000,000 | 4,000,000 | 2,000,000 | 2 | Moon Base 1, Hyperspace Technology 7 |
+| 17 | Moon Shipyard (moon) | 400 | 200 | 100 | 2 | Moon Robotics Factory 2 |
+| 18 | Moon Robotics Factory (moon) | 400 | 120 | 200 | 2 | |
+| 19 | Moon Base (moon) | 20,000 | 40,000 | 20,000 | 2 | |
 | 20 | Krypton Lab\* | 10,000 | 20,000 | 10,000 | 2 | Research Lab 5 |
-| 21 | Pioneer Lab\* | 50,000 | 50,000 | 20,000 | 2 | Research Lab 8 |
+| 21 | Pioneer Lab\* (moon) | 50,000 | 50,000 | 20,000 | 2 | Moon Base 1 |
 
-\* No OGame equivalent; values are made up. Moon buildings (17–19) are not implemented yet.
+\* No OGame equivalent; values are made up. (moon): built on moons only, see [Moons](#moons).
 
 - **Build time** (hours) = (metal + crystal) / (2500 × (1 + robotics level) × 2^nanite level) / speed,
   at least 1 second.
@@ -310,3 +313,17 @@ radar center. Each pays resources, some also ships the next quest needs (espiona
 light fighters, a colony ship, small cargos, a recycler). Rewards go to the current planet when
 the player opens the quest window after reaching the goals. Fleet missions sent earlier also
 count. Players can skip the tutorial; skipping pays nothing.
+
+## Moons
+
+- A battle at a player's planet can form a moon there: 1 % chance per 100,000 debris (metal and
+  crystal), at most 20 %. A planet has at most one moon.
+- Moons produce nothing. They have 1 building field plus 3 per moon base level; the moon base
+  itself can always be built.
+- Moon buildings: moon base, moon robotics factory (speeds up moon constructions), moon
+  shipyard (needs moon robotics factory 2; builds ships like the planet shipyard), sensor array,
+  transmit portal and pioneer lab (each needs moon base 1). Planet buildings cannot be built on
+  moons and moon buildings not on planets.
+- Fleets can fly to moons (transport, deploy, espionage, attack). A planet and its moon are 5
+  distance units apart.
+- Giving up a colony gives up its moon too.

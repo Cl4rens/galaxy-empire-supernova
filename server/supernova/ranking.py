@@ -7,6 +7,7 @@ for, which is fine for community-sized servers.
 
 from . import db
 from . import economy as eco
+from . import planet as planet_rules
 
 AROUND_ME = 10  # entries above and below the player in the "my rank" lists
 
@@ -18,7 +19,7 @@ def _cost_sum(costs) -> int:
 def points(state: dict) -> dict:
     empire = state["empire"]
     spent_buildings = spent_research = spent_units = 0
-    for planet in empire["planets"]:
+    for planet in planet_rules.bodies(empire):
         for b in planet["buildings"]:
             spent_buildings += _cost_sum(eco.upgrade_cost(b["building_type"], lv) for lv in range(b["building_level"]))
         for f in planet["fleets"]:

@@ -107,6 +107,10 @@ def enter_world(player_id: int) -> Response:
     with db.player_state(player_id) as state:
         for p in state["empire"]["planets"]:
             universe.ensure_registered(player_id, p)
+        current = state["empire"]["main_planet"]
+        if planet_rules.is_moon(current):  # the client always starts on a planet
+            parent = next(p for p in state["empire"]["planets"] if p.get("moon") is current)
+            planet_rules.switch_planet(state["empire"], parent["planet_id"])
         planet_rules.tick(state["empire"], now)
         content = player.login_response(state, now)
     return logged_in(player_id, content)
@@ -204,20 +208,27 @@ async def rename_planet(world_id: int, planet_id: int, request: Request, player_
 
 @router.post("/planets/{planet_id}")
 async def abandon_planet(world_id: int, planet_id: int, request: Request, player_id: int = Depends(current_player)):
-    """_method=delete gives up a colony. The home planet and planets with fleets on the way stay."""
+    """_method=delete gives up a colony or moon (a colony with its moon). The home planet and planets
+    with fleets on the way stay."""
     if (await form(request)).get("_method") != "delete":
         return error("Unsupported request")
     now = time.time()
     with db.player_state(player_id) as state:
         empire = state["empire"]
-        if planet_rules.find_planet(empire, planet_id) is None:
+        target = planet_rules.find_planet(empire, planet_id)
+        if target is None:
             return error("This is not your planet", 404)
         if empire["planets"][0]["planet_id"] == planet_id:
             return error("You cannot give up your home planet")
-        if fleets.planet_has_flights(planet_id):
+        gone = [target] + ([target["moon"]] if target.get("moon") else [])
+        if any(fleets.planet_has_flights(p["planet_id"]) for p in gone):
             return error("Fleets are flying from or to this planet")
-        empire["planets"] = [p for p in empire["planets"] if p["planet_id"] != planet_id]
-        universe.remove_planet(planet_id)
+        if planet_rules.is_moon(target):
+            next(p for p in empire["planets"] if p.get("moon") is target)["moon"] = None
+        else:
+            empire["planets"].remove(target)
+        for p in gone:
+            universe.remove_planet(p["planet_id"])
         planet_rules.switch_planet(empire, empire["planets"][0]["planet_id"])
         planet_rules.tick(empire, now)
         return encrypted_json({"empire_info": player.empire_summary(state),
@@ -474,7 +485,7 @@ async def prepare_fleet(world_id: int, request: Request, player_id: int = Depend
             ships = fleets.parse_ships(empire["main_planet"], params.get("fleet_ids", ""),
                                        params.get("fleet_cnt_ids", ""))
             target = fleets.parse_target(params.get("end_p_pos", ""))
-            info = fleets.plan(empire, player_id, ships, target)
+            info = fleets.plan(empire, player_id, ships, target, moon=fleets.targets_moon(params))
     except planet_rules.GameError as e:
         return error(str(e))
     return encrypted_json({k: v for k, v in info.items() if k != "distance"})

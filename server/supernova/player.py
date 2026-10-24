@@ -26,6 +26,8 @@ def guest_username(player_id: int) -> str:
 
 PLANET_TYPE_COLONY = 1
 COLONY_NAME = "Colony"
+PLANET_TYPE_MOON = planet_rules.PLANET_TYPE_MOON
+MOON_NAME = "Moon"
 
 
 def new_planet(planet_id: int, galaxy: int, system: int, position: int, name: str,
@@ -131,6 +133,28 @@ def new_state(player_id: int, username: str, home: dict | None = None) -> dict:
     }
 
 
+def add_moon(player_id: int, planet: dict) -> dict | None:
+    """Give `planet` a moon. Returns it, or None if the planet already has one."""
+    if planet.get("moon"):
+        return None
+    galaxy, system, position = planet["galaxy_position"], planet["system_position"], planet["planet_position"]
+    moon_id = universe.add_planet(player_id, galaxy, system, position, MOON_NAME, kind=universe.MOON)
+    if moon_id is None:
+        return None
+    moon = new_planet(moon_id, galaxy, system, position, MOON_NAME, PLANET_TYPE_MOON)
+    for b in moon["buildings"]:  # the moon screen has a fixed place for each type, found by its type
+        if b["building_type"] in eco.MOON_BUILDINGS:
+            b["building_position_index"] = b["building_type"]
+    planet["moon"] = moon
+    return moon
+
+
+def _moon_info(moon: dict) -> dict:
+    used, available = planet_rules.fields(moon)
+    return {"moon_id": moon["planet_id"], "moon_name": moon["planet_name"], "moon_field_current": used,
+            "moon_field_max": available, "attacked_time": 0, "attacked_num": 0}
+
+
 def planets_info(empire: dict) -> list[dict]:
     """The player's planets as the planet list shows them."""
     return [{
@@ -140,12 +164,12 @@ def planets_info(empire: dict) -> list[dict]:
         "galaxy_position": p["galaxy_position"],
         "system_position": p["system_position"],
         "planet_position": p["planet_position"],
-        "field_current": sum(b["building_level"] for b in p["buildings"]),
-        "field_max": planet_rules.PLANET_FIELDS,
+        "field_current": planet_rules.fields(p)[0],
+        "field_max": planet_rules.fields(p)[1],
         "planet_activity": 2,
         "radar_level": planet_rules.level(p, eco.RADAR_CENTER),
         "is_radar_on": False,
-        "moon_array": [],
+        "moon_array": [_moon_info(p["moon"])] if p.get("moon") else [],
         "is_protected": 0,
         "protected_time": 0,
         "attacked_time": 0,
