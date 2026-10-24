@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse, Response
 
 from . import accounts, acs, alliances, bookmarks, chat, checkin, combat, crypto, db, faq, fleets, gifts, mails
-from . import ecm, flagships, fortresses, kryptons, lordship, notices, player, quests, ranking, repairs
+from . import ecm, flagships, fortresses, items, kryptons, lordship, notices, player, quests, ranking, repairs
 from . import economy as eco
 from . import planet as planet_rules
 from . import universe
@@ -1349,6 +1349,121 @@ async def gift_claim(world_id: int, request: Request, player_id: int = Depends(c
         if not gifts.claim(player_id, empire["main_planet"], int(params.get("gift_id") or 0), now):
             return error("This gift is gone")
         return encrypted_json({"empire": player.empire_summary(state), "planet": planet_rules.client_view(empire, now)})
+
+
+# --- Item shop, depot and speed-ups ------------------------------------------------------------
+
+
+def item_call(fn):
+    try:
+        return encrypted_json(fn())
+    except planet_rules.GameError as e:
+        return error(str(e))
+
+
+def _money(state: dict) -> dict:
+    return {"dark_matter_count": state["empire"].get("dark_matter_count", 0),
+            "gu_count": state["empire"].get("gu_count", 0)}
+
+
+@router.get("/game_items")
+async def item_shop(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    category = _int(await form(request), "category")
+    with db.player_state(player_id) as state:
+        return encrypted_json(dict(_money(state), items=items.shop(category)))
+
+
+@router.get("/game_items/item_packages")
+def item_packages(player_id: int = Depends(current_player)):
+    return encrypted_json({"item_packages": []})
+
+
+@router.post("/users/{user_id}/buy_game_item")
+async def buy_item(world_id: int, user_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+
+    def act():
+        with db.player_state(player_id) as state:
+            return items.buy(state, _int(params, "game_item_id"), _int(params, "number", 1))
+    return item_call(act)
+
+
+@router.get("/users/{user_id}/game_items")
+async def item_depot(world_id: int, user_id: int, request: Request, player_id: int = Depends(current_player)):
+    category = _int(await form(request), "category")
+    with db.player_state(player_id) as state:
+        return encrypted_json(dict(_money(state), items=items.depot_view(state, category)))
+
+
+@router.post("/users/{user_id}/use_game_item")
+async def use_item(world_id: int, user_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    now = time.time()
+
+    def act():
+        with db.player_state(player_id) as state:
+            use_planet(state, params)
+            empire = state["empire"]
+            planet_rules.tick(empire, now)
+            item_id = _int(params, "game_item_id")
+            info = items.use(state, item_id, _int(params, "number", 1), empire["main_planet"])
+            return {"info": info, "categories": [items.owned_view(state, items.item(item_id))],
+                    "empire": player.empire_summary(state), "planet": planet_rules.client_view(empire, now)}
+    return item_call(act)
+
+
+@router.post("/users/{user_id}/del_game_item")
+async def discard_item(world_id: int, user_id: int, request: Request, player_id: int = Depends(current_player)):
+    item_id = _int(await form(request), "game_item_id")
+
+    def act():
+        with db.player_state(player_id) as state:
+            items.discard(state, item_id)
+            return {"item": {"game_item_id": item_id}}
+    return item_call(act)
+
+
+SPEEDUP_KINDS = {"building_events": items.BUILDING, "fleet_building_events": items.SHIPYARD,
+                 "research_upgrading_events": items.RESEARCH}
+
+
+def _speedup_kind(request: Request) -> str:
+    return SPEEDUP_KINDS[request.url.path.split("/")[3]]  # /world/{id}/{kind}/...
+
+
+@router.get("/building_events/{event_id}/speedup_info.json")
+@router.get("/fleet_building_events/{event_id}/speedup_info.json")
+@router.get("/research_upgrading_events/{event_id}/speedup_info.json")
+def speedup_info(event_id: int, request: Request, player_id: int = Depends(current_player)):
+    kind = _speedup_kind(request)
+    with db.player_state(player_id) as state:
+        return item_call(lambda: items.speedup_info(state, kind, event_id, time.time()))
+
+
+@router.post("/building_events/{event_id}/speedup.json")
+@router.post("/fleet_building_events/{event_id}/speedup.json")
+@router.post("/research_upgrading_events/{event_id}/speedup.json")
+@router.post("/building_events/{event_id}/buy_and_use_stone.json")
+@router.post("/fleet_building_events/{event_id}/buy_and_use_stone.json")
+@router.post("/research_upgrading_events/{event_id}/buy_and_use_stone.json")
+async def speed_up(world_id: int, event_id: int, request: Request, player_id: int = Depends(current_player)):
+    """speedup.json uses a speed-up item (game_item_id 0: dark matter), buy_and_use_stone.json
+    buys one first."""
+    kind = _speedup_kind(request)
+    buy_first = request.url.path.endswith("buy_and_use_stone.json")
+    params = await form(request)
+    now = time.time()
+
+    def act():
+        with db.player_state(player_id) as state:
+            empire = state["empire"]
+            items.speed_up(state, kind, event_id, _int(params, "game_item_id"), buy_first, now)
+            planet = empire["main_planet"]
+            return {"update": {"buildings": [planet_rules.building_view(planet, b) for b in planet["buildings"]],
+                               "fleets": [planet_rules.fleet_view(planet, f) for f in planet["fleets"]],
+                               "researches": [planet_rules.research_view(empire, r) for r in empire["researches"]]},
+                    "empire": player.empire_summary(state), "planet": planet_rules.client_view(empire, now)}
+    return item_call(act)
 
 
 # --- Star fortresses ------------------------------------------------------------------------

@@ -636,6 +636,24 @@ The empire carries `fortress_interspace_events: [{id, planet_id, planet_name, pl
 end_planet_name, end_planet_pos, mission_name, is_returning (0/1), start_time, finish_time,
 total_time, fleets}]`.
 
+### Item shop, depot and speed-ups
+
+| Request | Answer |
+|---------|--------|
+| `GET game_items` `category` (0 featured, 1 resources, 2 speed-ups, 3 affairs, 4 other) | `{items: [item], dark_matter_count, gu_count}` |
+| `GET game_items/item_packages` | `{item_packages: []}` |
+| `POST users/{id}/buy_game_item` `game_item_id, number` | `{darkmatter, credits, info, id, item_type}` |
+| `GET users/{id}/game_items` `category` | `{items: [item + amount, can_be_use], dark_matter_count, gu_count}` |
+| `POST users/{id}/use_game_item` `game_item_id, number, planet_id` | `{info, categories: [the changed item], empire, planet}` |
+| `POST users/{id}/del_game_item` `game_item_id` | `{item: {game_item_id}}` |
+| `GET {building_events, fleet_building_events, research_upgrading_events}/{id}/speedup_info.json` | `{items: [speed-up items with amount], left_time, dark_matter_count (price to finish now)}` |
+| `POST .../{id}/speedup.json` `game_item_id` | uses an owned speed-up; `game_item_id=0` finishes with dark matter. Answer: `{update: {buildings, fleets, researches}, empire, planet}` |
+| `POST .../{id}/buy_and_use_stone.json` `game_item_id` | buys the speed-up and uses it |
+
+An item is `{id, game_item_id, name, desc, img, pay_type (1 dark matter, 2 credits), sale_price,
+code, item_type, category, is_featured, is_gift, step_gacha}`. The client shows `img` by its
+file name if it has that texture (`icons/item_res_04.png` ...), else downloads it from the server.
+
 ### Errors
 
 For a status other than 200 the client shows the response body **as text** (or the `<title>` of

@@ -188,6 +188,7 @@ Uninstall any old copy of the original game first, because the signatures differ
 - [x] Pioneer Lab: Iron Behemoth, alloy fragments, dark energy, pioneer techs
 - [x] ECM module and system lords
 - [x] Alliance treasury and star fortresses
+- [x] Item shop (dark matter), capsule and speed-ups
 - [x] Runs on Android 6-16 without crashes or permission dialogs
 - [ ] Support for 64-bit-only devices: needs an open client engine that runs the original Lua
       scripts and Flash UI from the player's APK (idea, not started)

@@ -451,3 +451,11 @@ Following the client's help texts, with Supernova's numbers:
   and the fortress store (ECM chips, alloy boxes, krypton stones, resource crates).
 - Interspace: guard fleets (pirates of level 3, 5, 7) that any alliance member can attack 3
   times a day, for supplies and, during a war, morale.
+
+## Item shop and speed-ups
+
+- Everything in the shop costs dark matter; bought items go to the capsule (depot) and are
+  used from there: resource packs (on the current planet), ECM chips, alloy fragment boxes,
+  krypton stones.
+- Speed-ups (5 min to 12 h) shorten a running construction, research or shipyard order. Dark
+  matter finishes an order at once: 1 per 5 minutes left (at least 1).
