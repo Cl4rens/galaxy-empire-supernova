@@ -2,7 +2,7 @@
 
 import pytest
 
-from supernova import db, fleets, player, universe
+from supernova import db, fleets, mails, player, universe
 from supernova import economy as eco
 from supernova import planet as planet_rules
 
@@ -95,3 +95,40 @@ def test_send_checks():
         state["empire"]["main_planet"]["deuterium"] = 0
         with pytest.raises(planet_rules.GameError, match="fuel"):
             fleets.send(sender, state, send_params(sender, position(receiver)), now)
+
+
+def test_espionage_levels():
+    assert fleets.espionage_level(1, 0, 0) == 1
+    assert fleets.espionage_level(1, 2, 0) == 5
+    assert fleets.espionage_level(4, 0, 2) == 0
+
+
+def test_espionage_report_and_victim_notice():
+    spy, victim = new_player_with_cargo(0), new_player_with_cargo(0)
+    with db.player_state(spy) as state:
+        planet_rules.fleet(state["empire"]["main_planet"], fleets.ESPIONAGE_PROBE)["amount"] = 5
+    with db.player_state(victim) as state:
+        planet_rules.fleet(state["empire"]["main_planet"], 15)["amount"] = 7  # rocket launchers
+    now = 2_000_000_000.0
+    with db.player_state(spy) as state:
+        probe = planet_rules.fleet(state["empire"]["main_planet"], fleets.ESPIONAGE_PROBE)["fleet_id"]
+        params = {"fleet_ids": f"{probe},", "fleet_cnt_ids": "5,", "end_p_pos": ",".join(map(str, position(victim))),
+                  "mission": str(fleets.ESPIONAGE), "speed_ratio": "100"}
+        assert fleets.ESPIONAGE in fleets.plan(state["empire"], spy, {13: 5}, position(victim))["missions"]
+        fleets.send(spy, state, params, now)
+    flight = fleets.events_view(spy)[0]
+    fleets.process_due(flight["finish_time"])
+
+    report = mails.undelivered(spy)[0]
+    result = report["body"]["probe_result"]
+    assert report["body"]["mission_type"] == fleets.ESPIONAGE
+    assert result["metal"] >= 50_000 and {"fleet_type": 15, "fleet_name": "Rocket Launcher", "amount": 7} in result["defenses"]
+    assert "buildings" in result  # 5 probes, equal technology: level 5
+    notice = mails.undelivered(victim)[0]
+    assert notice["body"]["mission_type"] == fleets.BE_ESPIONAGE
+
+    mails.confirm(spy, [report["id"]])
+    assert mails.unread_count(spy) == 0
+    fleets.process_due(fleets.events_view(spy)[0]["finish_time"])
+    returned = mails.undelivered(spy)[0]
+    assert returned["body"]["is_returning"] is True

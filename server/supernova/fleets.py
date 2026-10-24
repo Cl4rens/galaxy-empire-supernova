@@ -4,7 +4,8 @@ Flights are stored in the fleet_events table, not in the player state, because a
 change another player's planet. A background task in the server calls `process_due` every
 second, so missions also complete while their owner is offline.
 
-Implemented missions: transport and deploy.
+Implemented missions: transport, deploy and espionage. Arrivals and returns send reports to
+the mailbox.
 """
 
 import json
@@ -13,6 +14,7 @@ import time
 
 from . import db
 from . import economy as eco
+from . import mails
 from . import planet as planet_rules
 from . import universe
 
@@ -23,6 +25,8 @@ MISSION_NAMES = {
     EXPEDITION: "Expedition", COLONY: "Colonize", RECYCLE: "Recycle", TRANSPORT: "Transport",
     DEPLOY: "Deploy", ESPIONAGE: "Espionage", ATTACK: "Attack",
 }
+BE_ESPIONAGE, BE_TRANSPORT = 14, 15  # report types for the target's side
+ESPIONAGE_PROBE = 13
 RESOURCES = planet_rules.RESOURCES
 
 
@@ -82,6 +86,8 @@ def allowed_missions(player_id: int, origin: dict, target: tuple[int, int, int],
     missions = [TRANSPORT]
     if row["player_id"] == player_id:
         missions.append(DEPLOY)
+    elif ESPIONAGE_PROBE in ships:
+        missions.append(ESPIONAGE)
     return missions
 
 
@@ -167,6 +173,90 @@ def _planet_owner(planet_id: int | None) -> int | None:
     return row["player_id"] if row else None
 
 
+def _username(player_id: int) -> str:
+    row = db.connect().execute("SELECT username FROM players WHERE id = ?", (player_id,)).fetchone()
+    return row["username"] if row else ""
+
+
+def _event_info(row, finish_time: int) -> dict:
+    """The flight as mission reports describe it."""
+    origin = db.connect().execute("SELECT * FROM planets WHERE id = ?", (row["origin_planet_id"],)).fetchone()
+    start_name, start_pos = _planet_label(row["origin_planet_id"], origin["galaxy"], origin["system"],
+                                          origin["position"])
+    end_name, end_pos = _planet_label(row["target_planet_id"], row["target_galaxy"], row["target_system"],
+                                      row["target_position"])
+    cargo = json.loads(row["cargo"])
+    return {
+        "mission": row["mission"],
+        "mission_name": MISSION_NAMES.get(row["mission"], ""),
+        "start_planet_name": start_name,
+        "start_planet_pos": start_pos,
+        "end_planet_name": end_name,
+        "end_planet_pos": end_pos,
+        "finish_time": finish_time,
+        "resource_metal": cargo["metal"],
+        "resource_crystal": cargo["crystal"],
+        "resource_deuterium": cargo["deuterium"],
+        "hanging_fleets": [{"fleet_type": t, "fleet_count": n} for t, n in _ships(row).items()],
+    }
+
+
+def espionage_level(probes: int, own_tech: int, target_tech: int) -> int:
+    """How much a report reveals (OGame): probes, adjusted by the espionage technology gap."""
+    gap = own_tech - target_tech
+    return probes + gap * abs(gap)
+
+
+def probe_result(target_state: dict, level: int) -> dict:
+    """What the probes see: resources always; more with a higher level (OGame thresholds)."""
+    empire = target_state["empire"]
+    planet = empire["main_planet"]
+    rates = planet_rules.production(planet, empire)
+    result = {
+        "metal": int(planet["metal"]),
+        "crystal": int(planet["crystal"]),
+        "deuterium": int(planet["deuterium"]),
+        "energy_max": round(rates["energy_max"]),
+        "krypton_stone": 0,
+        "pirate_krypton_level": [0],  # read by the client for every report
+    }
+    def units(category):
+        return [{"fleet_type": f["fleet_type"], "fleet_name": planet_rules.fleet_view(planet, f)["fleet_name"],
+                 "amount": f["amount"]}
+                for f in planet["fleets"]
+                if f["amount"] and (f["fleet_type"] in eco.SHIPS) == (category == "ships")]
+    if level >= 2:
+        result["fleets"] = units("ships")
+    if level >= 3:
+        result["defenses"] = units("defense")
+        result["radar_able"] = False
+    if level >= 5:
+        result["buildings"] = [{"building_type": b["building_type"],
+                                "building_name": eco.BUILDINGS[b["building_type"]].name,
+                                "building_level": b["building_level"]}
+                               for b in planet["buildings"] if b["building_level"]]
+    return result
+
+
+def _espionage(row, target_owner: int, state: dict) -> None:
+    owner_state = db.load_state(row["owner_id"])
+    level = espionage_level(_ships(row).get(ESPIONAGE_PROBE, 0),
+                            planet_rules.research_level(owner_state["empire"], eco.ESPIONAGE_TECH),
+                            planet_rules.research_level(state["empire"], eco.ESPIONAGE_TECH))
+    info = _event_info(row, row["arrival_time"])
+    spy, victim = _username(row["owner_id"]), _username(target_owner)
+    mails.send(row["owner_id"], mails.REPORT, mails.SENDER_FLEET, spy,
+               f"Espionage report [{info['end_planet_pos']}]",
+               {"mission_type": ESPIONAGE, "is_returning": False, "event_info": info,
+                "probe_result": probe_result(state, level)}, row["arrival_time"])
+    mails.send(target_owner, mails.REPORT, mails.SENDER_FLEET, victim,
+               f"Espionage activity [{info['end_planet_pos']}]",
+               {"mission_type": BE_ESPIONAGE, "is_returning": False,
+                "event_info": {"espionage_user": spy, "espionage_planet_pos": info["start_planet_pos"],
+                               "be_espionage_user": victim, "be_espionage_planet_pos": info["end_planet_pos"]}},
+               row["arrival_time"])
+
+
 def _arrive(row) -> str:
     """Apply the mission at the target. Returns the new status of the flight."""
     cargo = json.loads(row["cargo"])
@@ -178,11 +268,30 @@ def _arrive(row) -> str:
         if planet["planet_id"] != row["target_planet_id"]:
             return "returning"
         planet_rules.tick(state["empire"], row["arrival_time"])
+        if row["mission"] == ESPIONAGE:
+            _espionage(row, target_owner, state)
+            return "returning"
         for res in RESOURCES:
             planet[res] += cargo[res]
         if row["mission"] == DEPLOY:
             for ftype, n in _ships(row).items():
                 planet_rules.fleet(planet, ftype)["amount"] += n
+
+    info = _event_info(row, row["arrival_time"])
+    owner_name, target_name = _username(row["owner_id"]), _username(target_owner)
+    if row["mission"] == DEPLOY:
+        mails.send(row["owner_id"], mails.REPORT, mails.SENDER_FLEET, owner_name,
+                   f"Fleet deployed [{info['end_planet_pos']}]",
+                   {"mission_type": DEPLOY, "is_returning": False, "event_info": info}, row["arrival_time"])
+    else:
+        mails.send(row["owner_id"], mails.REPORT, mails.SENDER_FLEET, owner_name,
+                   f"Transport arrived [{info['end_planet_pos']}]",
+                   {"mission_type": TRANSPORT, "is_returning": False, "event_info": info}, row["arrival_time"])
+        if target_owner != row["owner_id"]:
+            mails.send(target_owner, mails.REPORT, mails.SENDER_FLEET, target_name,
+                       f"Delivery from {owner_name}",
+                       {"mission_type": BE_TRANSPORT, "is_returning": False,
+                        "event_info": dict(info, mission=BE_TRANSPORT)}, row["arrival_time"])
     conn = db.connect()
     with db.lock(), conn:
         conn.execute("UPDATE fleet_events SET cargo = ? WHERE id = ?",
@@ -199,6 +308,10 @@ def _return(row) -> None:
         cargo = json.loads(row["cargo"])
         for res in RESOURCES:
             planet[res] += cargo[res]
+    info = _event_info(row, row["return_time"])
+    mails.send(row["owner_id"], mails.REPORT, mails.SENDER_FLEET, _username(row["owner_id"]),
+               f"Fleet returned [{info['start_planet_pos']}]",
+               {"mission_type": row["mission"], "is_returning": True, "event_info": info}, row["return_time"])
 
 
 def process_due(now: float | None = None) -> int:

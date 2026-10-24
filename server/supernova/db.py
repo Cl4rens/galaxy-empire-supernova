@@ -46,6 +46,18 @@ CREATE TABLE IF NOT EXISTS fleet_events (
     status           TEXT NOT NULL    -- outbound, returning
 );
 CREATE INDEX IF NOT EXISTS fleet_events_due ON fleet_events (status, arrival_time, return_time);
+CREATE TABLE IF NOT EXISTS mails (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    recipient_id   INTEGER NOT NULL REFERENCES players(id),
+    message_type   INTEGER NOT NULL,
+    sender         TEXT NOT NULL,
+    recipient_name TEXT NOT NULL,
+    subject        TEXT NOT NULL,
+    body           TEXT NOT NULL,   -- JSON: text for player mails, object for reports
+    created_at     INTEGER NOT NULL,
+    delivered      INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS mails_new ON mails (recipient_id, delivered);
 CREATE TABLE IF NOT EXISTS sessions (
     token      TEXT PRIMARY KEY,
     player_id  INTEGER NOT NULL REFERENCES players(id),

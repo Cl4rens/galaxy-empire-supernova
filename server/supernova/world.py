@@ -12,7 +12,7 @@ from urllib.parse import parse_qs
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse, Response
 
-from . import crypto, db, fleets, player
+from . import crypto, db, fleets, mails, player
 from . import planet as planet_rules
 from . import universe
 
@@ -114,7 +114,10 @@ def planet(planet_id: int, player_id: int = Depends(current_player)):
         if state["empire"]["main_planet"]["planet_id"] != planet_id:
             return error("Unknown planet", 404)
         planet_rules.tick(state["empire"], now)
-        return encrypted_json(planet_rules.client_view(state["empire"], now))
+        view = planet_rules.client_view(state["empire"], now)
+    # Shown as the number on the mail button; updatePlanet passes it on.
+    view["new_message_count"] = mails.unread_count(player_id)
+    return encrypted_json(view)
 
 
 # Must come before /users/{user_id}.
@@ -364,6 +367,34 @@ def fleet_info(planet_id: int, player_id: int = Depends(current_player)):
         content = planet_rules.client_view(state["empire"], now)
         content["fleet_hanging_events"] = fleets.events_view(player_id)
         return encrypted_json(content)
+
+
+# --- Mailbox ---------------------------------------------------------------------------------
+
+
+@router.post("/messages/get_new.json")
+async def new_mails(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    """Called twice: first to fetch new mails, then with their ids in `checklist` to confirm."""
+    params = await form(request)
+    mails.confirm(player_id, [int(x) for x in params.get("checklist", "").split(",") if x.strip().isdigit()])
+    new = mails.undelivered(player_id)
+    return encrypted_json({"new_message_count": len(new), "mails": new})
+
+
+@router.post("/messages.json")
+async def send_mail(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    """A mail to another player (message_type 3). Text fields are encrypted like the username."""
+    params = await form(request)
+    if params.get("message_type") != str(mails.USER):
+        return error("Alliance mails are not available yet")
+    to = decrypt_param(params.get("to", "")).strip()
+    found = db.find_player(to)
+    if found is None:
+        return error("There is no player with this name")
+    sender = db.load_state(player_id)["username"]
+    mails.send(found[0], mails.USER, sender, to, decrypt_param(params.get("subject", ""))[:100],
+               decrypt_param(params.get("body", ""))[:5000])
+    return encrypted_json({})
 
 
 # --- Galaxy map and solar systems ------------------------------------------------------

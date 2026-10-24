@@ -276,6 +276,50 @@ A flight in `empire.fleet_hanging_events`:
 `finish_time` is the end of the current leg (arrival, or return when `is_returning`), and
 `total_time` the length of that leg. Mission 11 marks hostile fleets on their way to the player.
 
+### Mailbox
+
+| Request | Meaning |
+|---------|---------|
+| `POST messages/get_new.json` with `username` (ENC2), `device_type`, `checklist`, `is_update` | new mails: `{new_message_count, mails: [...]}`. The client calls it twice: once with an empty `checklist`, then with the received ids (`"4,5,6"`) to confirm them |
+| `POST messages.json` with `from`, `to`, `subject`, `body` (all `ext.ENC3`, the same encryption as ENC2), `message_type` 3 | send a mail to a player; alliance mails use `message_type` 4, `alliance_id`, `do=alliance_mail` |
+
+The client stores every mail itself (`MAILS.tfl`, up to 99 player and 250 system mails); the
+server only hands out unconfirmed ones. The number on the mail button is
+`main_planet.new_message_count` / `empire.new_message_count`.
+
+A mail: `{id, message_type, content_type, from, to, subject, body, created_at, is_read}`.
+
+| `message_type` | Tab | |
+|---:|-----|-|
+| 1 | System | mission reports |
+| 2 | System | system messages |
+| 3 | Personal | player mail, `body` is text |
+| 4 | Personal | alliance mail |
+| 5 | Explore | expedition / exploration combat |
+| 6 | System | scan reports (sensor array) |
+
+For reports `body` is an object; `body.mission_type` picks the layout:
+
+| `mission_type` | Report | `body` fields |
+|---:|--------|---------------|
+| any, with `is_returning: true` | fleet returned | `event_info` |
+| 4 | transport arrived | `event_info` |
+| 15 | delivery received | `event_info` |
+| 5 | deployed | `event_info` |
+| 6 | espionage | `event_info`, `probe_result` |
+| 14 | spied on | `event_info: {espionage_user, espionage_planet_pos, be_espionage_user, be_espionage_planet_pos}` |
+| 7 | battle | not documented yet |
+
+`event_info`: `{mission, mission_name, start_planet_name, start_planet_pos, end_planet_name,
+end_planet_pos, finish_time, resource_metal, resource_crystal, resource_deuterium,
+hanging_fleets: [{fleet_type, fleet_count}]}`.
+
+`probe_result`: `{metal, crystal, deuterium, energy_max, krypton_stone, pirate_krypton_level: [n],
+fleets?, defenses?, buildings?, radar_able?, debris_*?}`. `pirate_krypton_level` must be present
+(the client reads index 1); `fleets`/`defenses` are `[{fleet_type, fleet_name, amount}]`,
+`buildings` `[{building_type, building_name, building_level}]`. A `pirate_name` switches to the
+pirate layout.
+
 ### Errors
 
 For a status other than 200 the client shows the response body **as text** (or the `<title>` of

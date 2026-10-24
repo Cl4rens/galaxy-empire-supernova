@@ -154,6 +154,22 @@ Ships fly between planets; defense units and solar satellites cannot fly. Implem
 
 - **Transport:** delivers the cargo to any player's planet, then returns.
 - **Deploy:** moves ships and cargo to another planet of your own; they stay there.
+- **Espionage:** needs at least one espionage probe; probes return after the report.
+
+Every arrival and return sends a report to the mailbox; the target of a transport or of
+espionage is notified too.
+
+### Espionage
+
+How much a report shows depends on the espionage level =
+probes + (own − target espionage technology) × |own − target espionage technology| (OGame):
+
+| Level | Shown |
+|------:|-------|
+| any | resources, energy |
+| ≥ 2 | ships |
+| ≥ 3 | defense |
+| ≥ 5 | buildings |
 
 A fleet that is still on its way out can be **recalled**; it flies back as long as it has
 already flown. Missions complete on the server even while the player is offline.

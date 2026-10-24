@@ -12,6 +12,7 @@ from . import config, economy as eco
 FREE_LOTS = range(4, 16)  # lots 1-3 belong to the mines
 EVENT_UPGRADE, EVENT_TEARDOWN = 1, 2
 FLEET_CATEGORY_SHIP, FLEET_CATEGORY_DEFENSE = 1, 2
+PLANET_FIELDS = 163
 RESOURCES = ("metal", "crystal", "deuterium")
 
 
@@ -412,6 +413,11 @@ def client_view(empire: dict, now: float) -> dict:
         "buildings": [building_view(planet, b) for b in planet["buildings"]],
         "building_events": [event_view(planet, e) for e in planet["building_events"]],
         "current_server_time": int(now),
+        # Planet info screen. Fields are not limited yet; temperature as in OGame by position.
+        "field_current": sum(b["building_level"] for b in planet["buildings"]),
+        "field_max": PLANET_FIELDS,
+        "temp_max": 150 - 12 * planet["planet_position"],
+        "temp_min": 110 - 12 * planet["planet_position"],
     })
     return view
 

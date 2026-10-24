@@ -84,3 +84,22 @@ def test_research_requires_lab_over_api():
     response = c.post("/world/1/research_upgrading_events.json",
                       content=f"planet_id=1&research_id={energy['research_id']}")
     assert response.status_code == 400 and "Requirements" in response.text
+
+
+def test_player_mail():
+    alice, bob = TestClient(app), TestClient(app)
+    a = decrypt_json(alice.post("/world/1/trials.json", content="username="))
+    b = decrypt_json(bob.post("/world/1/trials.json", content="username="))
+
+    def enc(text):
+        return quote(crypto.encrypt(KEY, text).decode(), safe="")
+    body = f"to={enc(b['username'])}&subject={enc('Hello')}&body={enc('Peace?')}&message_type=3&from={enc(a['username'])}"
+    assert alice.post("/world/1/messages.json", content=body).status_code == 200
+
+    planet_id = b["empire"]["main_planet"]["planet_id"]
+    assert decrypt_json(bob.get(f"/world/1/planets/{planet_id}"))["new_message_count"] == 1
+    new = decrypt_json(bob.post("/world/1/messages/get_new.json", content="checklist="))
+    mail = new["mails"][0]
+    assert (mail["from"], mail["subject"], mail["body"], mail["message_type"]) == (a["username"], "Hello", "Peace?", 3)
+    confirmed = decrypt_json(bob.post("/world/1/messages/get_new.json", content=f"checklist={mail['id']}"))
+    assert confirmed == {"new_message_count": 0, "mails": []}

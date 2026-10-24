@@ -8,7 +8,7 @@ import secrets
 import time
 
 from . import economy as eco
-from . import fleets
+from . import fleets, mails
 from . import planet as planet_rules
 from . import universe
 
@@ -146,4 +146,5 @@ def login_response(state: dict, now: float) -> dict:
     response = {k: v for k, v in state.items() if k not in ("empire", "next_event_id")}
     response["empire"] = empire_view(state, now)
     response["checkin_days"] = 0
+    response["empire"]["new_message_count"] = mails.unread_count(state["user_id"])
     return response
