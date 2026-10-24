@@ -115,6 +115,10 @@ python -m supernova.admin give-fleet <username> 9=5 1=10      # fleet_type=count
 python -m supernova.admin set-research <username> <research_type> <level>
 python -m supernova.admin chat-reports                     # chat messages players reported
 python -m supernova.admin delete-chat <message_id>
+python -m supernova.admin news-add <normal|update|maintain|emergency> "<title>" "<text>"
+python -m supernova.admin news-list
+python -m supernova.admin news-delete <id>
+python -m supernova.admin gift <username|all> "<title>" "<text>" metal=5000 9=2   # resource or fleet_type=amount
 ```
 
 ### 4. Build the patched APK
@@ -164,6 +168,7 @@ Uninstall any old copy of the original game first, because the signatures differ
 - [x] Tutorial quests, renaming and giving up planets
 - [x] Chat: world and alliance channels
 - [x] Moons: forming after battles, moon buildings, flights to moons, sensor array, transmit portal
+- [x] Bookmarks, news, daily check-in, gifts, help
 - [ ] Support for 64-bit-only devices
 - [ ] Game logic: buildings, research, fleets, combat, alliances
 

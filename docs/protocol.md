@@ -479,6 +479,29 @@ Fleets sent to a moon carry `planet_type=moon` (otherwise `planet`) in
   `planet_type=moon`. Both portals then recharge; `main_planet.transmit_recharge_event` holds
   `[{start_time, finish_time, total_time}]` while they do.
 
+### Bookmarks, news, check-in, gifts, help
+
+| Request | Answer |
+|---------|--------|
+| `POST bookmarks.json` `planet_id, bookmark_type` (1 enemy, 2 friend, 3 other) | `{"bookmark"}` |
+| `POST bookmarks/list.json` | `{"bookmarks": [{id, planet_id, bookmark_type, planet_name, galaxy_position, system_position, planet_position}]}` |
+| `POST bookmarks/<id>` `_method=delete` | `{"id"}` |
+| `GET planets/get_planet_info.json?position=g,s,p` | `{location, player_name, alliance_id, alliance_name, temp_min, temp_max}` (positions in mails) |
+| `GET notices`, `GET notices/lastest.json` | `{"list": [{id, notice_type, title, start_time}]}`; `notice_type` normal/update/maintain/emergency picks the icon; new ones open the news window after login |
+| `GET notices/<id>.json` | `{"content"}`, Flash HTML text |
+| `GET users/checkin_info` | `{"config": {"n1": {"d": 1, "g": {type, name, amount, img, fleet_type}}, ...}, "total_days", "status": {"n1": true}}` |
+| `GET users/draw_checkin_gift?gift_name=nN` | the same plus `result: {ok, info}` |
+| `GET system_gifts/<gift_id>` | `{title, desc, rewards: [{reward_type, reward_subtype, reward_count, reward_name}]}` |
+| `POST system_gifts/get_gift` `planet_id, gift_id` | `{empire, planet}` |
+| `GET faqs/game_faq` | a list `[{title, content}]` |
+| `POST users/regist_device` `reg_id` | `{}` (push registration) |
+
+Check-in images (`g.img`) are loaded from `<server>/<img>` unless a texture with the file name
+after the last `/` exists in `data2`; Supernova points them at the client's own
+`item_res_*.png`. The login response carries `checkin_days`, the number of unclaimed check-in
+gifts (red dot on the gift button). `empire.gift_id` is the oldest unclaimed system gift; the
+client only opens the gift window from quest 1.
+
 ### Errors
 
 For a status other than 200 the client shows the response body **as text** (or the `<title>` of

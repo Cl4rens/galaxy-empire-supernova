@@ -14,11 +14,9 @@ from typing import Callable
 
 from . import db
 from . import economy as eco
+from . import gifts
 from . import planet as planet_rules
-
-# Reward types of the client (GameUIQuest.REWARD_TYPE_*)
-REWARD_RESOURCE, REWARD_FLEET = 1, 2
-RESOURCE_SUBTYPES = {"metal": 1, "crystal": 2, "deuterium": 3}
+from . import rewards
 
 # Actions recorded when a fleet is sent (see record_action)
 ESPIONAGE, ATTACK_PIRATES, EXPEDITION, TRANSPORT, DEPLOY, ATTACK_PLAYER, RECYCLE = (
@@ -79,6 +77,8 @@ def _renamed(state: dict, _) -> bool:
 
 B = eco
 QUESTS = [
+    Quest(1, "Welcome gift", "Open your welcome gift with the button below.", "Enjoy your gift!",
+          [Target("Open the welcome gift", lambda s, pid: gifts.pending_id(pid) == 0)], {"metal": 100, "crystal": 100}),
     Quest(2, "Mining", "Every empire starts with metal and crystal. Build a metal mine and a crystal mine.",
           "Your mines are running.",
           [building(B.METAL_MINE, 1), building(B.CRYSTAL_MINE, 1)], {"metal": 200, "crystal": 100}),
@@ -142,7 +142,16 @@ QUESTS = [
 
 
 def _progress(state: dict) -> dict:
-    return state.setdefault("quests", {"position": 0, "actions": []})
+    """{"quest": index of the current quest, "actions": [...]}"""
+    progress = state.setdefault("quests", {"quest": QUESTS[0].index, "actions": []})
+    if "position" in progress:  # saves from before quest 1 was added stored a list position
+        progress["quest"] = QUESTS[min(progress.pop("position") + 1, len(QUESTS) - 1)].index
+    return progress
+
+
+def _position(progress: dict) -> int:
+    """Where the current quest is in QUESTS; quests that were removed lead to the next one."""
+    return next((i for i, q in enumerate(QUESTS) if q.index >= progress["quest"]), len(QUESTS) - 1)
 
 
 def record_action(state: dict, name: str) -> None:
@@ -154,14 +163,6 @@ def record_action(state: dict, name: str) -> None:
         actions.append(name)
 
 
-def _rewards_view(q: Quest) -> list[dict]:
-    rewards = [{"reward_type": REWARD_RESOURCE, "reward_subtype": RESOURCE_SUBTYPES[r], "reward_count": n,
-                "reward_name": r.capitalize()} for r, n in q.resources.items()]
-    rewards += [{"reward_type": REWARD_FLEET, "reward_subtype": t, "reward_count": n,
-                 "reward_name": eco.UNITS[t].name} for t, n in q.ships.items()]
-    return rewards
-
-
 def _quest_view(q: Quest, state: dict, player_id: int, position: int) -> dict:
     targets = [{"target_title": f"{i:>2}. {t.title}", "finished": t.done(state, player_id)}
                for i, t in enumerate(q.targets, start=1)]
@@ -171,25 +172,11 @@ def _quest_view(q: Quest, state: dict, player_id: int, position: int) -> dict:
         "quest_description": q.description,
         "quest_state": all(t["finished"] for t in targets),
         "quest_targets": targets,
-        "quest_rewards": _rewards_view(q),
+        "quest_rewards": rewards.view(q.resources, q.ships),
         "congra_text": q.congratulation,
         "hints": q.hints,
         "is_last": position == len(QUESTS) - 1,
     }
-
-
-def _give_rewards(q: Quest, empire: dict) -> list[dict]:
-    """Add the rewards to the current planet; the client wants the new totals."""
-    planet = empire["main_planet"]
-    data = []
-    for r, n in q.resources.items():
-        planet[r] += n
-        data.append({"type": REWARD_RESOURCE, "subtype": RESOURCE_SUBTYPES[r], "amount": int(planet[r])})
-    for t, n in q.ships.items():
-        f = planet_rules.fleet(planet, t)
-        f["amount"] += n
-        data.append({"type": REWARD_FLEET, "subtype": t, "amount": f["amount"]})
-    return data
 
 
 def current(state: dict, player_id: int, now: float) -> dict:
@@ -198,16 +185,16 @@ def current(state: dict, player_id: int, now: float) -> dict:
     planet_rules.tick(empire, now)
     empire["quests_newbie_guide"] = 1
     progress = _progress(state)
-    position = min(progress["position"], len(QUESTS) - 1)
+    position = _position(progress)
     quest = QUESTS[position]
     view = _quest_view(quest, state, player_id, position)
     reward_info = {}
     if view["quest_state"] and not empire.get("quests_complete"):
-        reward_info = {"code": 0, "data": _give_rewards(quest, empire)}
+        reward_info = {"code": 0, "data": rewards.grant(empire["main_planet"], quest.resources, quest.ships)}
         if position == len(QUESTS) - 1:
             empire["quests_complete"] = True
         else:
-            progress["position"] = position + 1
+            progress["quest"] = QUESTS[position + 1].index
     following = QUESTS[position + 1] if position + 1 < len(QUESTS) else None
     return {
         "update": {"cur_quest": view, "reward_info": reward_info},

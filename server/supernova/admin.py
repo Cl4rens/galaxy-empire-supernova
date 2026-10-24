@@ -8,6 +8,10 @@
     python -m supernova.admin set-research <username> <research_type> <level>
     python -m supernova.admin create-moon <username> [planet_id]
     python -m supernova.admin chat-reports
+    python -m supernova.admin news-add <normal|update|maintain|emergency> <title> <text>
+    python -m supernova.admin news-list
+    python -m supernova.admin news-delete <id>
+    python -m supernova.admin gift <username|all> <title> <description> metal=5000 9=2 ...
     python -m supernova.admin delete-chat <message_id>
 
 Run it while the server is running or stopped; changes are visible at the player's next request.
@@ -140,6 +144,37 @@ def cmd_delete_chat(args) -> None:
     print("ok")
 
 
+def cmd_news_add(args) -> None:
+    from . import notices
+    print(f"news {notices.add(args.notice_type, args.title, args.text)}")
+
+
+def cmd_news_list(args) -> None:
+    from . import notices
+    for n in notices.listing():
+        when = time.strftime("%Y-%m-%d %H:%M", time.localtime(n["start_time"]))
+        print(f"{n['id']:>4}  {when}  {n['notice_type']:<9} {n['title']}")
+
+
+def cmd_news_delete(args) -> None:
+    from . import notices
+    notices.delete(args.notice_id)
+    print("ok")
+
+
+def cmd_gift(args) -> None:
+    from . import gifts, rewards
+    try:
+        resources, ships = rewards.parse(args.rewards)
+    except ValueError as e:
+        raise SystemExit(str(e))
+    if args.username == "all":
+        print(f"credited to {gifts.credit_all(args.title, args.description, resources, ships)} players")
+    else:
+        gifts.credit(player_id(args.username), args.title, args.description, resources, ships)
+        print("ok")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(required=True)
@@ -171,6 +206,21 @@ def main() -> None:
     moon.add_argument("planet_id", type=int, nargs="?")
     moon.set_defaults(func=cmd_create_moon)
     sub.add_parser("chat-reports").set_defaults(func=cmd_chat_reports)
+    news_add = sub.add_parser("news-add")
+    news_add.add_argument("notice_type")
+    news_add.add_argument("title")
+    news_add.add_argument("text")
+    news_add.set_defaults(func=cmd_news_add)
+    sub.add_parser("news-list").set_defaults(func=cmd_news_list)
+    news_delete = sub.add_parser("news-delete")
+    news_delete.add_argument("notice_id", type=int)
+    news_delete.set_defaults(func=cmd_news_delete)
+    gift = sub.add_parser("gift")
+    gift.add_argument("username")
+    gift.add_argument("title")
+    gift.add_argument("description")
+    gift.add_argument("rewards", nargs="+")
+    gift.set_defaults(func=cmd_gift)
     delchat = sub.add_parser("delete-chat")
     delchat.add_argument("message_id", type=int)
     delchat.set_defaults(func=cmd_delete_chat)

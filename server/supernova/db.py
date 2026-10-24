@@ -84,6 +84,23 @@ CREATE TABLE IF NOT EXISTS battle_stats (
     losses    INTEGER NOT NULL DEFAULT 0,
     draws     INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS notices (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    notice_type TEXT NOT NULL,
+    title       TEXT NOT NULL,
+    content     TEXT NOT NULL,
+    start_time  INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS gifts (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id   INTEGER NOT NULL REFERENCES players(id),
+    title       TEXT NOT NULL,
+    description TEXT NOT NULL,
+    resources   TEXT NOT NULL,
+    ships       TEXT NOT NULL,
+    created_at  INTEGER NOT NULL,
+    claimed_at  INTEGER
+);
 CREATE TABLE IF NOT EXISTS chat_messages (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     channel     INTEGER NOT NULL,

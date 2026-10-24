@@ -8,7 +8,7 @@ import secrets
 import time
 
 from . import economy as eco
-from . import fleets, mails, ranking
+from . import checkin, fleets, gifts, mails, ranking
 from . import planet as planet_rules
 from . import universe
 
@@ -179,13 +179,15 @@ def planets_info(empire: dict) -> list[dict]:
 
 
 HIDDEN_EMPIRE_FIELDS = ("main_planet", "planets", "current_planet_id")
+PRIVATE_STATE = ("empire", "next_event_id", "quests", "bookmarks", "checkin")  # not sent at login
 
 
 def empire_view(state: dict, now: float) -> dict:
     """The empire object as the client expects it."""
     empire = state["empire"]
     view = {k: v for k, v in empire.items() if k not in HIDDEN_EMPIRE_FIELDS}
-    view.update(score=ranking.points(state)["score"], rank=ranking.rank_of(state["user_id"]))
+    view.update(score=ranking.points(state)["score"], rank=ranking.rank_of(state["user_id"]),
+                gift_id=gifts.pending_id(state["user_id"]))
     return dict(view, main_planet=planet_rules.client_view(empire, now), **planet_rules.researches_view(empire),
                 planets_info=planets_info(empire), fleet_hanging_events=fleets.events_view(empire["user_id"]))
 
@@ -197,12 +199,13 @@ def empire_summary(state: dict) -> dict:
     summary["planets_info"] = planets_info(empire)
     summary.update(planet_rules.researches_view(empire))
     summary["fleet_hanging_events"] = fleets.events_view(empire["user_id"])
+    summary["gift_id"] = gifts.pending_id(empire["user_id"])
     return summary
 
 
 def login_response(state: dict, now: float) -> dict:
-    response = {k: v for k, v in state.items() if k not in ("empire", "next_event_id", "quests")}
+    response = {k: v for k, v in state.items() if k not in PRIVATE_STATE}
     response["empire"] = empire_view(state, now)
-    response["checkin_days"] = 0
+    response["checkin_days"] = checkin.unclaimed(state)
     response["empire"]["new_message_count"] = mails.unread_count(state["user_id"])
     return response

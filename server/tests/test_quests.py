@@ -16,6 +16,11 @@ def guest(udid):
 
 def test_quest_chain_rewards_once():
     c, state = guest("quester")
+    welcome = decrypt_json(c.get("/world/1/quest_events"))["update"]
+    assert welcome["cur_quest"]["quest_index"] == 1 and welcome["cur_quest"]["quest_state"] is False
+    gift_id = state["empire"]["gift_id"]
+    decrypt_json(c.post("/world/1/system_gifts/get_gift", content=f"gift_id={gift_id}"))
+    assert decrypt_json(c.get("/world/1/quest_events"))["update"]["reward_info"]["code"] == 0
     first = decrypt_json(c.get("/world/1/quest_events"))["update"]
     assert first["cur_quest"]["quest_index"] == 2 and first["cur_quest"]["quest_state"] is False
     assert first["reward_info"] == {}
@@ -56,3 +61,8 @@ def test_rename_planet_and_skip():
     skipped = decrypt_json(c.post("/world/1/quest_event/skip_all_newbie_guide"))
     assert skipped["empire"]["quests_complete"] is True and skipped["update"]["rewards_all"]
     assert "quests" not in decrypt_json(c.post("/world/1/trials.json", content=f"username={state['username']}"))
+
+
+def test_old_quest_positions_are_migrated():
+    state = {"empire": {}, "quests": {"position": 1, "actions": []}}  # was "More metal" (index 3)
+    assert quests._progress(state)["quest"] == 3

@@ -12,7 +12,8 @@ from urllib.parse import parse_qs
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse, Response
 
-from . import accounts, alliances, chat, crypto, db, fleets, mails, player, quests, ranking
+from . import accounts, alliances, bookmarks, chat, checkin, crypto, db, faq, fleets, gifts, mails, notices
+from . import player, quests, ranking
 from . import planet as planet_rules
 from . import universe
 
@@ -37,7 +38,7 @@ async def form(request: Request) -> dict[str, str]:
     return params
 
 
-def encrypted_json(content: dict, status_code: int = 200) -> Response:
+def encrypted_json(content: dict | list, status_code: int = 200) -> Response:
     body = crypto.encrypt(CLIENT_KEY, json.dumps(content, separators=(",", ":")))
     return Response(body, status_code=status_code, media_type="application/json")
 
@@ -86,6 +87,7 @@ async def guest_login(world_id: int, request: Request):
         player_id, username, _ = db.create_player(
             player.guest_username, udid,
             lambda pid, name: player.new_state(pid, name, universe.place_home(pid, player.HOME_PLANET_NAME)))
+        gifts.send(player_id, *gifts.WELCOME)
         log.info("new guest %s (udid %s)", username, udid)
     return enter_world(player_id)
 
@@ -112,6 +114,7 @@ def enter_world(player_id: int) -> Response:
             parent = next(p for p in state["empire"]["planets"] if p.get("moon") is current)
             planet_rules.switch_planet(state["empire"], parent["planet_id"])
         planet_rules.tick(state["empire"], now)
+        checkin.visit(state, now)
         content = player.login_response(state, now)
     return logged_in(player_id, content)
 
@@ -172,6 +175,26 @@ def use_planet(state: dict, params: dict, *keys: str) -> None:
         if value and str(value).isdigit():
             planet_rules.switch_planet(state["empire"], int(value))
             return
+
+
+@router.get("/planets/get_planet_info.json")
+async def planet_info_at(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    """The info box for a position mentioned in a mail."""
+    try:
+        galaxy, system, position = fleets.parse_target((await form(request)).get("position", ""))
+    except planet_rules.GameError as e:
+        return error(str(e))
+    row = fleets.target_planet((galaxy, system, position))
+    owner = db.load_state(row["player_id"])["empire"] if row else {}
+    return encrypted_json({
+        "location": row["name"] if row else f"{galaxy}:{system}:{position}",
+        "player_name": db.connect().execute("SELECT username FROM players WHERE id = ?",
+                                            (row["player_id"],)).fetchone()["username"] if row else "",
+        "alliance_id": owner.get("alliance_id", 0),
+        "alliance_name": owner.get("alliance_name", ""),
+        "temp_max": 150 - 12 * min(position, universe.PLANET_POSITIONS),
+        "temp_min": 110 - 12 * min(position, universe.PLANET_POSITIONS),
+    })
 
 
 @router.get("/planets/{planet_id}.json")
@@ -274,6 +297,25 @@ def research_info(research_id: int, player_id: int = Depends(current_player)):
 
 
 # Must come before /users/{user_id}.
+@router.get("/users/checkin_info")
+def checkin_info(player_id: int = Depends(current_player)):
+    with db.player_state(player_id) as state:
+        checkin.visit(state, time.time())
+        return encrypted_json(checkin.info(state))
+
+
+@router.get("/users/draw_checkin_gift")
+def checkin_claim(gift_name: str = "", player_id: int = Depends(current_player)):
+    with db.player_state(player_id) as state:
+        planet_rules.tick(state["empire"], time.time())
+        return encrypted_json(checkin.claim(state, gift_name))
+
+
+@router.post("/users/regist_device")
+def register_device(player_id: int = Depends(current_player)):
+    return encrypted_json({})  # push notifications are not sent
+
+
 @router.get("/users/first_charge_misc")
 def first_charge(player_id: int = Depends(current_player)):
     return encrypted_json({"first_charge": False})
@@ -798,7 +840,37 @@ def galaxy_map(galaxy_position: int, x: int, y: int, player_id: int = Depends(cu
     return encrypted_json(universe.galaxy_map(galaxy_position, x, y))
 
 
-# --- Features we do not implement yet, answered with their "nothing here" values ---------
+# --- Bookmarks, planet info, news, daily check-in and gifts ---------------------------------
+
+
+@router.post("/bookmarks.json")
+async def bookmark_add(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    try:
+        with db.player_state(player_id) as state:
+            mark = bookmarks.add(state, int(params.get("planet_id") or 0), int(params.get("bookmark_type") or 1))
+    except planet_rules.GameError as e:
+        return error(str(e))
+    return encrypted_json({"bookmark": mark})
+
+
+@router.post("/bookmarks/list.json")
+def bookmark_list(player_id: int = Depends(current_player)):
+    with db.player_state(player_id) as state:
+        return encrypted_json({"bookmarks": bookmarks.listing(state)})
+
+
+@router.post("/bookmarks/{bookmark_id}")
+def bookmark_delete(bookmark_id: int, player_id: int = Depends(current_player)):
+    with db.player_state(player_id) as state:
+        bookmarks.delete(state, bookmark_id)
+    return encrypted_json({"id": bookmark_id})
+
+
+@router.get("/notices")
+@router.get("/notices/lastest.json")
+def news(player_id: int = Depends(current_player)):
+    return encrypted_json({"list": notices.listing()})
 
 
 @router.get("/notices/popup.json")
@@ -806,9 +878,45 @@ def popup_notice(player_id: int = Depends(current_player)):
     return encrypted_json({"popup": {}})
 
 
-@router.get("/notices/lastest.json")
-def news(player_id: int = Depends(current_player)):
-    return encrypted_json({"list": []})
+@router.get("/notices/{notice_id}.json")
+@router.post("/notices/{notice_id}.json")
+def news_details(notice_id: int, player_id: int = Depends(current_player)):
+    text = notices.content(notice_id)
+    if text is None:
+        return error("This news is gone", 404)
+    return encrypted_json({"content": text})
+
+
+@router.get("/faqs/game_faq")
+@router.post("/faqs/game_faq")
+def game_faq(player_id: int = Depends(current_player)):
+    return encrypted_json(faq.FAQ)
+
+
+@router.get("/system_gifts/{gift_id}")
+def gift_details(gift_id: int, player_id: int = Depends(current_player)):
+    found = gifts.details(player_id, gift_id)
+    if found is None:
+        return error("This gift is gone", 404)
+    return encrypted_json(found)
+
+
+@router.post("/system_gifts/get_gift")
+async def gift_claim(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    now = time.time()
+    with db.player_state(player_id) as state:
+        empire = state["empire"]
+        planet_id = params.get("planet_id")
+        if planet_id and planet_id.isdigit() and planet_rules.find_planet(empire, int(planet_id)):
+            planet_rules.switch_planet(empire, int(planet_id))
+        planet_rules.tick(empire, now)
+        if not gifts.claim(player_id, empire["main_planet"], int(params.get("gift_id") or 0), now):
+            return error("This gift is gone")
+        return encrypted_json({"empire": player.empire_summary(state), "planet": planet_rules.client_view(empire, now)})
+
+
+# --- Features we do not implement yet, answered with their "nothing here" values ---------
 
 
 @router.get("/gc/current")

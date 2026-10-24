@@ -333,3 +333,13 @@ count. Players can skip the tutorial; skipping pays nothing.
   a portal. Afterwards both portals recharge for 60 min × 0.7^(level - 1) / speed (at least
   1 minute).
 - Giving up a colony gives up its moon too.
+
+## Daily check-in and gifts
+
+- Every day (UTC) a player logs in unlocks the next of 21 check-in gifts: resources on most
+  days, 10 light fighters on day 7, 10 small cargos on day 14 and 5 cruisers on day 21. After
+  all 21 are claimed the calendar starts again. Gifts go to the current planet.
+- New players get a welcome gift (2,000 metal, 1,000 crystal, 500 deuterium), opened from the
+  first tutorial quest.
+- Gifts the operator sends with the admin tool are credited to the home planet at once and
+  announced by mail.
