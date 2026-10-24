@@ -113,6 +113,8 @@ python -m supernova.admin give <username> metal=10000 crystal=5000 deuterium=200
 python -m supernova.admin set-building <username> <building_type> <level> [lot]
 python -m supernova.admin give-fleet <username> 9=5 1=10      # fleet_type=count
 python -m supernova.admin set-research <username> <research_type> <level>
+python -m supernova.admin chat-reports                     # chat messages players reported
+python -m supernova.admin delete-chat <message_id>
 ```
 
 ### 4. Build the patched APK
@@ -160,6 +162,7 @@ Uninstall any old copy of the original game first, because the signatures differ
 - [x] Accounts: register, password login, rename, change password
 - [x] Alliances: found, apply, ranks, alliance mail
 - [x] Tutorial quests, renaming and giving up planets
+- [x] Chat: world and alliance channels
 - [ ] Support for 64-bit-only devices
 - [ ] Game logic: buildings, research, fleets, combat, alliances
 

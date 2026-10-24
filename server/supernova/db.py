@@ -83,6 +83,23 @@ CREATE TABLE IF NOT EXISTS battle_stats (
     losses    INTEGER NOT NULL DEFAULT 0,
     draws     INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    channel     INTEGER NOT NULL,
+    alliance_id INTEGER NOT NULL,
+    player_id   INTEGER NOT NULL REFERENCES players(id),
+    words       TEXT NOT NULL,
+    created_at  REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS chat_by_channel ON chat_messages (channel, alliance_id, id);
+CREATE TABLE IF NOT EXISTS chat_reports (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_id  INTEGER NOT NULL,
+    reporter_id INTEGER NOT NULL REFERENCES players(id),
+    words       TEXT NOT NULL,
+    notes       TEXT NOT NULL,
+    created_at  INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS alliances (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     name        TEXT NOT NULL UNIQUE COLLATE NOCASE,

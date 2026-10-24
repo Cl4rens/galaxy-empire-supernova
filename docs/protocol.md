@@ -439,6 +439,18 @@ numbering, which decides where it shows arrows and hints.
 - `POST planets/<id>` `_method=delete` gives the planet up and answers
   `{"empire_info", "planet_info"}` (the planet the client switches to).
 
+### Chat
+
+- `GET chat_messages.json?alliance_id=&last_id=0&count=50` answers `{"chat_messages": [...]}`,
+  newest first (the client shows the first one on the planet screen). `alliance_id` 0 is the
+  world channel. Entries: `message_id, channel (1 world, 2 alliance), alliance_id,
+  from_user_name, words, created_at, account_level` (0 guest, 1 registered, 2 VIP, 3 GM,
+  4 system; the client colours 2-4).
+- `POST chat_messages.json` `words, channel, alliance_id, from_username` sends a message.
+- `POST reports` `message_id, additiona_notes, username=ENC2` reports a message.
+- `main_planet.last_chat` (`"name:words"`) is the line on the planet screen before the chat was
+  opened.
+
 ### Errors
 
 For a status other than 200 the client shows the response body **as text** (or the `<title>` of

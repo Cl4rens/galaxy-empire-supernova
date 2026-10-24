@@ -12,7 +12,7 @@ from urllib.parse import parse_qs
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import PlainTextResponse, Response
 
-from . import accounts, alliances, crypto, db, fleets, mails, player, quests, ranking
+from . import accounts, alliances, chat, crypto, db, fleets, mails, player, quests, ranking
 from . import planet as planet_rules
 from . import universe
 
@@ -245,6 +245,7 @@ def planet(planet_id: int, player_id: int = Depends(current_player)):
     # Shown as the number on the mail button; updatePlanet passes it on.
     view["new_message_count"] = mails.unread_count(player_id)
     view["is_underattack"] = bool(fleets.incoming_attacks(player_id))
+    view["last_chat"] = chat.last_line() or view["last_chat"]
     return encrypted_json(view)
 
 
@@ -630,6 +631,36 @@ async def alliance_application_change(world_id: int, application_id: int, reques
 @router.get("/acses")
 def alliance_joint_attacks(player_id: int = Depends(current_player)):
     return encrypted_json({"info": [], "planet": {}, "empire": {}})  # joint attacks: not implemented
+
+
+# --- Chat ------------------------------------------------------------------------------------
+
+
+@router.get("/chat_messages.json")
+async def chat_messages(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    try:
+        found = chat.messages(player_id, int(params.get("alliance_id") or 0), int(params.get("count") or 50))
+    except chat.ChatError as e:
+        return error(str(e))
+    return encrypted_json({"chat_messages": found})
+
+
+@router.post("/chat_messages.json")
+async def chat_send(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    try:
+        chat.send(player_id, params.get("words", ""), int(params.get("alliance_id") or 0))
+    except chat.ChatError as e:
+        return error(str(e))
+    return encrypted_json({})
+
+
+@router.post("/reports")
+async def chat_report(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    chat.report(player_id, int(params.get("message_id") or 0), params.get("additiona_notes", ""))
+    return encrypted_json({})
 
 
 # --- Tutorial quests ---------------------------------------------------------------------------

@@ -6,6 +6,8 @@
     python -m supernova.admin set-building <username> <building_type> <level> [lot]
     python -m supernova.admin give-fleet <username> 9=5 1=10      (fleet_type=count)
     python -m supernova.admin set-research <username> <research_type> <level>
+    python -m supernova.admin chat-reports
+    python -m supernova.admin delete-chat <message_id>
 
 Run it while the server is running or stopped; changes are visible at the player's next request.
 """
@@ -100,6 +102,27 @@ def cmd_set_building(args) -> None:
     print("ok")
 
 
+def cmd_chat_reports(args) -> None:
+    rows = db.connect().execute(
+        "SELECT r.*, p.username AS reporter, a.username AS author FROM chat_reports r "
+        "JOIN players p ON p.id = r.reporter_id "
+        "LEFT JOIN chat_messages m ON m.id = r.message_id LEFT JOIN players a ON a.id = m.player_id "
+        "ORDER BY r.id").fetchall()
+    for r in rows:
+        when = time.strftime("%Y-%m-%d %H:%M", time.localtime(r["created_at"]))
+        print(f"{when}  message {r['message_id']} by {r['author'] or '(deleted)'}, reported by {r['reporter']}")
+        print(f"    {r['words']}")
+        if r["notes"]:
+            print(f"    note: {r['notes']}")
+
+
+def cmd_delete_chat(args) -> None:
+    conn = db.connect()
+    with db.lock(), conn:
+        conn.execute("DELETE FROM chat_messages WHERE id = ?", (args.message_id,))
+    print("ok")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(required=True)
@@ -126,6 +149,10 @@ def main() -> None:
     setb.add_argument("level", type=int)
     setb.add_argument("lot", type=int, nargs="?")
     setb.set_defaults(func=cmd_set_building)
+    sub.add_parser("chat-reports").set_defaults(func=cmd_chat_reports)
+    delchat = sub.add_parser("delete-chat")
+    delchat.add_argument("message_id", type=int)
+    delchat.set_defaults(func=cmd_delete_chat)
     args = parser.parse_args()
     args.func(args)
 
