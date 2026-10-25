@@ -1,0 +1,25 @@
+[package]
+name = "supernova-engine"
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-only"
+description = "Supernova's client engine: Galaxy Empire's own scripts and screens on 64-bit devices"
+publish = false
+
+[workspace]
+exclude = ["ruffle"]
+
+[dependencies]
+ruffle_core = { path = "ruffle/core", features = ["default_font"] }
+ruffle_render_wgpu = { path = "ruffle/render/wgpu" }
+futures = "0.3.32"
+image = { version = "0.25.10", default-features = false, features = ["png"] }
+anyhow = "1.0"
+tracing = "0.1.43"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3

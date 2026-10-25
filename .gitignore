@@ -46,3 +46,7 @@ server/data/
 # Client engine storage (saved game data of the engine)
 client-save/
 client/client-save/
+
+# Ruffle checkout and Rust build output of the client engine (client/engine-rs/setup_ruffle.py)
+client/engine-rs/ruffle/
+client/engine-rs/target/

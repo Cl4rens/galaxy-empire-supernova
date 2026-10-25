@@ -1,0 +1,64 @@
+diff --git a/core/src/external.rs b/core/src/external.rs
+index 071f1e73..b75e8995 100644
+--- a/core/src/external.rs
++++ b/core/src/external.rs
+@@ -424,3 +424,35 @@ impl<'gc> ExternalInterface<'gc> {
+         self.fs_commands.on_fs_command(command, args)
+     }
+ }
++
++/// Call `function` on the AVM1 object at `target` (a target path such as `_level2.panel`), like
++/// gameswf's `InvokeASCallback`. For players that drive a movie from outside (Supernova).
++pub fn call_avm1_function(
++    context: &mut UpdateContext<'_>,
++    target: &str,
++    function: &str,
++    args: Vec<Value>,
++) -> Value {
++    use crate::display_object::TDisplayObject;
++    use crate::string::WString;
++    let Some(base_clip) = context.stage.root_clip() else {
++        return Value::Null;
++    };
++    let mut activation = Avm1Activation::from_nothing(
++        context,
++        Avm1ActivationIdentifier::root("[InvokeASCallback]"),
++        base_clip,
++    );
++    let args: Vec<Avm1Value> = args.into_iter().map(|v| v.into_avm1(&mut activation)).collect();
++    let start = base_clip.object1_or_bare(activation.gc());
++    let path = WString::from_utf8(target);
++    let Ok(Some(object)) = activation.resolve_target_path(base_clip, start, &path, false, true) else {
++        tracing::warn!("InvokeASCallback: no object at {}", target);
++        return Value::Null;
++    };
++    let name = AvmString::new_utf8(activation.gc(), function);
++    match object.call_method(name, &args, &mut activation, crate::avm1::ExecutionReason::Special) {
++        Ok(value) => Value::from_avm1(&mut activation, value).unwrap_or(Value::Null),
++        Err(_) => Value::Null,
++    }
++}
+diff --git a/core/src/player.rs b/core/src/player.rs
+index c3756621..a6ef5f9b 100644
+--- a/core/src/player.rs
++++ b/core/src/player.rs
+@@ -2535,6 +2535,19 @@ impl Player {
+         })
+     }
+ 
++    /// Call `function` on the AVM1 object at `target`; see `external::call_avm1_function`.
++    pub fn call_avm1_function(
++        &mut self,
++        target: &str,
++        function: &str,
++        args: impl IntoIterator<Item = ExternalValue>,
++    ) -> ExternalValue {
++        let args: Vec<ExternalValue> = args.into_iter().collect();
++        self.mutate_with_update_context(|context| {
++            crate::external::call_avm1_function(context, target, function, args)
++        })
++    }
++
+     pub fn spoofed_url(&self) -> Option<&str> {
+         self.spoofed_url.as_deref()
+     }
