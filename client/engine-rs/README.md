@@ -67,16 +67,15 @@ ActionScript.
 As built here it holds nothing from the game; `tools/patch_apk.py --64bit` (see the main README)
 adds the game files from the player's own APK on their computer, and that is the app to install.
 
-- `SetupActivity` (`android/java/`) is the launcher. It starts the game right away; back from
-  the game leads to it, to change the server address or to see why the game stopped
-  (`error.txt`; the log is in logcat under the tag `supernova`).
-- The game is `android.app.NativeActivity` running `libsupernova.so` (`android/src/lib.rs`, with
-  the same window code as the desktop, `src/app.rs`), in a process of its own. It reads the game
-  files from the app's own APK (`assets/tap4fun.zip`, `assets/supernova/client.key`) and the
-  server from `assets/supernova/server.txt`, unless one was entered in the app.
+- The app is `android.app.NativeActivity` running `libsupernova.so` (`android/src/lib.rs`, with
+  the same window code as the desktop, `src/app.rs`); no Java code.
+- It reads what the patcher put in as assets: the game files (`tap4fun.zip`, with the server
+  address patched in like for the 32-bit app), `supernova/client.key` and
+  `supernova/server.txt`.
+- If it cannot start, it says why in logcat (tag `supernova`) and in `error.txt` in
+  `Android/data/org.supernova.galaxyempire/files/`.
 
-Build the engine app (needs the Android SDK with build-tools 35+, a platform and the NDK, a
-JDK, and [cargo-ndk](https://github.com/bbqsrc/cargo-ndk); no Gradle):
+Build the engine app (needs the Android SDK with build-tools, a platform and the NDK, Java, and [cargo-ndk](https://github.com/bbqsrc/cargo-ndk); no Gradle):
 
 ```sh
 rustup target add aarch64-linux-android x86_64-linux-android

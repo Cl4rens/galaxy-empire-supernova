@@ -1,13 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Supernova: Galaxy Empire on 64-bit Android through the Supernova engine. Built without
-     anything from the game; tools/patch_apk.py (64-bit mode) adds the player's own game files.
-     SetupActivity (java/) starts the game and lets the player change the server; the game
-     itself is android.app.NativeActivity running libsupernova.so (android/src/lib.rs), in a
-     process of its own because winit's event loop can be made only once per process. -->
+     anything from the game; tools/patch_apk.py (64-bit mode) adds the player's own game files
+     and the server. No Java code: android.app.NativeActivity runs libsupernova.so
+     (android/src/lib.rs). -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="org.supernova.galaxyempire"
-    android:versionCode="3"
-    android:versionName="0.3.0">
+    android:versionCode="4"
+    android:versionName="0.4.0">
 
     <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="34" />
 
@@ -15,26 +14,20 @@
 
     <application
         android:label="Supernova"
-        android:hasCode="true"
+        android:hasCode="false"
         android:extractNativeLibs="true"
         android:usesCleartextTraffic="true">
         <activity
-            android:name=".SetupActivity"
-            android:exported="true"
-            android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
-        <activity
             android:name="android.app.NativeActivity"
-            android:exported="false"
-            android:process=":game"
+            android:exported="true"
             android:screenOrientation="portrait"
             android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|navigation|uiMode|density">
             <meta-data android:name="android.app.lib_name" android:value="supernova" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
         </activity>
     </application>
 </manifest>

@@ -75,8 +75,7 @@ def patch_auto_update(chunk: bytes, gateway: bytes) -> bytes:
     return lua51.dump(header, main)
 
 
-def patch_game_data(game_zip: bytes, gateway: bytes | None) -> bytes:
-    """The game files with the script changes; the gateway too unless it is None."""
+def patch_game_data(game_zip: bytes, gateway: bytes) -> bytes:
     src = zipfile.ZipFile(io.BytesIO(game_zip))
     out = io.BytesIO()
     with zipfile.ZipFile(out, "w") as dst:
@@ -86,8 +85,7 @@ def patch_game_data(game_zip: bytes, gateway: bytes | None) -> bytes:
                 archive = pak.read(data)
                 # Entry 0 is AutoUpdateInit.lua, the first script the engine runs.
                 init = archive.entries[0]
-                if gateway is not None:
-                    init.data = patch_auto_update(init.data, gateway)
+                init.data = patch_auto_update(init.data, gateway)
                 for entry in archive.entries[1:]:
                     entry.data = client_tweaks.apply(entry.data)
                 data = pak.write(archive)
@@ -176,7 +174,7 @@ def main() -> None:
         if not args.engine_app.exists():
             sys.exit(f"{args.engine_app} not found: build it (client/engine-rs/README.md) or pass --engine-app")
         print(f"Building the 64-bit app from {args.engine_app}, server {engine64.server_url(args.server)}")
-        game_data = patch_game_data(zipfile.ZipFile(args.apk).read("assets/tap4fun.zip"), None)
+        game_data = patch_game_data(zipfile.ZipFile(args.apk).read("assets/tap4fun.zip"), args.server.encode())
         engine64.build(args.apk, args.engine_app, args.server, game_data, unsigned)
         sign(java, unsigned, args.out)
         unsigned.unlink()

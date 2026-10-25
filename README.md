@@ -191,8 +191,8 @@ python tools/patch_apk.py apk/galaxy-empire-1-9-36.apk --64bit --server <host>:<
 The result is `build/galaxy-empire-supernova-64bit.apk` (app name "Supernova"; it can be
 installed next to the 32-bit game). It needs the engine app at
 `client/engine-rs/target/android/supernova.apk` (build it as described there, or pass
-`--engine-app`). The app opens straight into the game; the back button leads to a screen where
-the server address can be changed.
+`--engine-app`). The server address is fixed in the app, as in the 32-bit APK: build it again
+for another server.
 
 ### 5. Install and play
 

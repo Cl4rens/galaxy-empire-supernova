@@ -3,12 +3,11 @@
 The engine app (client/engine-rs, built with android/build_apk.py) holds nothing from the game.
 This adds, from the player's original APK:
 
-  assets/tap4fun.zip              the game files, with the script changes the server needs
+  assets/tap4fun.zip              the game files, patched like for the 32-bit app (server
+                                  address and the script changes the server needs)
   assets/supernova/client.key     the client's response key (from its 32-bit library, which
                                   stays out: with it Android would install the app as 32-bit)
-  assets/supernova/server.txt     the server the app starts with (changeable in the app)
-
-The gateway in the scripts stays as it is: the engine sends it to the configured server.
+  assets/supernova/server.txt     the server address for the engine
 """
 
 import hashlib

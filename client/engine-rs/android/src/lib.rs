@@ -1,24 +1,22 @@
 //! Galaxy Empire on Android through the Supernova engine, as a NativeActivity.
 //!
 //! The app as built here ships nothing from the game: tools/patch_apk.py --64bit adds the game
-//! files from the player's own APK to it on their computer. The game reads them from the app's
-//! own APK, whose path the setup screen (java/.../SetupActivity.java) writes to `apk_path.txt`
-//! in the app's folder `Android/data/<app>/files/`. The server address is the one the player
-//! entered there (`server.txt`), else the one the patcher put in (`assets/supernova/server.txt`),
-//! else the computer an emulator runs on. Errors go to logcat (tag "supernova") and to
-//! `error.txt` in that folder, which the setup screen shows.
+//! files from the player's own APK to it on their computer, as assets: `tap4fun.zip` (the game
+//! files), `supernova/client.key` and `supernova/server.txt` (the server, fixed when patching).
+//! Without a server there the app uses the computer an emulator runs on. Errors go to logcat
+//! (tag "supernova") and to `error.txt` in the app's folder `Android/data/<app>/files/`.
 //!
-//! The game runs in a process of its own and ends it when it closes: winit's event loop can be
-//! made only once per process, and the next game starts in a new one.
+//! The game ends its process when it closes: winit's event loop can be made only once per
+//! process, and the next start gets a new one.
 
 #![cfg(target_os = "android")]
 
 use std::ffi::{CString, c_char, c_int};
 use std::io::Write;
-use std::path::{Path, PathBuf};
 
 use anyhow::{Result, anyhow};
-use supernova_engine::app::{Config, run};
+use supernova_engine::app::{Config, Game, run};
+use supernova_engine::crypto::checked_key;
 use winit::event_loop::EventLoop;
 use winit::platform::android::EventLoopBuilderExtAndroid;
 use winit::platform::android::activity::AndroidApp;
@@ -55,23 +53,25 @@ impl Drop for Logcat {
     }
 }
 
-fn read(path: &Path) -> Option<String> {
-    std::fs::read_to_string(path).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+/// A file the patcher put into the app's assets.
+fn asset(app: &AndroidApp, name: &str) -> Option<Vec<u8>> {
+    let name = CString::new(name).ok()?;
+    let mut asset = app.asset_manager().open(&name)?;
+    let mut data = Vec::new();
+    std::io::Read::read_to_end(&mut asset, &mut data).ok()?;
+    Some(data)
 }
 
-fn config(app: &AndroidApp, files: &Path) -> Result<Config> {
-    let apk = PathBuf::from(read(&files.join("apk_path.txt")).ok_or_else(|| anyhow!("the app's own APK is unknown"))?);
-    let baked = supernova_engine::assets::apk_member(&apk, "assets/supernova/server.txt")
-        .map(|s| String::from_utf8_lossy(&s).trim().to_string())
-        .filter(|s| !s.is_empty());
-    let server = read(&files.join("server.txt")).or(baked).unwrap_or_else(|| DEFAULT_SERVER.to_string());
+fn config(app: &AndroidApp) -> Result<Config> {
+    let game_zip = asset(app, "tap4fun.zip")
+        .ok_or_else(|| anyhow!("no game files: make this app with tools/patch_apk.py --64bit from your own APK"))?;
+    let key = checked_key(&asset(app, "supernova/client.key").ok_or_else(|| anyhow!("no client key in the app"))?)?;
+    let server = asset(app, "supernova/server.txt")
+        .map(|s| String::from_utf8_lossy(&s).trim().trim_end_matches('/').to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| DEFAULT_SERVER.to_string());
     let internal = app.internal_data_path().ok_or_else(|| anyhow!("no app data folder"))?;
-    Ok(Config {
-        apk,
-        server: server.trim_end_matches('/').to_string(),
-        save_dir: internal.join("save"),
-        language: "en".into(),
-    })
+    Ok(Config { game: Game::Files { game_zip, key }, server, save_dir: internal.join("save"), language: "en".into() })
 }
 
 #[unsafe(no_mangle)]
@@ -89,8 +89,8 @@ fn android_main(app: AndroidApp) {
         .expect("an app folder");
     let _ = std::fs::create_dir_all(&files);
     let _ = std::fs::remove_file(files.join("error.txt"));
-    let result = config(&app, &files).and_then(|config| {
-        tracing::info!("playing {} against {}", config.apk.display(), config.server);
+    let result = config(&app).and_then(|config| {
+        tracing::info!("playing against {}", config.server);
         let event_loop = EventLoop::builder().with_android_app(app).build()?;
         run(event_loop, config)
     });

@@ -24,13 +24,18 @@ const PATCHED_KEY_MEMBER: &str = "assets/supernova/client.key";
 
 /// The response key from the APK's native library.
 pub fn client_key(apk: &std::path::Path) -> Result<[u8; 32]> {
-    let key: [u8; 32] = match crate::assets::apk_member(apk, PATCHED_KEY_MEMBER) {
-        Some(key) => key.as_slice().try_into().map_err(|_| anyhow!("{PATCHED_KEY_MEMBER} is not 32 bytes"))?,
+    match crate::assets::apk_member(apk, PATCHED_KEY_MEMBER) {
+        Some(key) => checked_key(&key),
         None => {
             let lib = crate::assets::apk_member(apk, KEY_MEMBER).ok_or_else(|| anyhow!("no {KEY_MEMBER} in the APK"))?;
-            lib.get(KEY_OFFSET..KEY_OFFSET + 32).ok_or_else(|| anyhow!("library too short"))?.try_into()?
+            checked_key(lib.get(KEY_OFFSET..KEY_OFFSET + 32).ok_or_else(|| anyhow!("library too short"))?)
         }
-    };
+    }
+}
+
+/// The key, if it is the one of a supported client.
+pub fn checked_key(key: &[u8]) -> Result<[u8; 32]> {
+    let key: [u8; 32] = key.try_into().map_err(|_| anyhow!("the client key is not 32 bytes"))?;
     use sha2::{Digest, Sha256};
     let digest: String = Sha256::digest(key).iter().map(|b| format!("{b:02x}")).collect();
     if digest != KEY_SHA256 {

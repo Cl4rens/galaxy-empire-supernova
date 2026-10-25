@@ -11,18 +11,25 @@ use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, MouseButton, TouchPhase, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
-use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId};
 
+use crate::assets::Assets;
 use crate::compositor::{Compositor, to_game};
 use crate::engine::{Engine, Touch};
 use crate::screens::RuffleScreens;
 
 const FRAME: Duration = Duration::from_micros(33_333);
 
-pub struct Config {
+/// Where the game files come from
+pub enum Game {
     /// the player's own Galaxy Empire 1.9.36 APK
-    pub apk: PathBuf,
+    Apk(PathBuf),
+    /// the game files and client key as tools/patch_apk.py --64bit put them into the app
+    Files { game_zip: Vec<u8>, key: [u8; 32] },
+}
+
+pub struct Config {
+    pub game: Game,
     pub server: String,
     /// where the game keeps its saved files
     pub save_dir: PathBuf,
@@ -117,14 +124,6 @@ impl ApplicationHandler for App {
                 };
                 self.touch(phase, touch.location.x, touch.location.y);
             }
-            // Android's back button: the game has no use for it, so it leaves the game (to the
-            // app's setup screen)
-            WindowEvent::KeyboardInput { event, .. }
-                if event.state == ElementState::Pressed
-                    && matches!(event.logical_key, Key::Named(NamedKey::BrowserBack | NamedKey::GoBack)) =>
-            {
-                event_loop.exit();
-            }
             WindowEvent::RedrawRequested => self.frame(),
             _ => {}
         }
@@ -145,7 +144,13 @@ impl ApplicationHandler for App {
 /// Start the game and run it until its window closes.
 pub fn run(event_loop: EventLoop<()>, config: Config) -> Result<()> {
     let screens = RuffleScreens::new()?;
-    let engine = Engine::new(config.apk, &config.server, config.save_dir, &config.language, Box::new(screens))?;
+    let screens = Box::new(screens);
+    let engine = match config.game {
+        Game::Apk(apk) => Engine::new(apk, &config.server, config.save_dir, &config.language, screens)?,
+        Game::Files { game_zip, key } => {
+            Engine::with_assets(Assets::from_game_zip(game_zip)?, key, &config.server, config.save_dir, &config.language, screens)?
+        }
+    };
     engine.boot()?;
     let mut app = App { engine, window: None, compositor: None, cursor: (0.0, 0.0), pressed: false, next_frame: Instant::now() };
     event_loop.run_app(&mut app)?;
