@@ -54,9 +54,11 @@ def error(message: str, status_code: int = 400) -> Response:
 
 
 def decrypt_param(value: str) -> str:
-    """Decode a parameter the client encrypted with ext.getENC2 (e.g. the username)."""
+    """Decode a parameter the client encrypted with ext.getENC2 (e.g. the username).
+
+    The client sends the base64 unescaped, so a "+" in it arrives as a space."""
     try:
-        return crypto.decrypt(CLIENT_KEY, value.encode())
+        return crypto.decrypt(CLIENT_KEY, value.replace(" ", "+").encode())
     except ValueError:
         return value
 

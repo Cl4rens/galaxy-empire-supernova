@@ -28,6 +28,18 @@ def test_guest_account_is_bound_to_its_device():
     assert decrypt_json(same.post("/world/1/trials.json", content=f"username={enc(state['username'])}"))
 
 
+def test_guest_login_with_unescaped_base64():
+    """The client does not escape its base64, so "+" arrives as a space."""
+    c, state = new_guest("device-plus")
+    name = state["username"]
+    raw = crypto.encrypt(KEY, name).decode()
+    assert c.post("/world/1/trials.json", content=f"username={raw}").status_code == 200
+    # find a name whose ciphertext contains "+" to be sure the case is covered
+    plus = next(n for n in (f"{name}{i}" for i in range(200)) if "+" in crypto.encrypt(KEY, n).decode())
+    from supernova.world import decrypt_param
+    assert decrypt_param(crypto.encrypt(KEY, plus).decode().replace("+", " ")) == plus
+
+
 def test_register_then_login_anywhere():
     c, state = new_guest("device-c")
     body = f"username={enc('Starlord')}&password={enc('secret1')}&password_confirmation={enc('secret1')}"
