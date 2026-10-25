@@ -13,7 +13,8 @@ Icons: the original server sent pictures by URL; the client keeps only a few it 
 (icons/item_res_NN.png), and the battle report shows what they are: 01 deuterium, 03 crystal,
 04 metal, 05 dark matter, 06 dark energy, 07 alloy, 08 credits, 09 speed-up, 10 galaxium,
 11 krypton, 12 ECM chip, 13 crystal ore, 14 energy gel, 15 titanenergetic cube; 16, 11, 07 and
-18 are also the armour, shield, attack and speed symbols of ship modification.
+18 are also the armour, shield, attack and speed symbols of ship modification. Where the server
+has the original picture (icons.py), an item shows that instead.
 """
 
 import math
@@ -21,7 +22,7 @@ import random
 import time
 from dataclasses import dataclass
 
-from . import ecm, flagships, kryptons, officers
+from . import ecm, flagships, icons, kryptons, officers
 from . import planet as planet_rules
 
 DARK_MATTER, CREDITS = 1, 2  # pay_type
@@ -63,6 +64,11 @@ class Item:
     shortcut: int = 0  # quick-buy list the item appears in (GameUIQuickBuyMall)
     pack: tuple[tuple[int, int], ...] = ()  # gift pack: (item id, number) put into the capsule
     units: tuple[tuple[int, int], ...] = ()  # gift pack: (ship type, number) for the planet
+    picture: str = ""  # the original picture, if the server has it (icons.py)
+
+    def image(self) -> str:
+        """What the client shows for the item ("icons/..."), the original picture if the server has it."""
+        return icons.pick(self.picture, self.icon)
 
 
 # quick-buy lists of the client
@@ -73,7 +79,7 @@ def _container(item_id, name, size, amount, index, icon, price, shortcut, featur
     resources = tuple(amount if i == index else 0 for i in range(3))
     return Item(item_id, RESOURCE, f"{name} Container ({size})",
                 f"{amount:,} {name.lower()} for the planet you are on.", icon, price, resources=resources,
-                featured=featured, code=code, shortcut=shortcut)
+                featured=featured, code=code, shortcut=shortcut, picture=f"container_{name.lower()}.png")
 
 
 def _speedup(item_id, label, seconds, price, pay_type=DARK_MATTER, featured=False):
@@ -89,7 +95,7 @@ def _officers() -> list[Item]:
         out.append(Item(6001 + n, AFFAIR, f"{officers.NAMES[kind]} Lv.{lv} ({days} days)",
                         officers.DESCRIPTIONS[kind].format(effect) + f" Hired for {days} days.",
                         officers.ICON, price, pay_type=pay, officer=(kind, lv, days), shortcut=SHORTCUT_OFFICERS,
-                        featured=(kind, lv, days) == (officers.GEOLOGIST, 1, 7)))
+                        featured=(kind, lv, days) == (officers.GEOLOGIST, 1, 7), picture=officers.picture(kind, lv)))
     return out
 
 
@@ -119,7 +125,7 @@ CATALOG = [
     Item(LIGHT_SPEED_ENGINE, SPEEDUP, "Light Speed Engine", "Brings a returning fleet home at once (from the flight "
          "list).", "item_res_02.png", 10, pay_type=CREDITS),
     Item(3101, OTHER, "ECM chips x5", "Five core chips for ECM module upgrades.", "item_res_12.png", 20,
-         ecm_chips=5),
+         ecm_chips=5, picture="ecm_chip.png"),
     Item(3102, OTHER, "Alloy fragment box", f"{flagships.BOX_ALLOY} alloy fragments for the Pioneer Lab.",
          "hiEnergy_alloy_box.png", 15, alloy=flagships.BOX_ALLOY),
     Item(3104, OTHER, "Alloy fragment box (credits)", f"{flagships.BOX_ALLOY} alloy fragments for the Pioneer Lab.",
@@ -130,11 +136,13 @@ CATALOG = [
     # only the best roll so far counts
     Item(3201, OTHER, "Terraformer (S)", "Adds 1-15 building fields to the planet you are on (the best result "
          "of all terraformers used there counts). Not for moons.", "chests.png", 99, pay_type=CREDITS, fields=15,
-         shortcut=SHORTCUT_FIELDS),
+         shortcut=SHORTCUT_FIELDS, picture="terraformer.png"),
     Item(3202, OTHER, "Terraformer (M)", "Adds 1-20 building fields to the planet you are on (the best result "
-         "counts). Not for moons.", "chests.png", 249, pay_type=CREDITS, fields=20, shortcut=SHORTCUT_FIELDS),
+         "counts). Not for moons.", "chests.png", 249, pay_type=CREDITS, fields=20, shortcut=SHORTCUT_FIELDS,
+         picture="terraformer.png"),
     Item(3203, OTHER, "Terraformer (L)", "Adds 1-25 building fields to the planet you are on (the best result "
-         "counts). Not for moons.", "chests.png", 599, pay_type=CREDITS, fields=25, shortcut=SHORTCUT_FIELDS),
+         "counts). Not for moons.", "chests.png", 599, pay_type=CREDITS, fields=25, shortcut=SHORTCUT_FIELDS,
+         picture="terraformer.png"),
     Item(5002, OTHER, "Annihilator construction permit",
          f"Builds one Annihilator on the planet you are on. A commander can have at most {MAX_ANNIHILATORS}.",
          "ship_destruction_star.png", 25, unit=28),
@@ -168,10 +176,10 @@ def contents(item_id: int) -> list[dict]:
            for res, n, icon in zip(planet_rules.RESOURCES, i.resources, (4, 3, 1)) if n]
     if i.ecm_chips:
         out.append({"name": "ECM chips", "amount": i.ecm_chips, "img": "icons/item_res_12.png"})
-    out += [{"name": item(pid).name, "amount": n, "img": f"icons/{item(pid).icon}"} for pid, n in i.pack]
+    out += [{"name": item(pid).name, "amount": n, "img": item(pid).image()} for pid, n in i.pack]
     out += [{"name": eco.SPECIAL_UNITS.get(t) or eco.UNITS[t].name, "amount": n,
              "img": f"icons/item_res_{14 if t == 25 else 15}.png"} for t, n in i.units]
-    out = out or [{"name": i.name, "amount": 1, "img": f"icons/{i.icon}"}]
+    out = out or [{"name": i.name, "amount": 1, "img": i.image()}]
     # the opening window shows only the name, so it carries the amount too
     return [dict(c, name=f"{c['amount']:,} {c['name']}") for c in out]
 
@@ -184,7 +192,7 @@ def item(item_id: int) -> Item:
 
 
 def _view(i: Item) -> dict:
-    return {"id": i.id, "game_item_id": i.id, "name": i.name, "desc": i.desc, "img": f"icons/{i.icon}",
+    return {"id": i.id, "game_item_id": i.id, "name": i.name, "desc": i.desc, "img": i.image(),
             "pay_type": i.pay_type, "sale_price": i.price, "code": i.code, "item_type": 1, "category": i.category,
             "is_featured": i.featured, "is_gift": bool(i.pack or i.units), "step_gacha": 0}
 

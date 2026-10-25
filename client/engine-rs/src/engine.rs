@@ -152,6 +152,9 @@ fn text_of(value: &Value) -> String {
     }
 }
 
+/// Where downloads go that the game then loads as its own files (`localpath` "data2/x.png")
+const DOWNLOADED_DATA: &str = "data2/";
+
 fn safe_name(name: &str) -> String {
     name.replace('/', "__").chars().map(|c| if c.is_ascii_alphanumeric() || "_.-".contains(c) { c } else { '_' }).collect()
 }
@@ -185,6 +188,12 @@ impl Engine {
         screens: Box<dyn Screens>,
     ) -> Result<Self> {
         std::fs::create_dir_all(&save_dir)?;
+        let mut assets = assets;
+        for entry in std::fs::read_dir(save_dir.join(DOWNLOADED_DATA)).into_iter().flatten().flatten() {
+            if let (Some(name), Ok(data)) = (entry.file_name().to_str(), std::fs::read(entry.path())) {
+                assets.add_file(&format!("{DOWNLOADED_DATA}{name}"), data);
+            }
+        }
         let udid_file = save_dir.join("UDID");
         let udid = std::fs::read_to_string(&udid_file).ok().map(|s| s.trim().to_string()).unwrap_or_else(|| {
             let seed = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
@@ -270,6 +279,17 @@ impl Engine {
             state.requests.push((a.method.clone(), a.url.clone(), a.status));
             match (&a.error, a.body) {
                 (Some(_), _) | (None, None) => Value::Nil,
+                // pictures the scripts fetch into data2/ (item icons): kept, and from now on
+                // found like the game's own files under their name
+                (None, Some(body)) if a.mode == "download" && a.status == 200 && a.localpath.trim_start_matches("./").starts_with(DOWNLOADED_DATA) => {
+                    let name = safe_name(a.localpath.rsplit('/').next().unwrap_or_default());
+                    let dir = state.save_dir.join(DOWNLOADED_DATA);
+                    std::fs::create_dir_all(&dir)?;
+                    let path = dir.join(&name);
+                    std::fs::write(&path, &body)?;
+                    state.assets.add_file(&format!("{DOWNLOADED_DATA}{name}"), body);
+                    Value::String(self.lua.create_string(path.to_string_lossy().as_bytes())?)
+                }
                 (None, Some(body)) if a.mode == "download" => {
                     let dir = state.save_dir.join("downloads");
                     std::fs::create_dir_all(&dir)?;

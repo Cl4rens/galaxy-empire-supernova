@@ -461,7 +461,10 @@ impl Converter {
             let alpha_name = format!("data2/{}_alpha.pak", name.trim_end_matches(".png"));
             data = texture_to_png(d, assets.file(&alpha_name)).ok();
         }
-        self.pictures.insert(name.to_string(), data.clone());
+        // a picture the game has not got may still come (downloaded item icons)
+        if data.is_some() {
+            self.pictures.insert(name.to_string(), data.clone());
+        }
         data
     }
 

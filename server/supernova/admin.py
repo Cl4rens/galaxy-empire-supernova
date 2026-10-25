@@ -252,6 +252,25 @@ def cmd_stats(args) -> None:
         print(f"{key:<14} {value}")
 
 
+def cmd_icons_list(args) -> None:
+    from . import icons
+    wanted = icons.missing()
+    if not wanted:
+        print("the server has all item pictures")
+    for wiki in wanted:
+        print(f"{wiki}  {icons.WIKI_FILE_PAGE}{wiki}")
+
+
+def cmd_import_icons(args) -> None:
+    from pathlib import Path
+
+    from . import icons
+    imported, problems = icons.import_folder(Path(args.folder))
+    for p in problems:
+        print(p)
+    print(f"{len(imported)} pictures imported")
+
+
 def cmd_backup(args) -> None:
     from . import operations
     print(operations.backup())
@@ -342,6 +361,10 @@ def main() -> None:
     sub.add_parser("events").set_defaults(func=cmd_events)
     sub.add_parser("stats").set_defaults(func=cmd_stats)
     sub.add_parser("backup").set_defaults(func=cmd_backup)
+    sub.add_parser("icons-list").set_defaults(func=cmd_icons_list)
+    import_icons = sub.add_parser("import-icons")
+    import_icons.add_argument("folder")
+    import_icons.set_defaults(func=cmd_import_icons)
     ban = sub.add_parser("ban")
     ban.add_argument("username")
     ban.add_argument("reason", nargs="?", default="Your account is banned.")

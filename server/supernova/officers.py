@@ -18,6 +18,8 @@ A higher level replaces a lower one; hiring the same kind again adds time.
 
 import time
 
+from . import icons
+
 COMMANDER, ENGINEER, TECHNOCRAT, GEOLOGIST, ADMIRAL, GUIDER = (
     "commander", "engineer", "technocrat", "geologist", "admiral", "guider")
 NAMES = {COMMANDER: "Commander", ENGINEER: "Engineer", TECHNOCRAT: "Technocrat", GEOLOGIST: "Geologist",
@@ -46,6 +48,11 @@ PRICES = {
     (GUIDER, 1, 7): (1, 60), (GUIDER, 1, 30): (1, 100), (GUIDER, 2, 7): (2, 999), (GUIDER, 3, 7): (2, 1050),
 }
 ICON = "Buff_AffairsOfficer_people.png"  # the client's own officer picture
+
+
+def picture(kind: str, level: int) -> str:
+    """The original picture of an officer, if the server has it (icons.py)."""
+    return f"officer_{kind}_{level}.png"
 BUFF_TYPES = {COMMANDER: 1, ENGINEER: 2, TECHNOCRAT: 3, GEOLOGIST: 4, ADMIRAL: 5, GUIDER: 6}
 
 
@@ -97,5 +104,5 @@ def buff_list(empire: dict, now: float) -> list[dict]:
             effect = EFFECT[kind][o["level"] - 1]
             out.append({"buffer_name": f"{NAMES[kind]} Lv.{o['level']}", "end_time": o["until"],
                         "buffer_desc": DESCRIPTIONS[kind].format(effect), "buff_type": BUFF_TYPES[kind],
-                        "img": f"icons/{ICON}"})
+                        "img": icons.pick(picture(kind, o["level"]), ICON)})
     return out

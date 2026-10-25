@@ -618,7 +618,7 @@ def shop(ev: dict, state: dict) -> list[dict]:
                 "buy_amount": bought.get(str(sid), 0), "item_type": 1}
         if item_id:
             i = items.item(item_id)
-            view.update(name=i.name, desc=i.desc, img=f"icons/{i.icon}")
+            view.update(name=i.name, desc=i.desc, img=i.image())
         else:
             view.update(name=eco.SPECIAL_UNITS[ftype], fleet_type=ftype,
                         img="icons/item_res_14.png" if ftype == 25 else "icons/item_res_15.png")

@@ -34,7 +34,7 @@ def _gift(kind, amount: int) -> list:
     """[kind, amount, name, 0, picture] as the client reads it (index 2 name, 5 picture)."""
     if isinstance(kind, int):
         i = items.item(kind)
-        return [kind, amount, i.name, 0, f"icons/{i.icon}"]
+        return [kind, amount, i.name, 0, i.image()]
     return [kind, amount, NAMES[kind], 0, ICONS[kind]]
 
 

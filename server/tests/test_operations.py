@@ -70,3 +70,27 @@ def test_stats_and_health():
     s = operations.stats()
     assert s["players"] >= 1 and s["active_hour"] >= 1 and s["banned"] == 0
     assert TestClient(app).get("/health").json() == {"status": "ok", "players": s["players"]}
+
+
+def test_requests_in_parallel_threads_use_the_database_safely():
+    """The client sends several requests at once after logging in; the server answers them in
+    parallel threads (a shared sqlite3 connection failed there with "API misuse")."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    from .test_server import decrypt_json
+    player = decrypt_json(TestClient(app, headers={"openudid": "parallel"}).post(
+        "/world/1/trials.json", content="username="))["user_id"]
+    token = db.create_session(player)
+
+    def work(i: int) -> int:
+        for _ in range(50):
+            assert db.session_player(token) == player
+            with db.player_state(player) as state:
+                state.setdefault("parallel", 0)
+                state["parallel"] += 1
+        return i
+
+    with ThreadPoolExecutor(8) as pool:
+        assert sorted(pool.map(work, range(8))) == list(range(8))
+    with db.player_state(player) as state:
+        assert state["parallel"] == 400

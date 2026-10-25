@@ -10,11 +10,11 @@ import time
 from urllib.parse import parse_qs
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import PlainTextResponse, Response
+from fastapi.responses import FileResponse, PlainTextResponse, Response
 
 from . import accounts, acs, alliances, bookmarks, chat, checkin, combat, crypto, db, faq, fleets, gifts, mails
 from . import devices, ecm, flagships, fortresses, items, kryptons, lordship, notices, player, quests, ranking
-from . import daily, officers, repairs
+from . import daily, icons, officers, repairs
 from . import galaxy_challenge as gc
 from . import arena
 from . import chests, growth, promotions
@@ -161,6 +161,15 @@ def email_status(user_id: int, player_id: int = Depends(current_player)):
 
 
 # --- Player state -------------------------------------------------------------------------
+
+
+@router.get("/icons/{name}")
+def icon(world_id: int, name: str):
+    """An item picture the server has (icons.py); the client downloads those it lacks."""
+    file = icons.path(name)
+    if file is None:
+        return Response(status_code=404)
+    return FileResponse(file, media_type="image/png")
 
 
 @router.get("/passive_events")

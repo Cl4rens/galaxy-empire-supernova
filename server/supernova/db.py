@@ -193,7 +193,10 @@ CREATE TABLE IF NOT EXISTS events (
 """
 
 _lock = threading.RLock()  # reentrant: universe code runs inside create_player
-_conn: sqlite3.Connection | None = None
+# One connection per thread: the server answers requests in parallel threads, and a sqlite3
+# connection used from several threads at once fails ("bad parameter or other API misuse").
+_local = threading.local()
+_path: Path | None = None
 
 
 def lock() -> threading.RLock:
@@ -202,15 +205,23 @@ def lock() -> threading.RLock:
 
 
 def connect(path: Path | None = None) -> sqlite3.Connection:
-    global _conn
-    if _conn is None:
-        path = path or config.DATA_DIR / "supernova.db"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        _conn = sqlite3.connect(path, check_same_thread=False)
-        _conn.row_factory = sqlite3.Row
-        _migrate(_conn)
-        _conn.executescript(SCHEMA)
-    return _conn
+    """This thread's connection to the database (made, and the database set up, on first use)."""
+    global _path
+    conn = getattr(_local, "conn", None)
+    if conn is None:
+        with _lock:
+            first = _path is None
+            if first:
+                _path = path or config.DATA_DIR / "supernova.db"
+                _path.parent.mkdir(parents=True, exist_ok=True)
+            conn = sqlite3.connect(_path, timeout=30)
+            conn.row_factory = sqlite3.Row
+            if first:
+                conn.execute("PRAGMA journal_mode=WAL")  # reads do not wait for writes
+                _migrate(conn)
+                conn.executescript(SCHEMA)
+        _local.conn = conn
+    return conn
 
 
 def _migrate(conn: sqlite3.Connection) -> None:

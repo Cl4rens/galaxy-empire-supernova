@@ -80,7 +80,7 @@ def _gift_view(kind, amount: int) -> list:
     """[kind, amount, name, picture] as the extra reward icons read it (index 4 in Lua)."""
     if isinstance(kind, int):
         i = items.item(kind)
-        return [kind, amount, i.name, f"icons/{i.icon}"]
+        return [kind, amount, i.name, i.image()]
     return [kind, amount, NAMES[kind], ICONS[kind]]
 
 

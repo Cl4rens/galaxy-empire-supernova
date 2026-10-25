@@ -112,6 +112,11 @@ impl Assets {
         self.scripts.get(base).map(Vec::as_slice)
     }
 
+    /// Add a file the game downloaded (such as an item picture into "data2/"), as if the APK had it.
+    pub fn add_file(&mut self, path: &str, data: Vec<u8>) {
+        self.files.insert(path.trim_start_matches("./").to_string(), data);
+    }
+
     /// A data file such as "data2/Login.tfs" or "data2/text/menu.en".
     pub fn file(&self, path: &str) -> Option<&[u8]> {
         self.files.get(path.trim_start_matches("./")).map(Vec::as_slice)
