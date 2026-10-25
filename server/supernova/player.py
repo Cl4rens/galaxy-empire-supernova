@@ -8,7 +8,7 @@ import secrets
 import time
 
 from . import economy as eco
-from . import checkin, config, fleets, fortresses, gifts, mails, ranking
+from . import checkin, config, fleets, fortresses, gifts, growth, mails, ranking
 from . import planet as planet_rules
 from . import universe
 
@@ -181,7 +181,8 @@ def planets_info(empire: dict) -> list[dict]:
 HIDDEN_EMPIRE_FIELDS = ("main_planet", "planets", "current_planet_id", "dark_matter_income", "fleet_devices",
                         "officers")
 PRIVATE_STATE = ("empire", "next_event_id", "quests", "bookmarks", "checkin", "kryptons", "flagships", "ecm",
-                 "fortress", "items", "daily")
+                 "fortress", "items", "daily", "growth_claimed", "gc_bought", "arena_points", "invited_by",
+                 "chest")
 
 
 def empire_view(state: dict, now: float) -> dict:
@@ -214,5 +215,6 @@ def login_response(state: dict, now: float) -> dict:
     response = {k: v for k, v in state.items() if k not in PRIVATE_STATE}
     response["empire"] = empire_view(state, now)
     response["checkin_days"] = checkin.unclaimed(state)
+    response["grows"] = growth.summary(state)
     response["empire"]["new_message_count"] = mails.unread_count(state["user_id"])
     return response

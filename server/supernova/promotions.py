@@ -4,7 +4,7 @@ Supernova's own."""
 
 import time
 
-from . import db, mails
+from . import chests, db, mails
 from . import planet as planet_rules
 
 DAYS = 7  # a code can be redeemed this long after the account was created
@@ -49,6 +49,7 @@ def apply_code(player_id: int, code: str, now: float | None = None) -> str:
         name = state["username"]
     with db.player_state(inviter) as state:
         state["empire"]["dark_matter_count"] = state["empire"].get("dark_matter_count", 0) + REWARD_DARK_MATTER
+        chests.invited(state, now)
         inviter_name = state["username"]
     mails.send(inviter, mails.SYSTEM, "Supernova", inviter_name, "Your invitation was used",
                f"{name} joined with your invitation code. You received {REWARD_DARK_MATTER} dark matter.")

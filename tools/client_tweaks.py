@@ -5,8 +5,12 @@ instructions, so it does not depend on entry numbers inside the pak.
 """
 
 import struct
+from pathlib import Path
 
 import lua51
+
+# Supernova's own versions of whole screens; they replace the script of the same name.
+SCRIPTS_DIR = Path(__file__).resolve().parent / "client_scripts"
 
 OP_LOADBOOL, OP_SELF, OP_JMP, OP_EQ = 2, 11, 22, 23
 RK_CONSTANT = 256  # B/C operands from this value on name constants
@@ -31,6 +35,32 @@ def show_daily_tasks(fn: lua51.Function) -> bool:
             fn.code = bytes(code)
             return True
     return False
+
+
+OP_LOADK, OP_GETGLOBAL, OP_CALL, OP_RETURN = 1, 5, 28, 30
+
+
+def _abc(op: int, a: int, b: int = 0, c: int = 0) -> bytes:
+    return struct.pack("<I", op | a << 6 | c << 14 | b << 23)
+
+
+def _abx(op: int, a: int, bx: int) -> bytes:
+    return struct.pack("<I", op | a << 6 | bx << 14)
+
+
+def source_chunk(header: bytes, name: bytes, source: bytes) -> bytes:
+    """A bytecode chunk that runs Lua source: `assert(loadstring(source, name))()`.
+
+    The engine also accepts source text in its paks, but its reader hands the text over again
+    and again, so the parser never sees the end. Bytecode ends by itself, so a small compiled
+    main function carries Supernova's scripts as a string."""
+    code = (_abx(OP_GETGLOBAL, 0, 0) + _abx(OP_GETGLOBAL, 1, 1) + _abx(OP_LOADK, 2, 2) + _abx(OP_LOADK, 3, 3)
+            + _abc(OP_CALL, 1, 3, 0)  # loadstring(source, name), all results
+            + _abc(OP_CALL, 0, 0, 2)  # assert(...)
+            + _abc(OP_CALL, 0, 1, 1)  # run it
+            + _abc(OP_RETURN, 0, 1))
+    main = lua51.Function(name, 0, 0, 0, 0, 2, 4, code, [b"assert", b"loadstring", source, name])
+    return lua51.dump(header, main)
 
 
 def _decode(ins: int) -> tuple[int, int, int, int, int]:
@@ -70,8 +100,17 @@ def arena_shop_icons(fn: lua51.Function) -> bool:
 TWEAKS = {"GameUICityUIUp.lua": [show_daily_tasks], "GameUITop.lua": [arena_shop_icons]}
 
 
+def replacement(chunk: bytes) -> Path | None:
+    name = _source(chunk).rsplit("/", 1)[-1]
+    path = SCRIPTS_DIR / name
+    return path if name.endswith(".lua") and path.is_file() else None
+
+
 def apply(chunk: bytes) -> bytes:
     """Apply the tweaks that belong to this script; other scripts come back unchanged."""
+    script = replacement(chunk)
+    if script is not None:
+        return source_chunk(chunk[:12], f"@supernova/{script.name}".encode(), script.read_bytes())
     tweaks = next((t for name, t in TWEAKS.items() if _source(chunk).endswith(name)), None)
     if tweaks is None:
         return chunk

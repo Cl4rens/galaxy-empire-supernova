@@ -488,6 +488,19 @@ Gift packs (Supernova's own): Commander Pack (60 dark matter: 150,000 metal, 100
 50,000 deuterium, 10 ECM chips, 3 one-hour speed-ups) and Fleet Pack (199 credits: 2 Devourer
 Interceptors, 1 Titanenergetic Frigate). They go into the capsule and are opened there.
 
+Growth packages (client text: 1 growth point per 1,000 metal, crystal or deuterium spent, which is
+the score): packages at 20, 100, 300, 1,000, 3,000, 10,000, 30,000 and 100,000 points with
+resources, dark matter, ECM chips and items (Supernova's own). "Receive" collects all reached ones.
+
+Chests (the client's Facebook chests, played with alliance members; all numbers Supernova's own):
+the chest fills by itself, 1 point every 6 hours, and +1 for every alliance member who helps after
+the player asked (each member once a day). It opens at 4 + level points and gives 30,000 / 20,000 /
+8,000 metal / crystal / deuterium per level, ECM chips from level 3 and dark matter from level 5.
+Every opening gives 1 chest experience; 2 x level experience raise the level (at most 10). The
+extra bar fills with every help given (+1) and every player who joins with the player's
+invitation code (+3); at 10 the next opening also gives 30 dark matter, 5 ECM chips, krypton
+stones and a 1 h speed-up. The chests are in the menu at the bottom ("Chests").
+
 Invitation codes: every player's code is `SN` + the player id (Settings > Invite friends). In
 the first 7 days a new player can redeem one friend's code; both get 30 dark matter and the
 new player 50,000 metal, 30,000 crystal and 10,000 deuterium.

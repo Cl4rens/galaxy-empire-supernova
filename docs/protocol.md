@@ -763,6 +763,27 @@ in `GameUITop:hanglde_updateExchangeItem`. The patcher fixes that check (client_
 
 `gift_bags` and `game_items/vip_item` are never opened by the 1.9.36 client.
 
+### Growth packages and chests
+
+| Request | Answer |
+|---------|--------|
+| login field `grows` | `{has_gift, gift_num}`: the gift button on the left shows while packages are left, with a counter |
+| `GET grows` | `{grows: [{score, got, show_tips_img (reached, not collected), gifts: [[kind, amount, name, 0, picture]]}]}` |
+| `GET grows/get` | collects every reached package, answers like `grows` |
+| `POST chest/enter`, `chest/open_chest`, `chest/ask_for_help`, `chest/help_other` `target_id` | `{chest_user_info: {chest_level, chest_exp, progress, help_config {level_up_exp, need_progress}, extra_progress, extra_config {need_progress, client_gift: [[kind, amount, name, picture]]}, requests: [member ids]}, friends: [{id, name}], invite_code}` plus `result` (opening) or `helped` (name) |
+
+The chest requests are Supernova's own: the patcher replaces the Facebook chest screen with
+`tools/client_scripts/GameUIFacebookChests.lua`.
+
+### Scripts of our own in the client
+
+The engine also compiles Lua source text from its paks, but its reader hands the text over again
+and again, so the parser never sees the end (errors like "main function has more than 200 local
+variables" at a line far behind the end). Bytecode ends by itself. The patcher therefore puts
+Supernova's scripts in as a tiny bytecode chunk that runs `assert(loadstring(source, name))()`
+(`client_tweaks.source_chunk`). A file `tools/client_scripts/<Name>.lua` replaces the game script
+`<Name>.lua`.
+
 ### Errors
 
 For a status other than 200 the client shows the response body **as text** (or the `<title>` of

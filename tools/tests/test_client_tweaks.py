@@ -65,3 +65,14 @@ def test_arena_shop_skips_missing_icons():
     assert client_tweaks._decode(new[0])[:4] == (23, 1, 3, 257)  # nil: run the JMP
     assert client_tweaks._decode(new[1])[4] == 7  # ... past the if (instruction 9)
     assert patched.protos[0].code[8:] == code[8:]
+
+
+def test_replaced_screens_run_supernova_source():
+    original = chunk(b"@./GameUIFacebookChests.lua", ORIGINAL)
+    replaced = client_tweaks.apply(original)
+    header, main = lua51.load(replaced)
+    assert header == HEADER and main.constants[:2] == [b"assert", b"loadstring"]
+    assert main.constants[2] == (client_tweaks.SCRIPTS_DIR / "GameUIFacebookChests.lua").read_bytes()
+    assert main.constants[3] == b"@supernova/GameUIFacebookChests.lua"
+    ops = [struct.unpack_from("<I", main.code, i)[0] & 0x3F for i in range(0, len(main.code), 4)]
+    assert ops == [5, 5, 1, 1, 28, 28, 28, 30]  # GETGLOBAL x2, LOADK x2, CALL x3, RETURN

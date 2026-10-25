@@ -207,6 +207,7 @@ the game keeps the scripts it unpacked on its first start and would not see the 
 - [x] Galaxy Challenge (Fight G.E.F.), started by the operator
 - [x] Conquer The Universe arena behind the star gate, started by the operator
 - [x] Gift packs, invitation codes, empty purchase menu
+- [x] Growth packages; chests with alliance members instead of Facebook
 - [x] Runs on Android 6-16 without crashes or permission dialogs
 - [ ] Support for 64-bit-only devices: needs an open client engine that runs the original Lua
       scripts and Flash UI from the player's APK (idea, not started)

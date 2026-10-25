@@ -17,7 +17,7 @@ from . import devices, ecm, flagships, fortresses, items, kryptons, lordship, no
 from . import daily, officers, repairs
 from . import galaxy_challenge as gc
 from . import arena
-from . import promotions
+from . import chests, growth, promotions
 from . import economy as eco
 from . import planet as planet_rules
 from . import universe
@@ -2222,6 +2222,50 @@ async def apply_invite_code(world_id: int, request: Request, player_id: int = De
         return encrypted_json(promotions.apply_code(player_id, (await form(request)).get("code", "")))
     except planet_rules.GameError as e:
         return error(str(e))
+
+
+def chest_call(player_id: int, fn):
+    now = time.time()
+    try:
+        with db.player_state(player_id) as state:
+            planet_rules.tick(state["empire"], now)
+            extra = fn(state, now) or {}
+            return encrypted_json(dict(chests.view(state, now), **extra))
+    except planet_rules.GameError as e:
+        return error(str(e))
+
+
+@router.post("/chest/enter")
+def chest_enter(player_id: int = Depends(current_player)):
+    return chest_call(player_id, lambda state, now: None)
+
+
+@router.post("/chest/open_chest")
+def chest_open(player_id: int = Depends(current_player)):
+    return chest_call(player_id, lambda state, now: {"result": chests.open_chest(state, now)})
+
+
+@router.post("/chest/ask_for_help")
+def chest_ask(player_id: int = Depends(current_player)):
+    return chest_call(player_id, lambda state, now: chests.ask_for_help(state, now))
+
+
+@router.post("/chest/help_other")
+async def chest_help(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    target = _int(await form(request), "target_id")
+    return chest_call(player_id, lambda state, now: {"helped": chests.help_member(state, target, now)})
+
+
+@router.get("/grows")
+def growth_packages(player_id: int = Depends(current_player)):
+    return encrypted_json({"grows": growth.listing(db.load_state(player_id))})
+
+
+@router.get("/grows/get")
+def growth_claim(player_id: int = Depends(current_player)):
+    with db.player_state(player_id) as state:
+        planet_rules.tick(state["empire"], time.time())
+        return encrypted_json({"grows": growth.claim(state)})
 
 
 @router.get("/gachas/{item_id}")
