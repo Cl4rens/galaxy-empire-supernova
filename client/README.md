@@ -55,10 +55,24 @@ Things we learned on the way (also useful for a native implementation):
 Tests (`python -m pytest tests`) run the engine on a small fake game with its own scripts and a
 local HTTP server, so they need no game files.
 
-## Stage 2: drawing the screens (next)
+## Stage 2: drawing the screens (started)
 
-The `.tfs` screens are ordinary SWF files with ActionScript 2 (they open in JPEXS). The original
-engine draws them with gameswf. Our plan:
+The `.tfs` screens are ordinary SWF files with ActionScript 2 (they open in JPEXS), except for
+their pictures, which gameswf loads from `data2/` at run time. Done so far:
+
+- `supernova_client.screens` turns every screen into a standard SWF with its pictures
+  (146 screens). Each placeholder bitmap is replaced by the PNG/JPEG it is exported as.
+- The large atlases (`main_city_res.png`, ...) are PVR v2 textures in ETC1 with the alpha channel
+  in a separate `_alpha.pak`; `supernova_client.textures` decodes them (about 4 s per 2048x2048
+  atlas, no extra packages).
+- Pictures named `NA_*` stay empty: the game fills them at run time with `ReplaceTexture`.
+
+```sh
+python -m supernova_client.screens --apk ../apk/galaxy-empire-1-9-36.apk --out screens
+```
+
+The city screen rendered by JPEXS from the converted file shows the original graphics. Ruffle
+also plays the screens; showing them live is the next step:
 
 - Use [Ruffle](https://ruffle.rs) (Rust, plays AS2 well) as a library and connect it to the
   scripts like gameswf was: Lua's `InvokeASCallback(path, function, args)` calls an

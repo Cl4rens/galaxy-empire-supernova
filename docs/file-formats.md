@@ -19,6 +19,8 @@ Inside `tap4fun.zip` → `tap4fun/galaxy_empire/AppOriginalData/Android/`:
 | `data2/*.tfs`         | Flash UI files (gameswf) |
 | `data2/text/*`        | localized text tables, one file per language |
 | `ofl.tfl`, `fl.tfl`   | file lists for the auto-updater (loaded with `dofile`, obfuscated) |
+| `data2/*.tfs`         | screens: SWF (AS2) whose bitmaps are empty placeholders (`DefineBitsLossless(2)` with only id, format, width, height) exported under a picture's file name; the engine loads the picture from `data2/` |
+| `data2/*.png`         | PNG, sometimes JPEG, or for the 17 big atlases a PVR v2 texture (52-byte header, tag `PVR!`, format `0x36` = ETC1 RGB, 4 bits per pixel); their alpha is a second ETC1 texture in `<name>_alpha.pak` (a pak with one entry), stored as gray |
 | `shader/`, `sound/`   | GLSL shaders, MP3 audio |
 
 ## `.pak` archive
