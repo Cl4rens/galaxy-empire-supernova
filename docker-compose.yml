@@ -9,7 +9,7 @@ services:
       - ./apk:/apk:ro
       - supernova-data:/data
     environment:
-      SUPERNOVA_WORLD_NAME: Supernova
+      SUPERNOVA_WORLD_NAME: SN01
       SUPERNOVA_SPEED: "1"   # game speed: production and build times
       SUPERNOVA_BACKUP_HOURS: "6"   # database backups in /data/backups
       SUPERNOVA_GC_EVERY_DAYS: "0"   # e.g. 14: a Galaxy Challenge every two weeks

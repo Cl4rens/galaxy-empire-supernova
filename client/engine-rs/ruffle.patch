@@ -11,6 +11,24 @@ index 857fe50d..667a3045 100644
  pub use value::Value;
  
  #[macro_export]
+diff --git a/core/src/avm1/fscommand.rs b/core/src/avm1/fscommand.rs
+index 3bc4200a..001fe1a7 100644
+--- a/core/src/avm1/fscommand.rs
++++ b/core/src/avm1/fscommand.rs
+@@ -28,11 +28,8 @@ pub fn handle<'gc>(
+     let command = command.to_utf8_lossy();
+     let args = args.to_utf8_lossy();
+ 
+-    if !activation
+-        .context
+-        .external_interface
+-        .invoke_fs_command(&command, &args)
+-    {
++    let provider = activation.context.external_interface.fs_command_provider();
++    if !provider.on_fs_command_in(activation.context, &command, &args) {
+         avm_warn!(activation, "Unhandled FSCommand: {}", command);
+     }
+     Ok(())
 diff --git a/core/src/avm1/globals/string.rs b/core/src/avm1/globals/string.rs
 index 7c2a45e2..580ee8bd 100644
 --- a/core/src/avm1/globals/string.rs
@@ -43,7 +61,7 @@ index 7c2a45e2..580ee8bd 100644
      } else {
          Ok(ArrayBuilder::new(activation).with([this.into()]).into())
 diff --git a/core/src/avm1/runtime.rs b/core/src/avm1/runtime.rs
-index 073af1ef..b12add99 100644
+index 073af1ef..ca02f252 100644
 --- a/core/src/avm1/runtime.rs
 +++ b/core/src/avm1/runtime.rs
 @@ -387,7 +387,7 @@ impl<'gc> Avm1<'gc> {
@@ -55,20 +73,146 @@ index 073af1ef..b12add99 100644
      }
  
      /// Obtain a reference to the global scope.
-@@ -689,3 +689,8 @@ pub fn skip_actions(reader: &mut Reader<'_>, num_actions_to_skip: u8) {
+@@ -689,3 +689,9 @@ pub fn skip_actions(reader: &mut Reader<'_>, num_actions_to_skip: u8) {
          }
      }
  }
 +
 +/// Behave like gameswf where movies made for it count on it (Supernova): names are looked up
-+/// without regard to case in every SWF version, and `String.split` leaves out the empty piece
-+/// after a trailing delimiter.
++/// without regard to case in every SWF version, `String.split` leaves out the empty piece
++/// after a trailing delimiter, text fields do not clip their text, and `htmlText` reads back
++/// what was set.
 +pub static GAMESWF: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+diff --git a/core/src/display_object/edit_text.rs b/core/src/display_object/edit_text.rs
+index 422efa6c..e057252f 100644
+--- a/core/src/display_object/edit_text.rs
++++ b/core/src/display_object/edit_text.rs
+@@ -234,8 +234,11 @@ impl EditTextData<'_> {
+             self.flags.get().contains(EditTextFlag::CONDENSE_WHITE),
+             self.shared.swf.version(),
+         ));
++        // gameswf gave htmlText back as it was set (the game compares button labels read that
++        // way with its texts); Supernova
++        let gameswf = crate::avm1::GAMESWF.load(std::sync::atomic::Ordering::Relaxed);
+         self.original_html_text
+-            .replace(if self.style_sheet.get().is_some() {
++            .replace(if self.style_sheet.get().is_some() || gameswf {
+                 Some(text.to_owned())
+             } else {
+                 None
+@@ -455,6 +458,7 @@ impl<'gc> EditText<'gc> {
+             self.0
+                 .text_spans
+                 .replace(FormatSpans::from_text(text.into(), default_format));
++            self.0.original_html_text.take();
+         }
+ 
+         self.relayout(context);
+@@ -1220,8 +1224,10 @@ impl<'gc> EditText<'gc> {
+         // [KJ] FP always displays the first visible line (sometimes masked, sometimes sticking out of bounds),
+         //      culls any other line which is not fully visible; masking is always used for left/right bounds
+         // TODO: also cull text that's simply out of screen, just like we cull whole DOs in render_self().
++        // gameswf drew every line, also below the field (see render_self); Supernova
+         if origin.y() + Self::GUTTER - self.0.vertical_scroll_offset()
+             > self.0.bounds.get().height()
++            && !crate::avm1::GAMESWF.load(std::sync::atomic::Ordering::Relaxed)
+         {
+             return;
+         }
+@@ -2731,16 +2737,19 @@ impl<'gc> TDisplayObject<'gc> for EditText<'gc> {
+             }
+         }
+ 
+-        context.commands.push_mask();
+-
++        // gameswf drew text past the bottom of its field, and the game's screens count on it
++        // (lists measure their entries by textHeight); Supernova
++        let clip = !crate::avm1::GAMESWF.load(std::sync::atomic::Ordering::Relaxed);
+         let mask_bounds = self.0.bounds.get().grow_x(-Self::GUTTER);
+         let mask = Matrix::create_box_from_rectangle(&mask_bounds);
+-
+-        context.commands.draw_rect(
+-            Color::WHITE,
+-            context.transform_stack.transform().matrix * mask,
+-        );
+-        context.commands.activate_mask();
++        if clip {
++            context.commands.push_mask();
++            context.commands.draw_rect(
++                Color::WHITE,
++                context.transform_stack.transform().matrix * mask,
++            );
++            context.commands.activate_mask();
++        }
+ 
+         context.transform_stack.push(&Transform {
+             matrix: self.layout_to_local_matrix(),
+@@ -2758,12 +2767,14 @@ impl<'gc> TDisplayObject<'gc> for EditText<'gc> {
+ 
+         context.transform_stack.pop();
+ 
+-        context.commands.deactivate_mask();
+-        context.commands.draw_rect(
+-            Color::WHITE,
+-            context.transform_stack.transform().matrix * mask,
+-        );
+-        context.commands.pop_mask();
++        if clip {
++            context.commands.deactivate_mask();
++            context.commands.draw_rect(
++                Color::WHITE,
++                context.transform_stack.transform().matrix * mask,
++            );
++            context.commands.pop_mask();
++        }
+ 
+         if let Some(draw_caret_command) = render_state.draw_caret_command {
+             context.commands.commands.push(draw_caret_command);
 diff --git a/core/src/external.rs b/core/src/external.rs
-index 071f1e73..9bbc4057 100644
+index 071f1e73..982d6d8c 100644
 --- a/core/src/external.rs
 +++ b/core/src/external.rs
-@@ -424,3 +424,247 @@ impl<'gc> ExternalInterface<'gc> {
+@@ -342,6 +342,13 @@ impl<'gc> Callback<'gc> {
+ 
+ pub trait FsCommandProvider {
+     fn on_fs_command(&self, command: &str, args: &str) -> bool;
++
++    /// The same, with the movie that sent the command: an AVM1 `fscommand` arrives here, so
++    /// the provider can call back into the movie before the command returns, as gameswf let
++    /// its host do (Supernova).
++    fn on_fs_command_in(&self, _context: &mut UpdateContext<'_>, command: &str, args: &str) -> bool {
++        self.on_fs_command(command, args)
++    }
+ }
+ 
+ pub struct NullFsCommandProvider;
+@@ -369,7 +376,7 @@ pub struct ExternalInterface<'gc> {
+     provider: Option<Rc<dyn ExternalInterfaceProvider>>,
+     callbacks: BTreeMap<String, Callback<'gc>>,
+     #[collect(require_static)]
+-    fs_commands: Box<dyn FsCommandProvider>,
++    fs_commands: Rc<dyn FsCommandProvider>,
+ }
+ 
+ impl<'gc> ExternalInterface<'gc> {
+@@ -380,7 +387,7 @@ impl<'gc> ExternalInterface<'gc> {
+         Self {
+             provider: provider.map(Rc::from),
+             callbacks: Default::default(),
+-            fs_commands,
++            fs_commands: Rc::from(fs_commands),
+         }
+     }
+ 
+@@ -420,7 +427,267 @@ impl<'gc> ExternalInterface<'gc> {
+         self.provider.as_ref().and_then(|p| p.get_id())
+     }
+ 
++    pub fn fs_command_provider(&self) -> Rc<dyn FsCommandProvider> {
++        self.fs_commands.clone()
++    }
++
+     pub fn invoke_fs_command(&self, command: &str, args: &str) -> bool {
          self.fs_commands.on_fs_command(command, args)
      }
  }
@@ -316,11 +460,23 @@ index 071f1e73..9bbc4057 100644
 +    }
 +    out
 +}
++
++/// The property `name` of the AVM1 object at `target` (for looking into a running screen).
++pub fn get_avm1_property(context: &mut UpdateContext<'_>, target: &str, name: &str) -> Value {
++    with_avm1_object(context, target, |activation, object| {
++        let name = AvmString::new_utf8(activation.gc(), name);
++        match object.get(name, activation) {
++            Ok(value) => Value::from_avm1(activation, value).unwrap_or(Value::Null),
++            Err(_) => Value::Null,
++        }
++    })
++    .unwrap_or(Value::Null)
++}
 diff --git a/core/src/player.rs b/core/src/player.rs
-index c3756621..b63f4e74 100644
+index c3756621..9cd6ff4f 100644
 --- a/core/src/player.rs
 +++ b/core/src/player.rs
-@@ -2535,6 +2535,71 @@ impl Player {
+@@ -2535,6 +2535,76 @@ impl Player {
          })
      }
  
@@ -382,6 +538,11 @@ index c3756621..b63f4e74 100644
 +    /// Paths of the text fields named with `marker`; see `external::text_field_paths`.
 +    pub fn text_field_paths(&mut self, marker: &str) -> Vec<String> {
 +        self.mutate_with_update_context(|context| crate::external::text_field_paths(context, marker))
++    }
++
++    /// A property of the AVM1 object at `target`; see `external::get_avm1_property`.
++    pub fn get_avm1_property(&mut self, target: &str, name: &str) -> ExternalValue {
++        self.mutate_with_update_context(|context| crate::external::get_avm1_property(context, target, name))
 +    }
 +
 +    /// Replace an exported bitmap's pixels; see `external::replace_bitmap`.

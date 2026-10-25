@@ -65,7 +65,7 @@ The world (server) list shown on the title screen. Mode `notencrypt`.
 
 ```json
 {"server_list": [{
-  "server_id": 1, "server_name": "Supernova",
+  "server_id": 1, "server_name": "SN01(New)",
   "server_root_url": "http://host:8000/world/1/",
   "server_root_https_url": "optional, preferred over server_root_url",
   "language": "all", "busy": 0, "is_local": false,
@@ -73,6 +73,9 @@ The world (server) list shown on the title screen. Mode `notencrypt`.
   "merge_server_id": 2, "merge_server_name": "optional, for merged worlds"
 }]}
 ```
+
+For a server with status `new` the client drops the last five characters of the name: the
+original servers were called like `EN01(New)`, and the login screen shows `EN01`.
 
 The chosen entry's `server_root_url` becomes the base URL for all game requests.
 

@@ -13,7 +13,8 @@ APK_PATH = os.environ.get("SUPERNOVA_APK")
 APK_DIR = Path(os.environ.get("SUPERNOVA_APK_DIR", REPO_ROOT / "apk"))
 
 WORLD_ID = int(os.environ.get("SUPERNOVA_WORLD_ID", "1"))
-WORLD_NAME = os.environ.get("SUPERNOVA_WORLD_NAME", "Supernova")
+# A short code like the original servers' ("EN01"): the login screen shows it next to the account.
+WORLD_NAME = os.environ.get("SUPERNOVA_WORLD_NAME", "SN01")
 
 # For CI and tests only: start without an APK. World endpoints then answer 503.
 REQUIRE_CLIENT_KEY = os.environ.get("SUPERNOVA_REQUIRE_KEY", "1") != "0"

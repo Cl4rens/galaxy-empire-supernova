@@ -27,6 +27,8 @@ def test_gateway():
     assert client.get("http://testserver//servers/track_quest?event=x").status_code == 200
     world_entry = client.get("/servers.json").json()["server_list"][0]
     assert world_entry["server_root_url"].endswith("/world/1/")
+    # a new server's name ends in "(New)", which the client cuts off ("SN01")
+    assert world_entry["status"] == "new" and world_entry["server_name"].endswith("(New)")
 
 
 def test_crypto_roundtrip():

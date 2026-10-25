@@ -75,12 +75,20 @@ impl Arg {
 /// The game's texts by key, e.g. "LC_MENU_Buy" -> "Buy"
 pub type Texts = HashMap<String, String>;
 
+/// The answer to a call on a Flash object: at once, or from a job the engine runs once it let go
+/// of its state (the job may run ActionScript, which may call the scripts, which may call the
+/// engine again).
+pub enum Call {
+    Done(Vec<Arg>),
+    Later(Box<dyn FnOnce() -> Vec<Arg>>),
+}
+
 /// What the game does with its Flash screens. The headless recorder only remembers the calls;
 /// the Ruffle screens draw them.
 pub trait Screens {
     /// A method call on a Flash object (Load, InvokeASCallback, Update, ReplaceTexture, ...);
     /// `texts` is the game's text table (`LC_MENU_X` -> text) as loaded so far.
-    fn call(&mut self, assets: &Assets, texts: &Texts, object: &str, method: &str, args: &[Arg]) -> Vec<Arg>;
+    fn call(&mut self, assets: &Assets, texts: &Texts, object: &str, method: &str, args: &[Arg]) -> Call;
     /// Commands the screens sent since the last call: (object, command, argument).
     fn commands(&mut self) -> Vec<(String, String, String)> {
         Vec::new()
@@ -96,9 +104,9 @@ pub struct Recorder {
 }
 
 impl Screens for Recorder {
-    fn call(&mut self, _assets: &Assets, _texts: &Texts, object: &str, method: &str, args: &[Arg]) -> Vec<Arg> {
+    fn call(&mut self, _assets: &Assets, _texts: &Texts, object: &str, method: &str, args: &[Arg]) -> Call {
         self.calls.push((object.to_string(), method.to_string(), args.to_vec()));
-        if method == "ReplaceTexture" { vec![Arg::Num(1.0), Arg::Num(1.0)] } else { Vec::new() }
+        Call::Done(if method == "ReplaceTexture" { vec![Arg::Num(1.0), Arg::Num(1.0)] } else { Vec::new() })
     }
     fn as_any(&mut self) -> &mut dyn std::any::Any {
         self
@@ -220,6 +228,15 @@ impl Engine {
         let lua = unsafe { Lua::unsafe_new() };
         let native = native_table(&lua, &state)?;
         lua.load(PRELUDE).set_name("=prelude").call::<()>(native)?;
+        // Flash commands reach the scripts at once, as with gameswf (see screens.rs)
+        let weak = lua.weak();
+        crate::screens::set_fscommand_handler(Some(std::rc::Rc::new(move |object: &str, command: &str, arg: &str| {
+            if let Some(lua) = weak.try_upgrade()
+                && let Err(e) = dispatch_fscommand(&lua, object, command, arg)
+            {
+                tracing::warn!("{object}: fscommand {command}: {e:#}");
+            }
+        })));
         Ok(Self { lua, state, last_step: Instant::now() })
     }
 
@@ -314,11 +331,7 @@ impl Engine {
 
     /// What a Flash file does when the player presses something: it sends a command.
     pub fn fscommand(&self, class: &str, command: &str, arg: &str) -> Result<()> {
-        let classes: Table = self.lua.globals().raw_get("__sn_flash_classes")?;
-        let class_table: Table = classes.get(class).map_err(|_| anyhow!("no Flash class {class}"))?;
-        let handler: Function = class_table.get("fscommand").map_err(|_| anyhow!("{class} has no fscommand handler"))?;
-        handler.call::<()>((self.lua.create_table()?, command, arg))?;
-        Ok(())
+        dispatch_fscommand(&self.lua, class, command, arg)
     }
 
     /// A finger (or the mouse) on the screen, in the game's 640x960 coordinates: the game's
@@ -381,6 +394,15 @@ impl Engine {
             .unwrap_or_default();
         names.split(',').filter(|s| !s.is_empty()).map(str::to_string).collect()
     }
+}
+
+/// Hand a Flash command to the scripts: the fscommand handler of the object's Flash class.
+fn dispatch_fscommand(lua: &Lua, class: &str, command: &str, arg: &str) -> Result<()> {
+    let classes: Table = lua.globals().raw_get("__sn_flash_classes")?;
+    let class_table: Table = classes.get(class).map_err(|_| anyhow!("no Flash class {class}"))?;
+    let handler: Function = class_table.get("fscommand").map_err(|_| anyhow!("{class} has no fscommand handler"))?;
+    handler.call::<()>((lua.create_table()?, command, arg))?;
+    Ok(())
 }
 
 fn json_to_lua() -> SerializeOptions {
@@ -535,10 +557,14 @@ fn native_table(lua: &Lua, state: &Rc<RefCell<State>>) -> Result<Table> {
         let object = arg(&args, 0);
         let method = arg(&args, 1);
         let rest: Vec<Arg> = args.iter().skip(2).map(Arg::from_lua).collect();
-        let result = {
+        let call = {
             let mut s = st.borrow_mut();
             let State { assets, texts, screens, .. } = &mut *s;
             screens.call(assets, texts, &object, &method, &rest)
+        };
+        let result = match call {
+            Call::Done(result) => result,
+            Call::Later(job) => job(),
         };
         let values: Vec<Value> = result.iter().map(|r| r.to_lua(lua)).collect::<mlua::Result<_>>()?;
         Ok(MultiValue::from_vec(values))

@@ -1,12 +1,13 @@
 //! Play the game with the Ruffle screens, without a window, and save what it shows at each
-//! step of the login.
+//! step of the login, then after each tap in SUPERNOVA_TAPS ("x,y;x,y" in the game's 640x960
+//! coordinates).
 //!
 //!     screenshots <apk> [server] [save dir] [out dir]
 
 use std::path::PathBuf;
 
 use anyhow::{Result, bail};
-use supernova_engine::engine::Engine;
+use supernova_engine::engine::{Engine, Touch};
 use supernova_engine::screens::{HEIGHT, RuffleScreens, WIDTH};
 
 fn shot(engine: &mut Engine, out: &PathBuf, name: &str) -> Result<()> {
@@ -54,18 +55,37 @@ fn main() -> Result<()> {
     }
     engine.run(5.0, |_| false)?;
     shot(&mut engine, &out, "4-city")?;
-    let mut state = engine.state.borrow_mut();
-    {
+    // SUPERNOVA_TAPS="586,255;64,38": taps in the game's 640x960 coordinates, a picture after each
+    let taps = std::env::var("SUPERNOVA_TAPS").unwrap_or_default();
+    for (n, tap) in taps.split(';').filter(|t| !t.is_empty()).enumerate() {
+        let (x, y) = tap.split_once(',').unwrap_or_default();
+        let (x, y) = (x.trim().parse()?, y.trim().parse()?);
+        engine.touch(Touch::Pressed, x, y)?;
+        engine.run(0.1, |_| false)?;
+        engine.touch(Touch::Released, x, y)?;
+        engine.run(3.0, |_| false)?;
+        shot(&mut engine, &out, &format!("5-tap{}", n + 1))?;
+    }
+    // SUPERNOVA_PROBE="GameUIQuest_F0:SC_TEXT:textHeight,_height": properties of the text fields
+    // of a screen whose name contains the given part
+    if let Ok(probe) = std::env::var("SUPERNOVA_PROBE") {
+        let mut parts = probe.splitn(3, ':');
+        let (object, name, properties) = (parts.next().unwrap_or(""), parts.next().unwrap_or(""), parts.next().unwrap_or(""));
+        let mut state = engine.state.borrow_mut();
         let screens = state.screens.as_any().downcast_mut::<RuffleScreens>().unwrap();
-        for object in ["GameCommonInterface_F0", "GameNews_F0", "GameCommonBG_F0"] {
-            if let Some(p) = screens.player(object) {
-                let mut p = p.lock().unwrap();
-                let depth = p.call_avm1_function("_root", "getNextHighestDepth", vec![]);
-                let bounds = p.call_avm1_function("_root", "getBounds", vec![]);
-                println!("{object}: depth {depth:?} bounds {bounds:?}");
+        if let Some(player) = screens.player(object) {
+            let mut p = player.lock().unwrap();
+            // "@path|path": these objects instead of text fields
+            let paths: Vec<String> = match name.strip_prefix('@') {
+                Some(list) => list.split('|').map(str::to_string).collect(),
+                None => p.text_field_paths(name),
+            };
+            for path in paths {
+                let values: Vec<String> =
+                    properties.split(',').map(|prop| format!("{prop}={:?}", p.get_avm1_property(&path, prop))).collect();
+                println!("{path}: {}", values.join(" "));
             }
         }
     }
-    println!("missing: {:?}", state.screens.as_any().downcast_mut::<RuffleScreens>().unwrap().missing);
     Ok(())
 }

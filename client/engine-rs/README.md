@@ -23,7 +23,7 @@ cargo build --release
 | `SetLineMax(target, true, min)` | `fit_avm1_text(target, min, ...)`, after every frame |
 | `ReplaceTexture(slot, picture)` | `replace_bitmap(slot, pixels)` |
 | native buttons (clips named `btn...`) | `find_avm1_button(x, y, "btn")`, then `focus_in`/`released` and `on_clicked` from `screens.rs` |
-| names without regard to case, `"a,b,".split(",")` gives two | `set_gameswf_compat(true)` |
+| names without regard to case, `"a,b,".split(",")` gives two, text not clipped to its field | `set_gameswf_compat(true)` |
 | scripts of attached clips run at once | `call_avm1_function` runs the queued actions before it returns |
 | text fields named `..._SLHM_...` fit one line | `text_field_paths("_SLHM")`, then `fit_avm1_text` from `screens.rs` |
 

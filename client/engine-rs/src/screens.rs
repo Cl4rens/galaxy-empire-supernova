@@ -2,17 +2,27 @@
 //!
 //! The scripts call methods on their Flash objects (Load, InvokeASCallback, Update, Render,
 //! OnTouchPressed, ...); Flash commands come back through Ruffle's FsCommandProvider. Each
-//! player draws into its own texture, transparently; `frame()` stacks them in the order the
-//! game rendered them.
+//! player draws into its own texture, transparently; `layer_textures()` gives them in the order
+//! the game rendered them.
+//!
+//! gameswf handed a Flash command to the scripts at once, while the movie waited, and the
+//! scripts could call back into it (lists fill an entry the moment they add it, and measure it
+//! right after). So does this: a command goes to the handler `set_fscommand_handler()` set,
+//! together with the running movie, and calls into that object meanwhile go to the running
+//! movie. For that the engine calls into Ruffle only as `Call::Later` jobs, which it runs after
+//! it let go of its own state.
 
-use std::collections::HashMap;
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Result, anyhow};
 use ruffle_core::backend::ui::FontDefinition;
+use ruffle_core::context::UpdateContext;
 use ruffle_core::events::MouseButton;
+use ruffle_core::external::{self, FsCommandProvider, Value as ExternalValue};
 use ruffle_core::font::{DefaultFont, FontFileData};
-use ruffle_core::external::{FsCommandProvider, Value as ExternalValue};
 use ruffle_core::limits::ExecutionLimit;
 use ruffle_core::tag_utils::SwfMovieData;
 use ruffle_core::{FloatDuration, Player, PlayerBuilder, PlayerEvent};
@@ -23,16 +33,39 @@ use ruffle_render_wgpu::wgpu;
 
 use crate::assets::Assets;
 use crate::convert::{Converter, FONT};
-use crate::engine::{Arg, Screens, Texts};
+use crate::engine::{Arg, Call, Screens, Texts};
 
 pub const WIDTH: u32 = 640;
 pub const HEIGHT: u32 = 960;
 
 type Commands = Arc<Mutex<Vec<(String, String, String)>>>;
+/// (object, command, argument): hands a Flash command to the scripts
+pub type FsCommandHandler = Rc<dyn Fn(&str, &str, &str)>;
+
+thread_local! {
+    static HANDLER: RefCell<Option<FsCommandHandler>> = const { RefCell::new(None) };
+    /// the movies running a Flash command right now, innermost last: (object, its context)
+    static RUNNING: RefCell<Vec<(String, *mut ())>> = const { RefCell::new(Vec::new()) };
+}
+
+/// From now on Flash commands go to `handler` at once (without one they wait in a queue for
+/// `Screens::commands()`).
+pub fn set_fscommand_handler(handler: Option<FsCommandHandler>) {
+    HANDLER.with(|h| *h.borrow_mut() = handler);
+}
 
 struct Sender {
     object: String,
     commands: Commands,
+}
+
+/// Takes a movie off `RUNNING` when its command is done, also if the handler panics.
+struct Running;
+
+impl Drop for Running {
+    fn drop(&mut self) {
+        RUNNING.with(|r| r.borrow_mut().pop());
+    }
 }
 
 impl FsCommandProvider for Sender {
@@ -41,20 +74,125 @@ impl FsCommandProvider for Sender {
         self.commands.lock().unwrap().push((self.object.clone(), command.to_string(), args.to_string()));
         true
     }
+
+    fn on_fs_command_in(&self, context: &mut UpdateContext<'_>, command: &str, args: &str) -> bool {
+        let Some(handler) = HANDLER.with(|h| h.borrow().clone()) else {
+            return self.on_fs_command(command, args);
+        };
+        tracing::debug!("{}: fscommand {command} {args}", self.object);
+        let context = context as *mut UpdateContext<'_> as *mut ();
+        RUNNING.with(|r| r.borrow_mut().push((self.object.clone(), context)));
+        let _running = Running;
+        handler(&self.object, command, args);
+        true
+    }
+}
+
+/// What the engine does to a screen's movie: through its player, or, while the movie runs a
+/// Flash command, through the context it came with.
+trait Movie {
+    fn call(&mut self, target: &str, function: &str, args: Vec<ExternalValue>) -> ExternalValue;
+    fn set_property(&mut self, target: &str, name: &str, value: ExternalValue) -> bool;
+    fn gray(&mut self, target: &str, gray: bool) -> bool;
+    fn replace_bitmap(&mut self, name: &str, pixels: Box<dyn FnOnce(u32, u32) -> Vec<u8>>) -> bool;
+    fn fit_text(&mut self, fit: &Fit) -> Option<(f64, String)>;
+    fn text_field_paths(&mut self, marker: &str) -> Vec<String>;
+    fn find_button(&mut self, x: f64, y: f64) -> Option<String>;
+}
+
+impl Movie for Player {
+    fn call(&mut self, target: &str, function: &str, args: Vec<ExternalValue>) -> ExternalValue {
+        self.call_avm1_function(target, function, args)
+    }
+    fn set_property(&mut self, target: &str, name: &str, value: ExternalValue) -> bool {
+        self.set_avm1_property(target, name, value)
+    }
+    fn gray(&mut self, target: &str, gray: bool) -> bool {
+        self.set_avm1_gray(target, gray)
+    }
+    fn replace_bitmap(&mut self, name: &str, pixels: Box<dyn FnOnce(u32, u32) -> Vec<u8>>) -> bool {
+        Player::replace_bitmap(self, name, pixels)
+    }
+    fn fit_text(&mut self, fit: &Fit) -> Option<(f64, String)> {
+        self.fit_avm1_text(&fit.target, fit.min_scale, fit.base_size, fit.text.as_deref())
+    }
+    fn text_field_paths(&mut self, marker: &str) -> Vec<String> {
+        Player::text_field_paths(self, marker)
+    }
+    fn find_button(&mut self, x: f64, y: f64) -> Option<String> {
+        self.find_avm1_button(x, y, BUTTON_PREFIX)
+    }
+}
+
+impl Movie for UpdateContext<'_> {
+    fn call(&mut self, target: &str, function: &str, args: Vec<ExternalValue>) -> ExternalValue {
+        let result = external::call_avm1_function(self, target, function, args);
+        Player::run_actions(self);
+        result
+    }
+    fn set_property(&mut self, target: &str, name: &str, value: ExternalValue) -> bool {
+        external::set_avm1_property(self, target, name, value)
+    }
+    fn gray(&mut self, target: &str, gray: bool) -> bool {
+        external::set_avm1_gray(self, target, gray)
+    }
+    fn replace_bitmap(&mut self, name: &str, pixels: Box<dyn FnOnce(u32, u32) -> Vec<u8>>) -> bool {
+        external::replace_bitmap(self, name, pixels)
+    }
+    fn fit_text(&mut self, fit: &Fit) -> Option<(f64, String)> {
+        external::fit_avm1_text(self, &fit.target, fit.min_scale, fit.base_size, fit.text.as_deref())
+    }
+    fn text_field_paths(&mut self, marker: &str) -> Vec<String> {
+        external::text_field_paths(self, marker)
+    }
+    fn find_button(&mut self, x: f64, y: f64) -> Option<String> {
+        external::find_avm1_button(self, x, y, BUTTON_PREFIX)
+    }
+}
+
+/// Run `f` on the movie of `object`: the running one if it is running a Flash command, else
+/// through its player. None when the player is busy elsewhere.
+fn with_movie<R>(object: &str, player: &Mutex<Player>, f: impl FnOnce(&mut dyn Movie) -> R) -> Option<R> {
+    let running = RUNNING.with(|r| r.borrow().iter().rev().find(|(o, _)| o == object).map(|(_, c)| *c));
+    match running {
+        // SAFETY: the movie is running a Flash command further up this thread's stack, which
+        // handed out its context and waits for the command to come back
+        Some(context) => Some(f(unsafe { &mut *(context as *mut UpdateContext<'static>) })),
+        None => match player.try_lock() {
+            Ok(mut p) => Some(f(&mut *p)),
+            Err(_) => {
+                tracing::warn!("{object}: the movie is busy");
+                None
+            }
+        },
+    }
+}
+
+fn running(object: &str) -> bool {
+    RUNNING.with(|r| r.borrow().iter().any(|(o, _)| o == object))
+}
+
+/// One Flash object: its player and what the engine keeps for it.
+struct Screen {
+    player: Arc<Mutex<Player>>,
+    extras: Rc<RefCell<Extras>>,
+}
+
+#[derive(Default)]
+struct Extras {
+    /// text fields that shrink their text to fit
+    fits: Vec<Fit>,
+    buttons: Buttons,
 }
 
 pub struct RuffleScreens {
     descriptors: Arc<Descriptors>,
     converter: Converter,
-    players: HashMap<String, Arc<Mutex<Player>>>,
+    screens: HashMap<String, Screen>,
     commands: Commands,
     /// objects in the order the game rendered them this frame
     pub rendered: Vec<String>,
     pub missing: HashMap<String, u32>,
-    /// text fields that shrink their text to fit (SetLineMax), per object
-    fits: HashMap<String, Vec<Fit>>,
-    /// gameswf's native buttons, per object
-    buttons: HashMap<String, Buttons>,
 }
 
 /// gameswf drove clips named "btn..." itself: a touch plays their "focus_in" frames, leaving
@@ -64,10 +202,13 @@ pub struct RuffleScreens {
 struct Buttons {
     /// the button the finger went down on, and whether it is still on it
     pressed: Option<(String, bool)>,
-    disabled: std::collections::HashSet<String>,
+    disabled: HashSet<String>,
 }
 
 const BUTTON_PREFIX: &str = "btn";
+
+/// What to play on a button: (button, frame label, callback or "")
+type ButtonAction = (String, &'static str, &'static str);
 
 /// "_level0.panel.btnOk" as the scripts write it: "_root.panel.btnOk"
 fn script_path(path: &str) -> String {
@@ -77,62 +218,58 @@ fn script_path(path: &str) -> String {
     }
 }
 
-fn play(player: &mut Player, button: &str, label: &str, callback: &str) {
-    player.call_avm1_function(button, "gotoAndPlay", vec![ExternalValue::String(label.to_string())]);
+fn play(movie: &mut dyn Movie, (button, label, callback): &ButtonAction) {
+    movie.call(button, "gotoAndPlay", vec![ExternalValue::String(label.to_string())]);
     if !callback.is_empty() {
-        player.call_avm1_function(button, callback, vec![]);
+        movie.call(button, callback, vec![]);
     }
 }
 
 impl Buttons {
-    /// Returns whether the touch is on a button.
-    fn touch(&mut self, player: &mut Player, method: &str, x: f64, y: f64) -> bool {
-        let under = player.find_avm1_button(x, y, BUTTON_PREFIX).map(|p| script_path(&p));
+    /// What a touch on `under` (the button there, if any) does; and whether it is on a button.
+    fn touch(&mut self, method: &str, under: Option<String>) -> (bool, Option<ButtonAction>) {
         match method {
             "OnTouchPressed" => {
-                let Some(button) = under else { return false };
-                if !self.disabled.contains(&button) {
-                    play(player, &button, "focus_in", "on_focus_in");
-                    self.pressed = Some((button, true));
+                let Some(button) = under else { return (false, None) };
+                if self.disabled.contains(&button) {
+                    return (true, None);
                 }
-                true
+                self.pressed = Some((button.clone(), true));
+                (true, Some((button, "focus_in", "on_focus_in")))
             }
             "OnTouchMoved" => {
-                let Some((button, inside)) = &mut self.pressed else { return false };
+                let Some((button, inside)) = &mut self.pressed else { return (false, None) };
                 let now_inside = under.as_deref() == Some(button.as_str());
-                if now_inside != *inside {
-                    *inside = now_inside;
-                    let (label, callback) = if now_inside { ("focus_in", "on_focus_in") } else { ("focus_out", "on_focus_out") };
-                    play(player, button, label, callback);
+                if now_inside == *inside {
+                    return (true, None);
                 }
-                true
+                *inside = now_inside;
+                let (label, callback) = if now_inside { ("focus_in", "on_focus_in") } else { ("focus_out", "on_focus_out") };
+                (true, Some((button.clone(), label, callback)))
             }
-            _ => {
-                let Some((button, inside)) = self.pressed.take() else { return false };
-                if inside {
-                    play(player, &button, "released", "on_clicked");
-                }
-                true
-            }
+            _ => match self.pressed.take() {
+                Some((button, true)) => (true, Some((button, "released", "on_clicked"))),
+                Some(_) => (true, None),
+                None => (false, None),
+            },
         }
     }
 
-    fn set_enabled(&mut self, player: &mut Player, button: &str, enabled: bool) {
+    fn set_enabled(&mut self, button: &str, enabled: bool) -> Option<ButtonAction> {
         let button = script_path(button);
         if enabled {
-            if self.disabled.remove(&button) {
-                play(player, &button, "activated", "");
-            }
+            self.disabled.remove(&button).then(|| (button, "activated", ""))
         } else {
             if self.pressed.as_ref().is_some_and(|(b, _)| *b == button) {
                 self.pressed = None;
             }
-            play(player, &button, "disabled", "");
-            self.disabled.insert(button);
+            self.disabled.insert(button.clone());
+            Some((button, "disabled", ""))
         }
     }
 }
 
+#[derive(Clone)]
 struct Fit {
     target: String,
     min_scale: f64,
@@ -145,6 +282,30 @@ struct Fit {
 /// Text fields named with this keep their text on one line, smaller if need be (gameswf did it)
 const SINGLE_LINE_MARK: &str = "_SLHM";
 const SINGLE_LINE_MIN_SCALE: f64 = 0.5;
+
+/// Keep the fitted text of the fields, find new single-line fields and fit what changed.
+fn fit_texts(movie: &mut dyn Movie, extras: &RefCell<Extras>) {
+    // the fitting runs ActionScript, which may call the scripts and they this object: no borrow
+    let mut fits = std::mem::take(&mut extras.borrow_mut().fits);
+    let named: HashSet<String> = movie.text_field_paths(SINGLE_LINE_MARK).into_iter().collect();
+    fits.retain(|f| !f.by_name || named.contains(&f.target));
+    for target in named {
+        if !fits.iter().any(|f| f.target == target) {
+            fits.push(Fit { target, min_scale: SINGLE_LINE_MIN_SCALE, base_size: None, text: None, by_name: true });
+        }
+    }
+    for fit in fits.iter_mut() {
+        if let Some((base, text)) = movie.fit_text(fit) {
+            fit.base_size = Some(base);
+            fit.text = Some(text);
+        }
+    }
+    let mut extras = extras.borrow_mut();
+    let added = std::mem::take(&mut extras.fits); // SetLineMax meanwhile
+    fits.retain(|f| !added.iter().any(|a| a.target == f.target));
+    fits.extend(added);
+    extras.fits = fits;
+}
 
 fn to_external(arg: &Arg) -> ExternalValue {
     match arg {
@@ -176,9 +337,9 @@ fn from_external(value: ExternalValue) -> Arg {
 impl RuffleScreens {
     pub fn new() -> Result<Self> {
         // the screens' ActionScript was written for gameswf: it ignored the case of names
-        // (`htmltext` for `htmlText`) and left the empty piece after a trailing delimiter out of
-        // `split` (lists built from "ab")
-        ruffle_core::external::set_gameswf_compat(true);
+        // (`htmltext` for `htmlText`), left the empty piece after a trailing delimiter out of
+        // `split` (lists built from "a\x01b\x01"), and drew text past the bottom of its field
+        external::set_gameswf_compat(true);
         let instance = create_wgpu_instance(wgpu::Backends::all(), wgpu::BackendOptions::default(), None);
         let (adapter, device, queue) = futures::executor::block_on(request_adapter_and_device(
             wgpu::Backends::all(),
@@ -190,18 +351,15 @@ impl RuffleScreens {
         Ok(Self {
             descriptors: Arc::new(Descriptors::new(instance, adapter, device, queue)),
             converter: Converter::default(),
-            players: HashMap::new(),
+            screens: HashMap::new(),
             commands: Arc::default(),
             rendered: Vec::new(),
             missing: HashMap::new(),
-            fits: HashMap::new(),
-            buttons: HashMap::new(),
         })
     }
 
-    /// RGBA pixels of a picture the game names for ReplaceTexture: a data2 file or a
-    /// downloaded one, with its size.
-    /// The pixels premultiplied by their alpha, as Ruffle keeps bitmaps.
+    /// RGBA pixels of a picture the game names for ReplaceTexture (a data2 file or a downloaded
+    /// one), premultiplied by their alpha as Ruffle keeps bitmaps.
     fn picture(&mut self, assets: &Assets, name: &str) -> Option<image::RgbaImage> {
         let data = self.converter.picture(assets, name).or_else(|| std::fs::read(name).ok())?;
         let mut picture = image::load_from_memory(&data).ok()?.to_rgba8();
@@ -218,7 +376,8 @@ impl RuffleScreens {
         self.descriptors.clone()
     }
 
-    fn load(&mut self, assets: &Assets, texts: &Texts, object: &str, path: &str) -> Result<()> {
+    /// Make the player of a screen; its first frame runs in the returned job.
+    fn load(&mut self, assets: &Assets, texts: &Texts, object: &str, path: &str) -> Result<Call> {
         let swf = self.converter.screen(assets, texts, path)?;
         tracing::debug!("{object}: load {path}");
         if let Some(dir) = std::env::var_os("SUPERNOVA_DUMP_SCREENS") {
@@ -250,19 +409,22 @@ impl RuffleScreens {
                 }
             }
             p.set_window_mode("transparent");
+        }
+        self.screens.insert(object.to_string(), Screen { player: player.clone(), extras: Rc::default() });
+        Ok(Call::Later(Box::new(move || {
+            let mut p = player.lock().unwrap();
             p.preload(&mut ExecutionLimit::none());
             p.run_frame();
-        }
-        self.players.insert(object.to_string(), player);
-        Ok(())
+            Vec::new()
+        })))
     }
 
     /// Every screen the game rendered this frame, bottom first, as RGBA pixels.
     pub fn layers(&mut self) -> Vec<(String, image::RgbaImage)> {
         let mut out = Vec::new();
         for object in self.rendered.clone() {
-            let Some(player) = self.players.get(&object) else { continue };
-            let mut p = player.lock().unwrap();
+            let Some(screen) = self.screens.get(&object) else { continue };
+            let mut p = screen.player.lock().unwrap();
             p.render();
             let Some(renderer) = <dyn std::any::Any>::downcast_mut::<WgpuRenderBackend<TextureTarget>>(p.renderer_mut()) else { continue };
             if let Some(layer) = renderer.capture_frame() {
@@ -277,8 +439,8 @@ impl RuffleScreens {
     pub fn layer_textures(&mut self) -> Vec<wgpu::Texture> {
         let mut out = Vec::new();
         for object in &self.rendered {
-            let Some(player) = self.players.get(object) else { continue };
-            let mut p = player.lock().unwrap();
+            let Some(screen) = self.screens.get(object) else { continue };
+            let mut p = screen.player.lock().unwrap();
             p.render();
             if let Some(renderer) = <dyn std::any::Any>::downcast_ref::<WgpuRenderBackend<TextureTarget>>(p.renderer()) {
                 out.push(renderer.target().texture.clone());
@@ -297,104 +459,119 @@ impl RuffleScreens {
     }
 
     pub fn player(&self, object: &str) -> Option<Arc<Mutex<Player>>> {
-        self.players.get(object).cloned()
+        self.screens.get(object).map(|s| s.player.clone())
     }
 
     pub fn objects(&self) -> impl Iterator<Item = (&String, &Arc<Mutex<Player>>)> {
-        self.players.iter()
+        self.screens.iter().map(|(o, s)| (o, &s.player))
     }
 }
 
 impl Screens for RuffleScreens {
-    fn call(&mut self, assets: &Assets, texts: &Texts, object: &str, method: &str, args: &[Arg]) -> Vec<Arg> {
+    fn call(&mut self, assets: &Assets, texts: &Texts, object: &str, method: &str, args: &[Arg]) -> Call {
         let text = |i: usize| args.get(i).map(Arg::text).unwrap_or_default();
         tracing::trace!("{object}.{method}");
         if method == "Load" {
-            if let Err(e) = self.load(assets, texts, object, &text(0)) {
+            return self.load(assets, texts, object, &text(0)).unwrap_or_else(|e| {
                 tracing::warn!("{object}: cannot load {}: {e}", text(0));
-            }
-            return Vec::new();
+                Call::Done(Vec::new())
+            });
         }
-        let Some(player) = self.players.get(object).cloned() else {
-            return Vec::new();
+        if method == "Render" {
+            self.rendered.retain(|o| o != object);
+            self.rendered.push(object.to_string());
+            return Call::Done(Vec::new());
+        }
+        let Some(screen) = self.screens.get(object) else {
+            return Call::Done(Vec::new());
         };
-        let mut p = player.lock().unwrap();
-        let point = || (args.first().map(Arg::text).and_then(|s| s.parse().ok()).unwrap_or(0.0),
-                        args.get(1).map(Arg::text).and_then(|s| s.parse().ok()).unwrap_or(0.0));
+        let (player, extras, name) = (screen.player.clone(), screen.extras.clone(), object.to_string());
         match method {
             "InvokeASCallback" => {
                 let target = match args.first() {
                     Some(Arg::Str(t)) if !t.is_empty() => t.clone(),
                     _ => "_root".to_string(),
                 };
-                let values: Vec<ExternalValue> = args.iter().skip(2).map(to_external).collect();
-                let result = p.call_avm1_function(&target, &text(1), values.clone());
-                tracing::debug!("{object}: {target}.{}({values:?}) = {result:?}", text(1));
-                vec![from_external(result)]
+                let (function, values): (String, Vec<ExternalValue>) = (text(1), args.iter().skip(2).map(to_external).collect());
+                Call::Later(Box::new(move || {
+                    tracing::debug!("{name}: {target}.{function}({values:?})");
+                    let result = with_movie(&name, &player, |m| m.call(&target, &function, values));
+                    vec![from_external(result.unwrap_or(ExternalValue::Undefined))]
+                }))
             }
             "Update" => {
                 let dt = args.first().map(Arg::text).and_then(|s| s.parse::<f64>().ok()).unwrap_or(33.0);
-                p.tick(FloatDuration::from_millis(dt));
-                let fits = self.fits.entry(object.to_string()).or_default();
-                let named: std::collections::HashSet<String> = p.text_field_paths(SINGLE_LINE_MARK).into_iter().collect();
-                fits.retain(|f| !f.by_name || named.contains(&f.target));
-                for target in named {
-                    if !fits.iter().any(|f| f.target == target) {
-                        let min_scale = SINGLE_LINE_MIN_SCALE;
-                        fits.push(Fit { target, min_scale, base_size: None, text: None, by_name: true });
+                Call::Later(Box::new(move || {
+                    if running(&name) {
+                        return Vec::new(); // the movie is in the middle of a command
                     }
-                }
-                for fit in fits.iter_mut() {
-                    if let Some((base, text)) = p.fit_avm1_text(&fit.target, fit.min_scale, fit.base_size, fit.text.as_deref()) {
-                        fit.base_size = Some(base);
-                        fit.text = Some(text);
+                    if let Ok(mut p) = player.try_lock() {
+                        p.tick(FloatDuration::from_millis(dt));
+                        fit_texts(&mut *p, &extras);
                     }
-                }
-                Vec::new()
-            }
-            "Render" => {
-                drop(p);
-                self.rendered.retain(|o| o != object);
-                self.rendered.push(object.to_string());
-                Vec::new()
+                    Vec::new()
+                }))
             }
             "OnTouchPressed" | "OnTouchMoved" | "OnTouchReleased" => {
-                // true when the finger is on something of this screen that reacts to it, so the
-                // game does not hand the touch to the screens below
-                let (x, y) = point();
-                let on_button = self.buttons.entry(object.to_string()).or_default().touch(&mut p, method, x, y);
-                let (_, was_pressing) = p.mouse_target();
-                let event = match method {
-                    "OnTouchPressed" => PlayerEvent::MouseDown { x, y, button: MouseButton::Left, index: None },
-                    "OnTouchMoved" => PlayerEvent::MouseMove { x, y },
-                    _ => PlayerEvent::MouseUp { x, y, button: MouseButton::Left },
-                };
-                p.handle_event(event);
-                let (hovering, pressing) = p.mouse_target();
-                vec![Arg::Bool(on_button || hovering || pressing || was_pressing)]
+                let x = args.first().map(Arg::text).and_then(|s| s.parse().ok()).unwrap_or(0.0);
+                let y = args.get(1).map(Arg::text).and_then(|s| s.parse().ok()).unwrap_or(0.0);
+                let method = method.to_string();
+                Call::Later(Box::new(move || {
+                    // true when the finger is on something of this screen that reacts to it, so
+                    // the game does not hand the touch to the screens below
+                    let Ok(mut p) = player.try_lock() else { return vec![Arg::Bool(false)] };
+                    let under = p.find_button(x, y).map(|b| script_path(&b));
+                    let (on_button, action) = extras.borrow_mut().buttons.touch(&method, under);
+                    if let Some(action) = &action {
+                        play(&mut *p, action);
+                    }
+                    let (_, was_pressing) = p.mouse_target();
+                    let event = match method.as_str() {
+                        "OnTouchPressed" => PlayerEvent::MouseDown { x, y, button: MouseButton::Left, index: None },
+                        "OnTouchMoved" => PlayerEvent::MouseMove { x, y },
+                        _ => PlayerEvent::MouseUp { x, y, button: MouseButton::Left },
+                    };
+                    p.handle_event(event);
+                    let (hovering, pressing) = p.mouse_target();
+                    vec![Arg::Bool(on_button || hovering || pressing || was_pressing)]
+                }))
             }
             // a picture slot (an exported bitmap such as "NA_Item_3.png") gets a picture; the
             // game falls back to a default picture when the size comes back 0, 0
             "ReplaceTexture" => {
                 let Some(picture) = self.picture(assets, &text(1)) else {
-                    return vec![Arg::Num(0.0), Arg::Num(0.0)];
+                    return Call::Done(vec![Arg::Num(0.0), Arg::Num(0.0)]);
                 };
                 let (w, h) = picture.dimensions();
-                let replaced = p.replace_bitmap(&text(0), |width, height| {
-                    image::imageops::resize(&picture, width, height, image::imageops::FilterType::Triangle).into_raw()
-                });
-                tracing::debug!("{object}: picture slot {} <- {} ({w}x{h}, slot found: {replaced})", text(0), text(1));
-                vec![Arg::Num(w as f64), Arg::Num(h as f64)]
+                let (slot, source) = (text(0), text(1));
+                Call::Later(Box::new(move || {
+                    let pixels: Box<dyn FnOnce(u32, u32) -> Vec<u8>> = Box::new(move |width, height| {
+                        image::imageops::resize(&picture, width, height, image::imageops::FilterType::Triangle).into_raw()
+                    });
+                    let replaced = with_movie(&name, &player, |m| m.replace_bitmap(&slot, pixels));
+                    tracing::debug!("{name}: picture slot {slot} <- {source} ({w}x{h}, slot found: {replaced:?})");
+                    vec![Arg::Num(w as f64), Arg::Num(h as f64)]
+                }))
             }
             "SetBtnEnable" => {
-                let enabled = truthy(args.get(1));
-                p.set_avm1_property(&text(0), "enabled", ExternalValue::Bool(enabled));
-                self.buttons.entry(object.to_string()).or_default().set_enabled(&mut p, &text(0), enabled);
-                Vec::new()
+                let (button, enabled) = (text(0), truthy(args.get(1)));
+                Call::Later(Box::new(move || {
+                    let action = extras.borrow_mut().buttons.set_enabled(&button, enabled);
+                    with_movie(&name, &player, |m| {
+                        m.set_property(&button, "enabled", ExternalValue::Bool(enabled));
+                        if let Some(action) = &action {
+                            play(m, action);
+                        }
+                    });
+                    Vec::new()
+                }))
             }
             "SetCustomEffect" => {
-                p.set_avm1_gray(&text(0), text(1) == "Gray" && truthy(args.get(2)));
-                Vec::new()
+                let (target, gray) = (text(0), text(1) == "Gray" && truthy(args.get(2)));
+                Call::Later(Box::new(move || {
+                    with_movie(&name, &player, |m| m.gray(&target, gray));
+                    Vec::new()
+                }))
             }
             "SetLineMax" => {
                 let fit = Fit {
@@ -404,18 +581,18 @@ impl Screens for RuffleScreens {
                     text: None,
                     by_name: false,
                 };
-                let fits = self.fits.entry(object.to_string()).or_default();
+                let fits = &mut extras.borrow_mut().fits;
                 fits.retain(|f| f.target != fit.target);
                 if truthy(args.get(1)) {
                     fits.push(fit);
                 }
-                Vec::new()
+                Call::Done(Vec::new())
             }
             // gameswf settings without a meaning here
-            "SetTextBufferingEnabled" | "clearFonts" => Vec::new(),
+            "SetTextBufferingEnabled" | "clearFonts" => Call::Done(Vec::new()),
             _ => {
                 *self.missing.entry(method.to_string()).or_default() += 1;
-                Vec::new()
+                Call::Done(Vec::new())
             }
         }
     }

@@ -210,9 +210,20 @@ fn fitting_size(font: &ttf_parser::Face, text: &str, size: f64, width: f64) -> O
     (needed > room && needed > 0.0).then(|| (size * (room / needed).max(MIN_TEXT_SCALE)).floor())
 }
 
-/// A DefineEditText with `text` as its initial text; with `fit`, a smaller font size where the
-/// text would not fit on one line.
-fn with_initial_text(data: &[u8], text: &str, fit: Option<&ttf_parser::Face>) -> Option<Vec<u8>> {
+/// Where a DefineEditText keeps what the converter changes.
+struct TextField {
+    width: f64,
+    flags_at: usize,
+    /// the font height, when the field has a font
+    height_at: Option<usize>,
+    /// where the initial text starts (or would start)
+    text_at: usize,
+    html: bool,
+    multiline: bool,
+    text: String,
+}
+
+fn text_field(data: &[u8]) -> Option<TextField> {
     let nbits = (data.get(2)? >> 3) as usize;
     let mut bounds = Bits { data: data.get(2..)?, bit: 5 };
     let (x_min, x_max) = (bounds.ub(nbits), bounds.ub(nbits));
@@ -238,38 +249,73 @@ fn with_initial_text(data: &[u8], text: &str, fit: Option<&ttf_parser::Face>) ->
         p += 9; // layout
     }
     p += data.get(p..)?.iter().position(|&b| b == 0)? + 1; // variable name
-    let old = if f1 & 0x80 != 0 {
+    let text = if f1 & 0x80 != 0 {
         let end = data.get(p..)?.iter().position(|&b| b == 0).map_or(data.len(), |e| p + e);
         String::from_utf8_lossy(&data[p..end]).to_string()
     } else {
         String::new()
     };
-    let mut out = data[..p].to_vec();
-    let new = if f2 & 0x02 != 0 {
-        let mut html = replace_html_text(&old, text);
+    Some(TextField { width, flags_at, height_at, text_at: p, html: f2 & 0x02 != 0, multiline: f1 & 0x20 != 0, text })
+}
+
+/// The field with `text` as its initial text (and font height changes in `out`).
+fn with_text(data: &[u8], field: &TextField, text: &str, height: Option<u16>) -> Vec<u8> {
+    let mut out = data[..field.text_at].to_vec();
+    if let (Some(at), Some(height)) = (field.height_at, height) {
+        out[at..at + 2].copy_from_slice(&height.to_le_bytes());
+    }
+    out[field.flags_at] |= 0x80; // HasText
+    out.extend(text.as_bytes());
+    out.push(0);
+    out
+}
+
+/// `html` without letter spacing: gameswf left it out, and the screens were laid out that way.
+fn without_letter_spacing(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(at) = rest.find("letterSpacing=\"") {
+        let value = at + "letterSpacing=\"".len();
+        out.push_str(&rest[..value]);
+        out.push('0');
+        let end = rest[value..].find('"').map_or(rest.len(), |e| value + e);
+        rest = &rest[end..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// A DefineEditText the way gameswf showed it: its HTML without letter spacing.
+fn gameswf_text(data: &[u8]) -> Option<Vec<u8>> {
+    let field = text_field(data)?;
+    let plain = without_letter_spacing(&field.text);
+    (field.html && plain != field.text).then(|| with_text(data, &field, &plain, None))
+}
+
+/// A DefineEditText with `text` as its initial text; with `font`, a smaller font size where the
+/// text would not fit on one line and the field has only one (or is named single-line).
+fn with_initial_text(data: &[u8], text: &str, font: Option<&ttf_parser::Face>, single_line: bool) -> Option<Vec<u8>> {
+    let field = text_field(data)?;
+    let fit = font.filter(|_| single_line || !field.multiline);
+    if field.html {
+        let mut html = replace_html_text(&field.text, text);
         if let Some(font) = fit {
             // the size of the first <font size="..."> sets the line
             if let Some(start) = html.find("size=\"").map(|i| i + 6) {
                 let end = start + html[start..].find('"').unwrap_or(0);
-                if let Some(size) = html[start..end].parse::<f64>().ok().and_then(|size| fitting_size(font, text, size, width)) {
+                if let Some(size) = html[start..end].parse::<f64>().ok().and_then(|size| fitting_size(font, text, size, field.width)) {
                     html.replace_range(start..end, &size.to_string());
                 }
             }
         }
-        html
+        Some(with_text(data, &field, &html, None))
     } else {
-        if let (Some(font), Some(at)) = (fit, height_at) {
-            let size = u16_at(data, at) as f64 / 20.0;
-            if let Some(size) = fitting_size(font, text, size, width) {
-                out[at..at + 2].copy_from_slice(&((size * 20.0) as u16).to_le_bytes());
-            }
-        }
-        text.to_string()
-    };
-    out[flags_at] |= 0x80; // HasText
-    out.extend(new.as_bytes());
-    out.push(0);
-    Some(out)
+        let height = match (fit, field.height_at) {
+            (Some(font), Some(at)) => fitting_size(font, text, u16_at(data, at) as f64 / 20.0, field.width).map(|s| (s * 20.0) as u16),
+            _ => None,
+        };
+        Some(with_text(data, &field, text, height))
+    }
 }
 
 /// The SWF (uncompressed) with every placeholder picture filled by `picture(name)`, every text
@@ -329,9 +375,14 @@ pub fn fill_bitmaps(
         }
         if *code == DEFINE_EDIT_TEXT {
             let mut field = device_font_text(&body[range.clone()]);
+            if let Some(plain) = gameswf_text(&field) {
+                field = plain;
+            }
             let key = instances.get(&u16_at(&body, range.start)).filter(|n| n.starts_with(TEXT_KEY_PREFIX));
-            let fit = font.as_ref().filter(|_| key.is_some_and(|k| k.contains(TEXT_LAYOUT_MARKS[0])));
-            if let Some(localized) = key.and_then(|k| field_text(k, &text)).and_then(|t| with_initial_text(&field, &t, fit)) {
+            let single_line = key.is_some_and(|k| k.contains(TEXT_LAYOUT_MARKS[0]));
+            if let Some(localized) =
+                key.and_then(|k| field_text(k, &text)).and_then(|t| with_initial_text(&field, &t, font.as_ref(), single_line))
+            {
                 field = localized;
             }
             out.extend(tag(DEFINE_EDIT_TEXT, &field));

@@ -40,7 +40,8 @@ def server_list(request: Request):
         "server_list": [
             {
                 "server_id": config.WORLD_ID,
-                "server_name": config.WORLD_NAME,
+                # the client cuts the last 5 characters off a new server's name ("EN01(New)")
+                "server_name": f"{config.WORLD_NAME}(New)",
                 "server_root_url": f"{base_url(request)}/world/{config.WORLD_ID}/",
                 "language": "all",
                 "busy": 0,
