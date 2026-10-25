@@ -61,6 +61,8 @@ class Item:
     officer: tuple[str, int, int] | None = None  # (kind, level, days)
     fields: int = 0  # terraformer: up to this many extra fields
     shortcut: int = 0  # quick-buy list the item appears in (GameUIQuickBuyMall)
+    pack: tuple[tuple[int, int], ...] = ()  # gift pack: (item id, number) put into the capsule
+    units: tuple[tuple[int, int], ...] = ()  # gift pack: (ship type, number) for the planet
 
 
 # quick-buy lists of the client
@@ -145,12 +147,33 @@ CATALOG = [
     # code 01401 makes the capsule open the interceptor fusion screen
     Item(GALAXIUM, OTHER, "Galaxium", f"Collected from battles. {INTERCEPTOR_GALAXIUM} galaxium fuse into one "
          "interceptor.", "item_res_10.png", 0, sold=False, code="01401"),
+    # gift packs: the client shows their contents (gachas/{id}) and opens them in the capsule
+    Item(4001, OTHER, "Commander Pack", "Resources, ECM chips and speed-ups for a fast start.", "icon_superGift_01.png", 60,
+         resources=(150_000, 100_000, 50_000), ecm_chips=10, pack=((2103, 3),), featured=True),
+    Item(4002, OTHER, "Fleet Pack", "Two Devourer Interceptors and a Titanenergetic Frigate.", "icon_superGift_01.png", 199,
+         pay_type=CREDITS, units=((25, 2), (26, 1)), featured=True),
 ]
 CATALOG += _officers()
 from . import devices  # noqa: E402 (devices builds its items with Item)
 
 CATALOG += devices.catalog()
 BY_ID = {i.id: i for i in CATALOG}
+
+
+def contents(item_id: int) -> list[dict]:
+    """What a gift pack holds, as the client's package windows list it ({name, amount, img})."""
+    from . import economy as eco
+    i = item(item_id)
+    out = [{"name": res.capitalize(), "amount": n, "img": f"icons/item_res_0{icon}.png"}
+           for res, n, icon in zip(planet_rules.RESOURCES, i.resources, (4, 3, 1)) if n]
+    if i.ecm_chips:
+        out.append({"name": "ECM chips", "amount": i.ecm_chips, "img": "icons/item_res_12.png"})
+    out += [{"name": item(pid).name, "amount": n, "img": f"icons/{item(pid).icon}"} for pid, n in i.pack]
+    out += [{"name": eco.SPECIAL_UNITS.get(t) or eco.UNITS[t].name, "amount": n,
+             "img": f"icons/item_res_{14 if t == 25 else 15}.png"} for t, n in i.units]
+    out = out or [{"name": i.name, "amount": 1, "img": f"icons/{i.icon}"}]
+    # the opening window shows only the name, so it carries the amount too
+    return [dict(c, name=f"{c['amount']:,} {c['name']}") for c in out]
 
 
 def item(item_id: int) -> Item:
@@ -163,7 +186,7 @@ def item(item_id: int) -> Item:
 def _view(i: Item) -> dict:
     return {"id": i.id, "game_item_id": i.id, "name": i.name, "desc": i.desc, "img": f"icons/{i.icon}",
             "pay_type": i.pay_type, "sale_price": i.price, "code": i.code, "item_type": 1, "category": i.category,
-            "is_featured": i.featured, "is_gift": False, "step_gacha": 0}
+            "is_featured": i.featured, "is_gift": bool(i.pack or i.units), "step_gacha": 0}
 
 
 def shop(category: int) -> list[dict]:
@@ -260,6 +283,12 @@ def use(state: dict, item_id: int, n: int, planet: dict, now: float | None = Non
         flagships.data(state)["alloy"] += i.alloy * n
     if i.krypton_stones:
         kryptons.add_stones(state, i.krypton_stones * n)
+    for pack_item, number in i.pack:
+        _add(state, pack_item, number * n)
+    for unit, number in i.units:
+        planet_rules.fleet(planet, unit)["amount"] += number * n
+    if i.pack or i.units:
+        info = f"Opened {i.name} x{n}: " + ", ".join(f"{c['amount']:,} {c['name']}" for c in contents(i.id)) + "."
     if i.fields:
         rng = rng or random.Random()
         best = max(rng.randint(1, i.fields) for _ in range(n))

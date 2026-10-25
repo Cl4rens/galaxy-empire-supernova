@@ -67,7 +67,9 @@ NPCS = [  # id, name, strength against the player's attributes, points, ore, gel
     (5, "G.E.F. Armada", 1.4, 60, 55, 15, 12),
     (6, "G.E.F. Elite Fleet", 2.0, 120, 120, 35, 30),
 ]
-NPC_IMAGE = "images/Challenge_war_bg.png"  # the client uses the name after the last "/" (it has this one)
+# the client shows the picture named after the last "/" (an empty name crashes it); these six
+# enemy icons come with the client
+NPC_IMAGE = "images/starfortress_enemy_icon{}.png"
 
 NOT_STARTED, BATTLE, FINISHED = 0, 1, 2  # status for the client
 
@@ -91,9 +93,9 @@ ALLIANCE_TASKS = [
 ]
 
 CONGRATULATE_ITEMS = [  # id, code, name, description, dark matter, cool down, resources
-    (1, "gc_crate", "Victory crate", "100,000 metal and 50,000 crystal.", 20, 86400,
+    (9001, "gc_crate", "Victory crate", "100,000 metal and 50,000 crystal.", 20, 86400,
      {"metal": 100_000, "crystal": 50_000}),
-    (2, "gc_supply", "Alliance supply", "50,000 metal, crystal and deuterium.", 30, 86400,
+    (9002, "gc_supply", "Alliance supply", "50,000 metal, crystal and deuterium.", 30, 86400,
      {"metal": 50_000, "crystal": 50_000, "deuterium": 50_000}),
 ]
 
@@ -439,7 +441,7 @@ def npc_list(ev: dict, pid: int) -> list[dict]:
     for nid, name, factor, *_ in NPCS:
         f = _npc_strength(p, factor)
         elite = nid == NPCS[-1][0]
-        out.append({"id": nid, "name": name, "type": ELITE if elite else NORMAL, "image": NPC_IMAGE,
+        out.append({"id": nid, "name": name, "type": ELITE if elite else NORMAL, "image": NPC_IMAGE.format(nid - 1),
                     "attack": int(p["defence"] * f), "defence": int(p["attack"] * f),
                     "can_ask_help": elite and not p.get("invited")})
     return out
@@ -810,9 +812,18 @@ def exchange(ev: dict | None, state: dict, ftype: int, n: int, now: float) -> st
 def congratulate_items(state: dict, now: float) -> list[dict]:
     bought = state.get("gc_bought", {})
     return [{"id": i, "code": code, "name": name, "desc": desc, "price": price, "img": "icons/item_res_05.png",
-             "gacha_type": 1 if i == 1 else 2, "item_type": 1,
+             "gacha_type": 1 if i == 9001 else 2, "item_type": 1,
              "user_cool_time": max(0, int(bought.get(code, 0) + cool - now))}
             for i, code, name, desc, price, cool, _ in CONGRATULATE_ITEMS]
+
+
+def congratulate_contents(item_id: int) -> list[dict] | None:
+    """The contents the client's package window shows, or None for other ids."""
+    item = next((i for i in CONGRATULATE_ITEMS if i[0] == item_id), None)
+    if item is None:
+        return None
+    icons = {"metal": "icons/item_res_04.png", "crystal": "icons/item_res_03.png", "deuterium": "icons/item_res_01.png"}
+    return [{"name": f"{n:,} {res.capitalize()}", "amount": n, "img": icons[res]} for res, n in item[6].items()]
 
 
 def buy_congratulate_item(state: dict, code: str, now: float) -> dict:

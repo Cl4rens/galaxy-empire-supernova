@@ -753,6 +753,16 @@ instead. The client sends most parameters in the query string, also for POST.
 The arena shop list has more entries than icon slots on tall screens; the client then crashes
 in `GameUITop:hanglde_updateExchangeItem`. The patcher fixes that check (client_tweaks.py).
 
+### Gift packs, invitation codes, purchases
+
+| Request | Answer |
+|---------|--------|
+| `GET gachas/{item id}` | `{data: [{name, amount, img}]}`: what a gift pack (`is_gift: true` in the shop) or a Galaxy Challenge recognition item holds. The opening window shows only `name`, so it carries the amount. |
+| `POST promotions/apply_newbie_invite_code` `code` | a string (the client shows it) |
+| `GET in_app_purchases/{store}` | `{purchase: []}`; `GET in_app_purchases/{store}/packages`: `{packages: []}`. Supernova sells nothing for money; the menu stays empty (it then shows 0 dark matter / credits, because it only reads them when the store answers). |
+
+`gift_bags` and `game_items/vip_item` are never opened by the 1.9.36 client.
+
 ### Errors
 
 For a status other than 200 the client shows the response body **as text** (or the `<title>` of

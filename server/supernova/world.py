@@ -17,6 +17,7 @@ from . import devices, ecm, flagships, fortresses, items, kryptons, lordship, no
 from . import daily, officers, repairs
 from . import galaxy_challenge as gc
 from . import arena
+from . import promotions
 from . import economy as eco
 from . import planet as planet_rules
 from . import universe
@@ -2212,7 +2213,38 @@ async def gc_task_reward(world_id: int, request: Request, player_id: int = Depen
 
 @router.get("/promotions/my_newbie_invite_info")
 def invite_info(player_id: int = Depends(current_player)):
-    return encrypted_json({"my_code": f"SN{player_id:06d}"})
+    return encrypted_json({"my_code": promotions.code_of(player_id)})
+
+
+@router.post("/promotions/apply_newbie_invite_code")
+async def apply_invite_code(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    try:
+        return encrypted_json(promotions.apply_code(player_id, (await form(request)).get("code", "")))
+    except planet_rules.GameError as e:
+        return error(str(e))
+
+
+@router.get("/gachas/{item_id}")
+def package_contents(item_id: int, player_id: int = Depends(current_player)):
+    """What a gift pack (or a Galaxy Challenge recognition item) holds."""
+    found = gc.congratulate_contents(item_id)
+    if found is None:
+        try:
+            found = items.contents(item_id)
+        except planet_rules.GameError as e:
+            return error(str(e))
+    return encrypted_json({"data": found})
+
+
+@router.get("/in_app_purchases/{store}")
+def iap_products(store: str, player_id: int = Depends(current_player)):
+    """Supernova sells nothing for real money: the purchase menu stays empty."""
+    return encrypted_json({"purchase": []})
+
+
+@router.get("/in_app_purchases/{store}/packages")
+def iap_packages(store: str, player_id: int = Depends(current_player)):
+    return encrypted_json({"packages": []})
 
 
 @router.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])

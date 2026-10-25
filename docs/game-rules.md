@@ -484,6 +484,14 @@ Officers (wiki prices: level 1 for dark matter, 7 or 30 days; levels 2 and 3 for
 
 The wiki's extra building queues and fleet slots do not apply (Supernova has neither limit).
 
+Gift packs (Supernova's own): Commander Pack (60 dark matter: 150,000 metal, 100,000 crystal,
+50,000 deuterium, 10 ECM chips, 3 one-hour speed-ups) and Fleet Pack (199 credits: 2 Devourer
+Interceptors, 1 Titanenergetic Frigate). They go into the capsule and are opened there.
+
+Invitation codes: every player's code is `SN` + the player id (Settings > Invite friends). In
+the first 7 days a new player can redeem one friend's code; both get 30 dark matter and the
+new player 50,000 metal, 30,000 crystal and 10,000 deuterium.
+
 - Everything in the shop costs dark matter; bought items go to the capsule (depot) and are
   used from there: resource packs (on the current planet), ECM chips, alloy fragment boxes,
   krypton stones.
