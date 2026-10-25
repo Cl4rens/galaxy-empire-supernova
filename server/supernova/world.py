@@ -15,6 +15,7 @@ from fastapi.responses import PlainTextResponse, Response
 from . import accounts, acs, alliances, bookmarks, chat, checkin, combat, crypto, db, faq, fleets, gifts, mails
 from . import devices, ecm, flagships, fortresses, items, kryptons, lordship, notices, player, quests, ranking
 from . import daily, officers, repairs
+from . import galaxy_challenge as gc
 from . import economy as eco
 from . import planet as planet_rules
 from . import universe
@@ -1807,12 +1808,238 @@ def fortress_recall(world_id: int, event_id: int, player_id: int = Depends(curre
         return fleet_response(state, now)
 
 
-# --- Features we do not implement yet, answered with their "nothing here" values ---------
+# --- Galaxy Challenge -----------------------------------------------------------------------------
+
+
+def gc_call(player_id: int, fn, event_id: int | None = None, with_state: bool = False):
+    """Run fn(ev, now) or fn(ev, state, now) on the current Galaxy Challenge event."""
+    now = time.time()
+    try:
+        if with_state:
+            with db.player_state(player_id) as state:
+                with gc.event(now, event_id) as ev:
+                    return encrypted_json(fn(ev, state, now))
+        with gc.event(now, event_id) as ev:
+            return encrypted_json(fn(ev, now))
+    except planet_rules.GameError as e:
+        return error(str(e))
+
+
+def _gc_event(ev):
+    if ev is None:
+        raise gc.ChallengeError("There is no Galaxy Challenge")
+    return ev
 
 
 @router.get("/gc/current")
-def galaxy_challenge(player_id: int = Depends(current_player)):
-    return encrypted_json({"status": 0})
+def gc_current(player_id: int = Depends(current_player)):
+    now = time.time()
+    with gc.event(now, hand_out=True) as ev:
+        return encrypted_json(gc.current_view(ev, player_id, now))
+
+
+@router.get("/gc/refresh_vm")
+def gc_money(player_id: int = Depends(current_player)):
+    empire = db.load_state(player_id)["empire"]
+    return encrypted_json({"dark_matters": empire.get("dark_matter_count", 0), "credits": empire.get("gu_count", 0)})
+
+
+@router.get("/gc/fleets")
+def gc_exchange_list(player_id: int = Depends(current_player)):
+    return gc_call(player_id, lambda ev, now: {"resources": gc.resources_view(ev, player_id, now),
+                                               "fleets": gc.exchange_list()})
+
+
+@router.post("/gc/exchange_fleets")
+async def gc_exchange(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+
+    def act(ev, state, now):
+        empire = state["empire"]
+        if _int(params, "planet_id"):
+            planet_rules.switch_planet(empire, _int(params, "planet_id"))
+        planet_rules.tick(empire, now)
+        message = gc.exchange(ev, state, _int(params, "type"), _int(params, "amount"), now)
+        planet = empire["main_planet"]
+        return {"success": True, "message": message, "resources": gc.resources_view(ev, player_id, now),
+                "fleets": [planet_rules.fleet_view(planet, f) for f in planet["fleets"]]}
+    return gc_call(player_id, act, with_state=True)
+
+
+@router.get("/gc/histories")
+def gc_histories(player_id: int = Depends(current_player)):
+    return gc_call(player_id, lambda ev, now: gc.histories(_gc_event(ev), player_id))
+
+
+@router.get("/gc/{event_id}/npc_list")
+def gc_npcs(event_id: int, player_id: int = Depends(current_player)):
+    return gc_call(player_id, lambda ev, now: {"npcs": gc.npc_list(ev, player_id)}, event_id)
+
+
+@router.post("/gc/{event_id}/attack/{npc_id}")
+async def gc_attack(world_id: int, event_id: int, npc_id: int, request: Request,
+                    player_id: int = Depends(current_player)):
+    double = _int(await form(request), "critical") == 1
+
+    def act(ev, now):
+        result = gc.attack(ev, player_id, npc_id, double, now)
+        return {"result": result, "user_info": gc.self_info(ev, player_id, now), "npcs": gc.npc_list(ev, player_id)}
+    return gc_call(player_id, act, event_id)
+
+
+@router.post("/gc/{event_id}/client_update_power")
+def gc_energy(event_id: int, player_id: int = Depends(current_player)):
+    def act(ev, now):
+        info = gc.self_info(ev, player_id, now)
+        return {"curr_phy": info["curr_phy"], "max_phy": info["max_phy"]}
+    return gc_call(player_id, act, event_id)
+
+
+def _gc_money_response(ev, state, now):
+    return {"user_info": gc.self_info(ev, state["empire"]["user_id"], now), "empire": player.empire_summary(state)}
+
+
+@router.post("/gc/{event_id}/add_power")
+async def gc_buy_energy(world_id: int, event_id: int, request: Request, player_id: int = Depends(current_player)):
+    amount = _int(await form(request), "power_num")
+
+    def act(ev, state, now):
+        gc.buy_energy(ev, state, amount, now)
+        return _gc_money_response(ev, state, now)
+    return gc_call(player_id, act, event_id, with_state=True)
+
+
+@router.post("/gc/{event_id}/add_courage")
+def gc_buy_courage(event_id: int, player_id: int = Depends(current_player)):
+    def act(ev, state, now):
+        gc.buy_courage(ev, state, now)
+        return _gc_money_response(ev, state, now)
+    return gc_call(player_id, act, event_id, with_state=True)
+
+
+@router.get("/gc/{event_id}/score")
+def gc_rewards(event_id: int, player_id: int = Depends(current_player)):
+    return gc_call(player_id, lambda ev, now: gc.bounties(), event_id)
+
+
+@router.get("/gc/{event_id}/rank")
+@router.get("/gc/{event_id}/grank")
+async def gc_rank(world_id: int, event_id: int, request: Request, player_id: int = Depends(current_player)):
+    rank_type = (await form(request)).get("rank_type", "personal")
+    return gc_call(player_id, lambda ev, now: gc.ranks(ev, player_id, rank_type), event_id)
+
+
+@router.post("/gc/{event_id}/join")
+def gc_join(event_id: int, player_id: int = Depends(current_player)):
+    def act(ev, now):
+        result = gc.join(ev, player_id, now)
+        return {"result": result, "self_info": gc.self_info(ev, player_id, now), "npcs": gc.npc_list(ev, player_id)}
+    return gc_call(player_id, act, event_id)
+
+
+@router.post("/gc/{event_id}/add_member")
+def gc_add_member(event_id: int, player_id: int = Depends(current_player)):
+    return gc_call(player_id, lambda ev, state, now: gc.add_battle_force(ev, state, now), event_id, with_state=True)
+
+
+@router.post("/gc/{event_id}/apply_leader")
+def gc_apply_leader(event_id: int, player_id: int = Depends(current_player)):
+    return gc_call(player_id, lambda ev, now: {"result": gc.apply_leader(ev, player_id, now)}, event_id)
+
+
+@router.get("/gc/{event_id}/leader_applies")
+def gc_leader_applies(event_id: int, player_id: int = Depends(current_player)):
+    return gc_call(player_id, lambda ev, now: {"applies": gc.leader_applies(ev, player_id)}, event_id)
+
+
+@router.post("/gc/{event_id}/set_leader")
+async def gc_set_leader(world_id: int, event_id: int, request: Request, player_id: int = Depends(current_player)):
+    leader_id = _int(await form(request), "user_id")
+
+    def act(ev, now):
+        gc.set_leader(ev, player_id, leader_id, now)
+        return {"self_info": gc.self_info(ev, player_id, now)}
+    return gc_call(player_id, act, event_id)
+
+
+@router.post("/gc/{event_id}/invite")
+async def gc_invite(world_id: int, event_id: int, request: Request, player_id: int = Depends(current_player)):
+    npc_id = _int(await form(request), "npc_id")
+    return gc_call(player_id, lambda ev, state, now: {"result": gc.invite(ev, state, npc_id, now)}, event_id,
+                   with_state=True)
+
+
+@router.get("/gc/{event_id}/invitations")
+def gc_invitations(event_id: int, player_id: int = Depends(current_player)):
+    return gc_call(player_id, lambda ev, now: {"invitations": gc.invitations(ev, player_id)}, event_id)
+
+
+@router.post("/gc/{event_id}/accept")
+async def gc_accept(world_id: int, event_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    invitation_id = None if _int(params, "invitations") == 1 else _int(params, "invitation_id")
+    return gc_call(player_id, lambda ev, now: {"result": gc.accept(ev, player_id, invitation_id, now)}, event_id)
+
+
+@router.get("/gc/{event_id}/logs")
+async def gc_logs(world_id: int, event_id: int, request: Request, player_id: int = Depends(current_player)):
+    page = _int(await form(request), "page", 1)
+    return gc_call(player_id, lambda ev, now: gc.logs((gc._player(ev, player_id) or {}).get("logs", []), page),
+                   event_id)
+
+
+@router.get("/gc/{event_id}/alliance_logs")
+async def gc_alliance_logs(world_id: int, event_id: int, request: Request, player_id: int = Depends(current_player)):
+    page = _int(await form(request), "page", 1)
+    m = alliances.membership(player_id)
+
+    def act(ev, now):
+        a = gc._alliance(ev, m["alliance_id"]) if m else None
+        return gc.logs((a or {}).get("logs", []), page)
+    return gc_call(player_id, act, event_id)
+
+
+@router.get("/gc/{event_id}/last_battle")
+def gc_last_battle(event_id: int, player_id: int = Depends(current_player)):
+    return gc_call(player_id, lambda ev, now: gc.last_battle(ev, player_id), event_id)
+
+
+@router.get("/gc/{event_id}/congratulate_items")
+def gc_congratulate_items(event_id: int, player_id: int = Depends(current_player)):
+    return gc_call(player_id, lambda ev, state, now: {"items": gc.congratulate_items(state, now)}, event_id,
+                   with_state=True)
+
+
+@router.post("/gc/{event_id}/buy_item")
+async def gc_buy_item(world_id: int, event_id: int, request: Request, player_id: int = Depends(current_player)):
+    code = (await form(request)).get("code", "")
+
+    def act(ev, state, now):
+        planet_rules.tick(state["empire"], now)
+        return gc.buy_congratulate_item(state, code, now)
+    return gc_call(player_id, act, event_id, with_state=True)
+
+
+@router.get("/gc_quest/daily")
+@router.get("/gc_quest/alliance")
+def gc_tasks(request: Request, player_id: int = Depends(current_player)):
+    alliance_tasks = request.url.path.endswith("/alliance")
+    return gc_call(player_id, lambda ev, now: {"list": gc.tasks(ev, player_id, alliance_tasks, now) if ev else []})
+
+
+@router.post("/gc_quest/receive_reward")
+async def gc_task_reward(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    task_id = _int(await form(request), "id")
+
+    def act(ev, state, now):
+        planet_rules.tick(state["empire"], now)
+        info = gc.claim_task(_gc_event(ev), state, task_id, now)
+        return {"info": info, "empire": player.empire_summary(state),
+                "planet": planet_rules.client_view(state["empire"], now)}
+    return gc_call(player_id, act, with_state=True)
+
+
+# --- Features we do not implement yet, answered with their "nothing here" values ---------
 
 
 @router.get("/promotions/my_newbie_invite_info")

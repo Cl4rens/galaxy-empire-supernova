@@ -127,6 +127,9 @@ python -m supernova.admin news-add <normal|update|maintain|emergency> "<title>" 
 python -m supernova.admin news-list
 python -m supernova.admin news-delete <id>
 python -m supernova.admin gift <username|all> "<title>" "<text>" metal=5000 9=2   # resource or fleet_type=amount
+python -m supernova.admin gc-start [--in MINUTES] [--rounds 96] [--round-minutes 60]   # Galaxy Challenge
+python -m supernova.admin gc-status
+python -m supernova.admin gc-stop                          # ends it now and hands out the rewards
 ```
 
 ### 4. Build the patched APK
@@ -198,6 +201,7 @@ the game keeps the scripts it unpacked on its first start and would not see the 
 - [x] Intercept and interplanetary missiles
 - [x] Daily tasks
 - [x] Officers, terraformers and credit items in the shop (credits only from the operator)
+- [x] Galaxy Challenge (Fight G.E.F.), started by the operator
 - [x] Runs on Android 6-16 without crashes or permission dialogs
 - [ ] Support for 64-bit-only devices: needs an open client engine that runs the original Lua
       scripts and Flash UI from the player's APK (idea, not started)

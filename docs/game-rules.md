@@ -583,3 +583,41 @@ Supernova's own; they start over every day (UTC) and each reward can be collecte
 - **Interceptors** are fused in the capsule from 150 galaxium each; from 1,000 owned on each
   costs 1 dark matter or 2 credits more (wiki). Galaxium comes from battles: 1 per 20,000 metal
   and crystal of enemy ships destroyed.
+
+## Galaxy Challenge (Fight G.E.F.)
+
+The operator starts it (`admin gc-start`); it follows the client's help texts and the wiki:
+
+- 4 days, 96 battles of one hour. The president or a vice-president declares war; the 30
+  members with the most power (wiki power per ship: light fighter 1, heavy fighter 3, cruiser
+  10, battleship 24, battlecruiser 31, bomber 35, destroyer 46, interceptor 563, Iron Behemoth
+  1,246, Devourer 650, Frigate 1,500) join. Up to 50 for 300 credits each. Others sign up
+  themselves while there is room. Ships are not lost.
+- Attack and defense are taken from all ships at sign-up (attack: weapons / 10; defense:
+  (shields + hull / 10) / 10). Holding a star fortress gives +10 %, mission leaders +20 %.
+- Energy: at most 1,000, 1 back per minute; 199 credits for 100, 1,990 for 1,000. A normal
+  attack costs 25, a double strike 100 (200 % attack, 4x points and resources).
+- Five G.E.F. fleets (50-140 % of the player's attributes) and an elite fleet (200 %); they get
+  stronger with the player's win ratio. Wins give 10-120 points (+10 % per win in a row, up to
+  +100 %), crystal ore, energy gel and titanenergetic cubes.
+- Assistance: before attacking the elite fleet, a player can ask the other alliance members for
+  help (50 credits); every accepted request gives +10 % attack against it (at most +100 %), the
+  helper gets 20 crystal ore.
+- Up to 3 mission leaders per battle (members apply, the president or vice-presidents choose).
+  The G.E.F. attacks every 10 minutes: leaders with at least 10 courage points (bought for 100
+  credits) defend, each using 10; otherwise a random member defends. A held attack gives 30
+  (leader) or 20 points.
+- After each battle: alliance points = members' points + 5 % per leader. More than the rival
+  G.E.F. fleet (about 60 points per member) wins the battle and gives 20 % more.
+- Exchange (wiki): Devourer Interceptor for 2,000 crystal ore and 500 energy gel, Titanenergetic
+  Frigate for 3,500 crystal ore and 1,000 titanenergetic cubes; possible until 3 days after the
+  end, then the resources decompose.
+- Rewards when it ends (dark matter and ships on the home planet, with a mail): rank 1: 300 DM
+  and 2 frigates, 2: 200 DM and a frigate, 3: 150 DM and 2 devourers, 4-10: 100 DM and a
+  devourer, 11-50: 50 DM. Members of the best alliances: 200 DM and a devourer, 150, 100, 50 DM
+  (ranks 1, 2, 3, 4-10).
+- Event tasks (daily: 10 wins, 2 double strikes, 1 assistance, 500 points; alliance: 5 and 20
+  won battles, 10,000 points) give event resources or dark matter. The "Recognition" shop sells
+  resource crates for dark matter once a day.
+
+All numbers the texts do not give are Supernova's own.

@@ -206,6 +206,7 @@ def empire_summary(state: dict) -> dict:
     summary["fleet_hanging_events"] = fleets.events_view(empire["user_id"])
     summary["fortress_interspace_events"] = fortresses.events_view(empire["user_id"])
     summary["gift_id"] = gifts.pending_id(empire["user_id"])
+    summary.update(score=ranking.points(state)["score"], rank=ranking.rank_of(state["user_id"]))
     return summary
 
 

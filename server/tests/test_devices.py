@@ -10,7 +10,7 @@ def modder(udid, score=500_000, monkeypatch=None):
     c, me = member(udid, {})
     with db.player_state(me["user_id"]) as s:
         s["empire"]["dark_matter_count"] = 1000
-    monkeypatch.setattr(ranking, "points", lambda state: {"score": score})
+    monkeypatch.setattr(ranking, "points", lambda state: {"score": score, "power": 0})
     return c, me
 
 

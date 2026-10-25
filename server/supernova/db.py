@@ -183,6 +183,11 @@ CREATE TABLE IF NOT EXISTS sessions (
     player_id  INTEGER NOT NULL REFERENCES players(id),
     created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS events (
+    id    INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind  TEXT NOT NULL,
+    data  TEXT NOT NULL
+);
 """
 
 _lock = threading.RLock()  # reentrant: universe code runs inside create_player

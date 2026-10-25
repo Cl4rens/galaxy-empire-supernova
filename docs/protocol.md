@@ -147,7 +147,7 @@ string as key; the Java side truncates it to the same 32 bytes.
 | `GET notices/popup.json` | `{"popup": {}}` (no popup) |
 | `GET notices/lastest.json` | `{"list": [{id, notice_type: "activity" or other, ...}]}` |
 | `GET users/first_charge_misc` | `{"first_charge": false}` (no first-purchase offer) |
-| `GET gc/current` | `{"status": 0}` (no galaxy challenge running) |
+| `GET gc/current` | the Galaxy Challenge, see below (`status` 0 = none) |
 | `GET promotions/my_newbie_invite_info` | `{"my_code": "..."}` |
 
 ### Buildings
@@ -698,6 +698,33 @@ hired officers in `buff_list: [{buffer_name, end_time, buffer_desc, buff_type, i
 | `POST users/{id}/use_game_item` `game_item_id=<galaxium>, number, pay_type` | fuses interceptors: `{energy_particle_amount, dark_matter, gu, interceptor}` |
 | `GET/POST flagship_researches/...` `speedup_info.json, buy_and_use_stone.json, speedup.json` | like the other speed-ups |
 | `GET planets/{id}/stop_auto_explore`, `POST acses/{id}/new_acs`, `GET users/{id}/pay_info`, `POST users/{id}/update_birthday`, `GET ranks/{key}/activity` | answered with neutral values |
+
+### Galaxy Challenge
+
+`{id}` is the event id from `gc/current`.
+
+| Request | Answer |
+|---------|--------|
+| `GET gc/current` | `{status (0 none/not started, 1 battle, 2 finished), current: {id, end_time (end of this battle), invite_cost, add_courage_cost}, next: {start_time}, maps: {colors[6], current (area 1-6)}, self_info}` |
+| `self_info` | `{in_battle, leader, winning (0-1), streak, attack, defence, shadow_attack_bonus, shadow_defence_bonus (%), curr_phy, max_phy, full_time, phy_consume, adv_phy_consume, adv_attack_bonus, coura, max_coura, attack_to_elite, attack_bonus_to_elite, add_member_cost: {type: 2, amount}, alliance: {role, in_battle, leaders: [{name}], max_member_size, max_size}}` |
+| `GET gc/refresh_vm` | `{dark_matters, credits}` |
+| `POST gc/{id}/join` | president/vice-president: declares war; others: sign up. `{result, self_info, npcs}` |
+| `POST gc/{id}/add_member` `alliance_id` | `{success, result, max_member_size, max_size}` (credits) |
+| `GET gc/{id}/npc_list` | `{npcs: [{id, name, type: PuNpc/PuEliteNpc, image, attack, defence, can_ask_help}]}`; the client shows the file name after the last `/` of `image` (an empty name crashes it) |
+| `POST gc/{id}/attack/{npc}` `critical=1` for a double strike | `{result: {result: win/lose, score, items: [], user_resources: [[1, ore], [2, gel], [3, cube]]}, user_info, npcs}`; the client repeats normal attacks while they win |
+| `POST gc/{id}/client_update_power` | `{curr_phy, max_phy}` |
+| `POST gc/{id}/add_power` `power_num` (100/1000), `POST gc/{id}/add_courage` | `{user_info, empire}` |
+| `POST gc/{id}/apply_leader`, `GET gc/{id}/leader_applies`, `POST gc/{id}/set_leader` `user_id` | `{result}`, `{applies: [{id, name, level (post), score}]}`, `{self_info}` |
+| `POST gc/{id}/invite` `npc_id`, `GET gc/{id}/invitations`, `POST gc/{id}/accept` `invitation_id` or `invitations=1` | `{result}`, `{invitations: [{id, created_at, invitor_name}]}`, `{result}` |
+| `GET gc/{id}/rank` and `grank` `rank_type` (personal/alliance/member) | `{ranks: [[server, name, alliance, power, score]] or [[server, alliance, members, score]], self_rank: {rank, score, next_range}}` |
+| `GET gc/{id}/logs`, `alliance_logs` `page` | `{logs: [{created_at, result, score}], max_page}` |
+| `GET gc/{id}/last_battle` | `{user_alliance: {result: win/lose, name, scores: {last, total}}, npc_alliance: {scores: {last}}}` |
+| `GET gc/{id}/score` | rank rewards: `{one_alliances, one_users, all_alliances, all_users: [{rank, awards: [{name, amount, img}]}]}` |
+| `GET gc/fleets`, `POST gc/exchange_fleets` `type, amount` | `{resources: {diamond_mineral, energy_gel, titanium_cube: {amount}}, fleets: [exchange offers]}`; the exchange answers `{success, message, resources, fleets (planet fleets)}` |
+| `GET gc/histories` | `{users: {ranks, self_rank}, alliances: {ranks, self_rank}}` |
+| `GET gc/{id}/congratulate_items`, `POST gc/{id}/buy_item` `code` | `{items: [{id, code, name, price, img, gacha_type 1/2, item_type, user_cool_time}]}`, `{id, user_cool_time, info: {info}}` |
+| `GET gc_quest/daily`, `gc_quest/alliance` | `{list: [{lable, list: [task]}]}` like the daily tasks |
+| `POST gc_quest/receive_reward` `id` | `{info, empire, planet}` |
 
 ### Errors
 

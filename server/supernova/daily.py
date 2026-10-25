@@ -42,7 +42,7 @@ TASKS = [
     Task(8, "Fleet", "Supply", "Transport resources to a planet.", TRANSPORT, 1, {"deuterium": 8_000}),
 ]
 ICONS = {"metal": "icons/item_res_04.png", "crystal": "icons/item_res_03.png", "deuterium": "icons/item_res_01.png",
-         "chips": "icons/item_res_10.png", "dark_matter": "icons/item_res_05.png"}
+         "chips": "icons/item_res_12.png", "dark_matter": "icons/item_res_05.png"}
 
 
 class TaskError(planet_rules.GameError):

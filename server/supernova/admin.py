@@ -13,6 +13,9 @@
     python -m supernova.admin news-delete <id>
     python -m supernova.admin gift <username|all> <title> <description> metal=5000 9=2 ...
     python -m supernova.admin delete-chat <message_id>
+    python -m supernova.admin gc-start [--in MINUTES] [--rounds 96] [--round-minutes 60]
+    python -m supernova.admin gc-stop
+    python -m supernova.admin gc-status
 
 Run it while the server is running or stopped; changes are visible at the player's next request.
 """
@@ -182,6 +185,34 @@ def cmd_gift(args) -> None:
         print("ok")
 
 
+def cmd_gc_start(args) -> None:
+    from . import galaxy_challenge as gc
+    at = time.time() + args.in_minutes * 60
+    event_id = gc.start(at, args.rounds, args.round_minutes * 60)
+    print(f"Galaxy Challenge {event_id} starts {time.strftime('%Y-%m-%d %H:%M', time.localtime(at))} "
+          f"with {args.rounds} battles of {args.round_minutes} minutes")
+
+
+def cmd_gc_stop(args) -> None:
+    from . import galaxy_challenge as gc
+    gc.stop(time.time())
+    print("ok")
+
+
+def cmd_gc_status(args) -> None:
+    from . import galaxy_challenge as gc
+    now = time.time()
+    with gc.event(now, hand_out=True) as ev:
+        if ev is None:
+            print("No Galaxy Challenge yet")
+            return
+        names = {0: "not running", 1: "battle", 2: "finished (exchange still open)"}
+        print(f"Event {ev['id']}: {names[gc.status(ev, now)]}, battle {ev['closed']}/{ev['rounds']} done, "
+              f"ends {time.strftime('%Y-%m-%d %H:%M', time.localtime(gc.end_time(ev)))}")
+        for aid, a in gc._alliance_rows(ev):
+            print(f"  {gc._alliance_name(aid):<20} {a['score']:>10,} points")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(required=True)
@@ -231,6 +262,13 @@ def main() -> None:
     delchat = sub.add_parser("delete-chat")
     delchat.add_argument("message_id", type=int)
     delchat.set_defaults(func=cmd_delete_chat)
+    gc_start = sub.add_parser("gc-start")
+    gc_start.add_argument("--in", dest="in_minutes", type=float, default=0)
+    gc_start.add_argument("--rounds", type=int, default=96)
+    gc_start.add_argument("--round-minutes", type=float, default=60)
+    gc_start.set_defaults(func=cmd_gc_start)
+    sub.add_parser("gc-stop").set_defaults(func=cmd_gc_stop)
+    sub.add_parser("gc-status").set_defaults(func=cmd_gc_status)
     args = parser.parse_args()
     args.func(args)
 
