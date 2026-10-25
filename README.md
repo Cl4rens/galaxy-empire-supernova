@@ -43,7 +43,8 @@ What the patcher does:
 
 1. **Verify** that your APK is a supported version by comparing its SHA-256 hash.
 2. **Patch** the client so it connects to the server address you choose instead of the
-   dead official servers.
+   dead official servers, and make a few small script changes the server needs (for example,
+   the daily tasks button, which the client always hid).
 3. **Re-sign** the APK so Android will install it.
 
 Please **do not share patched APKs**. Share this repository instead, so everyone builds their
@@ -155,6 +156,8 @@ support (e.g. Google Pixel 7 and newer) cannot run it; PCs can use an emulator l
 Install the patched APK from `build/` on your device, e.g. with
 `adb install build/galaxy-empire-supernova.apk`.
 Uninstall any old copy of the original game first, because the signatures differ.
+When you install a newer patched APK over an older one, clear the app's data (or reinstall):
+the game keeps the scripts it unpacked on its first start and would not see the changes.
 
 ## Roadmap
 
@@ -193,6 +196,7 @@ Uninstall any old copy of the original game first, because the signatures differ
 - [x] Ship modification with devices
 - [x] Advanced ships: Devourer Interceptor, Titanenergetic Frigate, Proton Cannon, Annihilator, Reaper
 - [x] Intercept and interplanetary missiles
+- [x] Daily tasks
 - [x] Runs on Android 6-16 without crashes or permission dialogs
 - [ ] Support for 64-bit-only devices: needs an open client engine that runs the original Lua
       scripts and Flash UI from the player's APK (idea, not started)

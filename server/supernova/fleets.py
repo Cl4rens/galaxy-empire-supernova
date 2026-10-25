@@ -16,7 +16,7 @@ import time
 
 from . import combat, config, db, ranking
 from . import economy as eco
-from . import devices, ecm, flagships, items, kryptons, lordship, mails, npc, protection, quests, repairs
+from . import daily, devices, ecm, flagships, items, kryptons, lordship, mails, npc, protection, quests, repairs
 from . import planet as planet_rules
 from . import universe
 
@@ -38,6 +38,8 @@ SCAN_DEUTERIUM = 5000  # a sensor array scan costs this much deuterium
 PORTAL_RECHARGE_SECONDS = 3600  # at transmit portal level 1, before game speed
 QUEST_ACTIONS = {ESPIONAGE: quests.ESPIONAGE, EXPEDITION: quests.EXPEDITION, TRANSPORT: quests.TRANSPORT,
                  DEPLOY: quests.DEPLOY, RECYCLE: quests.RECYCLE}
+DAILY_ACTIONS = {ESPIONAGE: daily.ESPIONAGE, EXPEDITION: daily.EXPEDITION, RECYCLE: daily.RECYCLE,
+                 TRANSPORT: daily.TRANSPORT}
 BE_ESPIONAGE, BE_TRANSPORT = 14, 15  # report types for the target's side
 ESPIONAGE_PROBE = 13
 RECYCLER = 12
@@ -220,6 +222,8 @@ def send(player_id: int, state: dict, params: dict, now: float) -> None:
         quest_action = quests.ATTACK_PLAYER if target_row else quests.ATTACK_PIRATES
     if quest_action:
         quests.record_action(state, quest_action)
+    if mission in DAILY_ACTIONS or (mission == ATTACK and not target_row):
+        daily.record(state, DAILY_ACTIONS.get(mission, daily.ATTACK_PIRATES))
     conn = db.connect()
     with db.lock(), conn:
         conn.execute(

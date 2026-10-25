@@ -664,6 +664,17 @@ file name if it has that texture (`icons/item_res_04.png` ...), else downloads i
 The client opens the screen from 100,000 points (`empire.score`). Devices are shop items in
 category 4.
 
+### Daily tasks
+
+| Request | Answer |
+|---------|--------|
+| `GET daily_tasks` | `{list: [{id, tag, title, desc, status (0 running, 1 done), process, require_number, rewards_desc, rewards_info: [{img, number}]}]}`; collected tasks are left out |
+| `POST daily_tasks/receive_reward` `id` | `{info, empire, planet}` |
+| `POST users/{id}/vip_info` | `{vip_info: {vip_level: 0, vip_left: 0}}` (asked by the task detail screen) |
+
+The client hides the daily tasks button (`GameUICityUIUp:SetTap4funButtonVisible` passes
+`false`); the patcher flips that one value (`tools/client_tweaks.py`).
+
 ### Errors
 
 For a status other than 200 the client shows the response body **as text** (or the `<title>` of

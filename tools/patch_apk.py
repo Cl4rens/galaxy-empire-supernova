@@ -4,8 +4,9 @@ Steps:
   1. verify the APK is a supported version (SHA-256)
   2. patch the gateway address in AutoUpdateInit (data1.pak and data1_64.pak)
      and switch the gateway from https to http
-  3. patch the client code so it runs on current Android versions (see compat.py)
-  4. rebuild the APK and sign it with a debug key (uber-apk-signer, needs Java)
+  3. small changes to game scripts the server needs (see client_tweaks.py)
+  4. patch the client code so it runs on current Android versions (see compat.py)
+  5. rebuild the APK and sign it with a debug key (uber-apk-signer, needs Java)
 
 Usage: python tools/patch_apk.py apk/galaxy-empire-1-9-36.apk --server 192.168.0.10:8000
 """
@@ -22,6 +23,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
+import client_tweaks
 import compat
 import lua51
 import pak
@@ -80,6 +82,8 @@ def patch_game_data(game_zip: bytes, gateway: bytes) -> bytes:
                 # Entry 0 is AutoUpdateInit.lua, the first script the engine runs.
                 init = archive.entries[0]
                 init.data = patch_auto_update(init.data, gateway)
+                for entry in archive.entries[1:]:
+                    entry.data = client_tweaks.apply(entry.data)
                 data = pak.write(archive)
             dst.writestr(info, data, compress_type=info.compress_type)
     return out.getvalue()

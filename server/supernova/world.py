@@ -14,7 +14,7 @@ from fastapi.responses import PlainTextResponse, Response
 
 from . import accounts, acs, alliances, bookmarks, chat, checkin, combat, crypto, db, faq, fleets, gifts, mails
 from . import devices, ecm, flagships, fortresses, items, kryptons, lordship, notices, player, quests, ranking
-from . import repairs
+from . import daily, repairs
 from . import economy as eco
 from . import planet as planet_rules
 from . import universe
@@ -360,6 +360,12 @@ async def change_password(user_id: int, request: Request, player_id: int = Depen
     return PlainTextResponse("Your password has been changed.")
 
 
+@router.post("/users/{user_id}/vip_info")
+def vip_info(user_id: int, player_id: int = Depends(current_player)):
+    """There is no VIP system; the task detail screen asks anyway."""
+    return encrypted_json({"vip_info": {"vip_level": 0, "vip_left": 0}})
+
+
 # Ship modification (devices.py); before /users/{user_id}, which would take these paths
 
 
@@ -418,6 +424,8 @@ async def start_building(world_id: int, request: Request, player_id: int = Depen
             changed = planet_rules.start_building_event(
                 state["empire"], state, int(params["building_id"]), int(params["event_type"]),
                 int(params["building_index"]) if params.get("building_index") else None, now)
+            if int(params["event_type"]) == planet_rules.EVENT_UPGRADE:
+                daily.record(state, daily.BUILD)
             return building_update(state, changed, now)
     except planet_rules.GameError as e:
         return error(str(e))
@@ -470,6 +478,7 @@ async def start_research(world_id: int, request: Request, player_id: int = Depen
         with db.player_state(player_id) as state:
             use_planet(state, params)
             research = planet_rules.start_research(state["empire"], state, int(params["research_id"]), now)
+            daily.record(state, daily.RESEARCH)
             return research_update(state, research, now)
     except planet_rules.GameError as e:
         return error(str(e))
@@ -514,6 +523,7 @@ async def start_fleet_order(world_id: int, request: Request, player_id: int = De
             use_planet(state, params)
             changed = planet_rules.start_fleet_order(state["empire"], state, int(params["fleet_id"]),
                                                      int(params["fleet_count"]), now)
+            daily.record(state, daily.SHIPYARD, int(params["fleet_count"]))
             return fleet_update(state, changed, now)
     except planet_rules.GameError as e:
         return error(str(e))
@@ -1373,6 +1383,29 @@ async def gift_claim(world_id: int, request: Request, player_id: int = Depends(c
         if not gifts.claim(player_id, empire["main_planet"], int(params.get("gift_id") or 0), now):
             return error("This gift is gone")
         return encrypted_json({"empire": player.empire_summary(state), "planet": planet_rules.client_view(empire, now)})
+
+
+# --- Daily tasks ------------------------------------------------------------------------------
+
+
+@router.get("/daily_tasks")
+def daily_tasks(player_id: int = Depends(current_player)):
+    with db.player_state(player_id) as state:
+        return encrypted_json({"list": daily.listing(state)})
+
+
+@router.post("/daily_tasks/receive_reward")
+async def daily_task_reward(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    task_id = _int(await form(request), "id")
+    now = time.time()
+
+    def act():
+        with db.player_state(player_id) as state:
+            planet_rules.tick(state["empire"], now)
+            info = daily.claim(state, task_id, now)
+            return {"info": info, "empire": player.empire_summary(state),
+                    "planet": planet_rules.client_view(state["empire"], now)}
+    return item_call(act)
 
 
 # --- Item shop, depot and speed-ups ------------------------------------------------------------

@@ -532,3 +532,18 @@ Rules from the client (texts, order limits, battle report); costs and damage are
 - Missiles never take part in the battle rounds; unused ones stay or fly home.
 - Battle reports now carry the client's full layout: loot (`booty`), intercepted units, missile
   hits, Annihilator explosions and intricate components for both sides.
+
+## Daily tasks
+
+Supernova's own; they start over every day (UTC) and each reward can be collected once a day.
+
+| Task | Goal | Reward |
+|------|------|--------|
+| Upgrade buildings | start 3 building upgrades | 20,000 metal, 10,000 crystal |
+| Research | start a research | 15,000 crystal, 5,000 deuterium |
+| Build units | order 20 ships or defense units | 15,000 metal, 15,000 crystal |
+| Fight pirates | attack 2 pirate bases | 3 ECM chips |
+| Scout | send an espionage mission | 10,000 deuterium |
+| Explore | send an expedition | 2 ECM chips, 10 dark matter |
+| Salvage | send recyclers to a debris field | 15,000 metal, 15,000 crystal |
+| Supply | transport resources | 8,000 deuterium |
