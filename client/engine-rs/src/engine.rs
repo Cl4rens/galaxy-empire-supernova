@@ -23,6 +23,13 @@ const GENERATED_FILES: [(&str, &str); 2] =
 const OFFICIAL_GATEWAYS: [&str; 2] =
     ["b.portal-platform.tap4fun.com/ge/url_get/online/world/", "b.portal-platform.t4f.cn/ge/url_get/online/world/"];
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Touch {
+    Pressed,
+    Moved,
+    Released,
+}
+
 /// A value passed between the scripts and the screens.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Arg {
@@ -40,6 +47,8 @@ impl Arg {
             Value::Integer(i) => Arg::Num(*i as f64),
             Value::Number(n) => Arg::Num(*n),
             Value::String(s) => Arg::Str(s.to_string_lossy()),
+            // Flash only takes plain values (the server sends `{}` for an empty last chat line)
+            Value::Table(_) => Arg::Str(String::new()),
             other => Arg::Str(text_of(other)),
         }
     }
@@ -285,6 +294,29 @@ impl Engine {
         let class_table: Table = classes.get(class).map_err(|_| anyhow!("no Flash class {class}"))?;
         let handler: Function = class_table.get("fscommand").map_err(|_| anyhow!("{class} has no fscommand handler"))?;
         handler.call::<()>((self.lua.create_table()?, command, arg))?;
+        Ok(())
+    }
+
+    /// A finger (or the mouse) on the screen, in the game's 640x960 coordinates: the game's
+    /// global OnTouchPressed/OnTouchMoved/OnTouchReleased hand it to its objects, top first.
+    pub fn touch(&self, phase: Touch, x: f64, y: f64) -> Result<()> {
+        let name = match phase {
+            Touch::Pressed => "OnTouchPressed",
+            Touch::Moved => "OnTouchMoved",
+            Touch::Released => "OnTouchReleased",
+        };
+        if let Ok(handler) = self.lua.globals().raw_get::<Function>(name) {
+            handler.call::<()>((x, y))?;
+        }
+        Ok(())
+    }
+
+    /// The app goes to the background or comes back (OnPause/OnResume).
+    pub fn pause(&self, paused: bool) -> Result<()> {
+        let name = if paused { "OnPause" } else { "OnResume" };
+        if let Ok(handler) = self.lua.globals().raw_get::<Function>(name) {
+            handler.call::<()>(())?;
+        }
         Ok(())
     }
 

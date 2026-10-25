@@ -1,8 +1,41 @@
+diff --git a/core/src/avm1.rs b/core/src/avm1.rs
+index 857fe50d..8da47ab6 100644
+--- a/core/src/avm1.rs
++++ b/core/src/avm1.rs
+@@ -41,7 +41,7 @@ pub use property::Attribute;
+ pub use property_map::PropertyMap;
+ use ruffle_common::avm_string::AvmString;
+ use ruffle_wstr::WStr;
+-pub use runtime::Avm1;
++pub use runtime::{Avm1, CASE_INSENSITIVE};
+ pub use value::Value;
+ 
+ #[macro_export]
+diff --git a/core/src/avm1/runtime.rs b/core/src/avm1/runtime.rs
+index 073af1ef..85d4308b 100644
+--- a/core/src/avm1/runtime.rs
++++ b/core/src/avm1/runtime.rs
+@@ -387,7 +387,7 @@ impl<'gc> Avm1<'gc> {
+ 
+     #[inline(always)]
+     pub fn is_case_sensitive(swf_version: u8) -> bool {
+-        swf_version >= 7
++        swf_version >= 7 && !CASE_INSENSITIVE.load(std::sync::atomic::Ordering::Relaxed)
+     }
+ 
+     /// Obtain a reference to the global scope.
+@@ -689,3 +689,6 @@ pub fn skip_actions(reader: &mut Reader<'_>, num_actions_to_skip: u8) {
+         }
+     }
+ }
++
++/// Look names up without regard to case in every SWF version, as gameswf did (Supernova).
++pub static CASE_INSENSITIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 diff --git a/core/src/external.rs b/core/src/external.rs
-index 071f1e73..a855899d 100644
+index 071f1e73..319b3adb 100644
 --- a/core/src/external.rs
 +++ b/core/src/external.rs
-@@ -424,3 +424,175 @@ impl<'gc> ExternalInterface<'gc> {
+@@ -424,3 +424,226 @@ impl<'gc> ExternalInterface<'gc> {
          self.fs_commands.on_fs_command(command, args)
      }
  }
@@ -178,11 +211,62 @@ index 071f1e73..a855899d 100644
 +    }
 +    Ok(Some((base, text)))
 +}
++
++/// What a touch at (`x`, `y`) lands on, for gameswf's native buttons.
++enum Pick<'gc> {
++    Button(crate::display_object::DisplayObject<'gc>),
++    Other,
++}
++
++fn pick<'gc>(
++    context: &mut UpdateContext<'gc>,
++    object: crate::display_object::DisplayObject<'gc>,
++    point: swf::Point<swf::Twips>,
++    prefix: &str,
++) -> Option<Pick<'gc>> {
++    use crate::display_object::{HitTestOptions, TDisplayObject, TDisplayObjectContainer};
++    if !object.visible() || object.maskee().is_some() || object.clip_depth() > 0 {
++        return None;
++    }
++    let is_button = object.name().is_some_and(|n| n.to_string().starts_with(prefix));
++    if let Some(container) = object.as_container() {
++        let children: Vec<_> = container.iter_render_list().collect();
++        for child in children.into_iter().rev() {
++            match pick(context, child, point, prefix) {
++                Some(Pick::Other) if is_button => return Some(Pick::Button(object)),
++                Some(found) => return Some(found),
++                None => {}
++            }
++        }
++        None
++    } else if object.hit_test_shape(context, point, HitTestOptions::SKIP_INVISIBLE | HitTestOptions::SKIP_CHILDREN) {
++        Some(if is_button { Pick::Button(object) } else { Pick::Other })
++    } else {
++        None
++    }
++}
++
++/// The path of the topmost clip named `prefix...` (gameswf's native buttons are clips named
++/// "btn...") under the stage point (`x`, `y`), unless something above it covers the point.
++pub fn find_avm1_button(context: &mut UpdateContext<'_>, x: f64, y: f64, prefix: &str) -> Option<String> {
++    use crate::display_object::TDisplayObject;
++    let root = context.stage.root_clip()?;
++    match pick(context, root, swf::Point::from_pixels(x, y), prefix)? {
++        Pick::Button(button) => Some(button.path().to_string()),
++        Pick::Other => None,
++    }
++}
++
++/// Make AVM1 look up names without regard to case in every SWF version, as gameswf did; for
++/// every player in the process.
++pub fn set_avm1_case_insensitive(on: bool) {
++    crate::avm1::CASE_INSENSITIVE.store(on, std::sync::atomic::Ordering::Relaxed);
++}
 diff --git a/core/src/player.rs b/core/src/player.rs
-index c3756621..e3a97199 100644
+index c3756621..8f67f764 100644
 --- a/core/src/player.rs
 +++ b/core/src/player.rs
-@@ -2535,6 +2535,49 @@ impl Player {
+@@ -2535,6 +2535,62 @@ impl Player {
          })
      }
  
@@ -222,6 +306,19 @@ index c3756621..e3a97199 100644
 +        self.mutate_with_update_context(|context| {
 +            crate::external::fit_avm1_text(context, target, min_scale, base_size, last_text)
 +        })
++    }
++
++    /// Whether the mouse is over an interactive object, and whether it presses one: what
++    /// gameswf's touch handlers report, so the game passes touches nobody takes further down.
++    pub fn mouse_target(&mut self) -> (bool, bool) {
++        self.mutate_with_update_context(|context| {
++            (context.mouse_data.hovered.is_some(), context.mouse_data.pressed.is_some())
++        })
++    }
++
++    /// The topmost native button under a stage point; see `external::find_avm1_button`.
++    pub fn find_avm1_button(&mut self, x: f64, y: f64, prefix: &str) -> Option<String> {
++        self.mutate_with_update_context(|context| crate::external::find_avm1_button(context, x, y, prefix))
 +    }
 +
 +    /// Replace an exported bitmap's pixels; see `external::replace_bitmap`.

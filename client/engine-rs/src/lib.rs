@@ -6,3 +6,4 @@ pub mod crypto;
 pub mod engine;
 pub mod convert;
 pub mod screens;
+pub mod compositor;

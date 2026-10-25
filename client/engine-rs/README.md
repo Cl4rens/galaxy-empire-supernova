@@ -22,6 +22,8 @@ cargo build --release
 | `SetCustomEffect(target, "Gray", on)` | `set_avm1_gray(target, on)` |
 | `SetLineMax(target, true, min)` | `fit_avm1_text(target, min, ...)`, after every frame |
 | `ReplaceTexture(slot, picture)` | `replace_bitmap(slot, pixels)` |
+| native buttons (clips named `btn...`) | `find_avm1_button(x, y, "btn")`, then `focus_in`/`released` and `on_clicked` from `screens.rs` |
+| names without regard to case | `set_avm1_case_insensitive(true)` |
 
 Flash commands come back through Ruffle's `FsCommandProvider`.
 
@@ -31,6 +33,15 @@ Flash commands come back through Ruffle's `FsCommandProvider`.
 python -m supernova_client.screens --apk ../../apk/galaxy-empire-1-9-36.apk --out screens   # in ../
 ./target/release/screen-test screens/Login.swf login.png 30 moveIn
 ```
+
+## Play
+
+```sh
+./target/release/supernova ../../apk/galaxy-empire-1-9-36.apk http://127.0.0.1:8000 save
+```
+
+A window with the game; the mouse is the finger. Every Flash object draws into its own
+texture, and `compositor.rs` stacks them in the order the game rendered them.
 
 ## Play without a window
 
@@ -47,4 +58,5 @@ filled from the ETC1 textures, and text fields draw with the game's `data2/Arial
 `screenshots` logs in and saves the title screen and the first screen after the login.
 `SUPERNOVA_LAYERS=1` also saves every Flash object on its own, `SUPERNOVA_DUMP_SCREENS=<dir>`
 writes the converted screens as SWF files, and `RUST_LOG=supernova_engine=debug` shows the
-requests and ActionScript calls.
+requests and ActionScript calls. `avm1-dump <screen.swf> [text]` prints a screen's
+ActionScript.

@@ -21,6 +21,8 @@ mlua = { version = "0.12.2", features = ["lua51", "vendored", "serialize", "erro
 serde_json = "1.0.154"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 ureq = { version = "2", features = ["cookies"] }
+winit = "0.30.13"
+swf = { path = "ruffle/swf" }
 aes = "0.8"
 cbc = { version = "0.1", features = ["alloc"] }
 base64 = "0.22"

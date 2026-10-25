@@ -39,6 +39,7 @@ struct Sender {
 
 impl FsCommandProvider for Sender {
     fn on_fs_command(&self, command: &str, args: &str) -> bool {
+        tracing::debug!("{}: fscommand {command} {args}", self.object);
         self.commands.lock().unwrap().push((self.object.clone(), command.to_string(), args.to_string()));
         true
     }
@@ -54,6 +55,84 @@ pub struct RuffleScreens {
     pub missing: HashMap<String, u32>,
     /// text fields that shrink their text to fit (SetLineMax), per object
     fits: HashMap<String, Vec<Fit>>,
+    /// gameswf's native buttons, per object
+    buttons: HashMap<String, Buttons>,
+}
+
+/// gameswf drove clips named "btn..." itself: a touch plays their "focus_in" frames, leaving
+/// them "focus_out", and letting go on them "released" and calls their `on_clicked`.
+/// SetBtnEnable switches them between "disabled" and "activated".
+#[derive(Default)]
+struct Buttons {
+    /// the button the finger went down on, and whether it is still on it
+    pressed: Option<(String, bool)>,
+    disabled: std::collections::HashSet<String>,
+}
+
+const BUTTON_PREFIX: &str = "btn";
+
+/// "_level0.panel.btnOk" as the scripts write it: "_root.panel.btnOk"
+fn script_path(path: &str) -> String {
+    match path.strip_prefix("_level0") {
+        Some(rest) => format!("_root{rest}"),
+        None => path.to_string(),
+    }
+}
+
+fn play(player: &mut Player, button: &str, label: &str, callback: &str) {
+    player.call_avm1_function(button, "gotoAndPlay", vec![ExternalValue::String(label.to_string())]);
+    if !callback.is_empty() {
+        player.call_avm1_function(button, callback, vec![]);
+    }
+}
+
+impl Buttons {
+    /// Returns whether the touch is on a button.
+    fn touch(&mut self, player: &mut Player, method: &str, x: f64, y: f64) -> bool {
+        let under = player.find_avm1_button(x, y, BUTTON_PREFIX).map(|p| script_path(&p));
+        match method {
+            "OnTouchPressed" => {
+                let Some(button) = under else { return false };
+                if !self.disabled.contains(&button) {
+                    play(player, &button, "focus_in", "on_focus_in");
+                    self.pressed = Some((button, true));
+                }
+                true
+            }
+            "OnTouchMoved" => {
+                let Some((button, inside)) = &mut self.pressed else { return false };
+                let now_inside = under.as_deref() == Some(button.as_str());
+                if now_inside != *inside {
+                    *inside = now_inside;
+                    let (label, callback) = if now_inside { ("focus_in", "on_focus_in") } else { ("focus_out", "on_focus_out") };
+                    play(player, button, label, callback);
+                }
+                true
+            }
+            _ => {
+                let Some((button, inside)) = self.pressed.take() else { return false };
+                if inside {
+                    play(player, &button, "released", "on_clicked");
+                }
+                true
+            }
+        }
+    }
+
+    fn set_enabled(&mut self, player: &mut Player, button: &str, enabled: bool) {
+        let button = script_path(button);
+        if enabled {
+            if self.disabled.remove(&button) {
+                play(player, &button, "activated", "");
+            }
+        } else {
+            if self.pressed.as_ref().is_some_and(|(b, _)| *b == button) {
+                self.pressed = None;
+            }
+            play(player, &button, "disabled", "");
+            self.disabled.insert(button);
+        }
+    }
 }
 
 struct Fit {
@@ -92,6 +171,9 @@ fn from_external(value: ExternalValue) -> Arg {
 
 impl RuffleScreens {
     pub fn new() -> Result<Self> {
+        // the screens' ActionScript was written for gameswf, which ignored the case of names
+        // (`htmltext` for `htmlText`)
+        ruffle_core::external::set_avm1_case_insensitive(true);
         let instance = create_wgpu_instance(wgpu::Backends::all(), wgpu::BackendOptions::default(), None);
         let (adapter, device, queue) = futures::executor::block_on(request_adapter_and_device(
             wgpu::Backends::all(),
@@ -108,6 +190,7 @@ impl RuffleScreens {
             rendered: Vec::new(),
             missing: HashMap::new(),
             fits: HashMap::new(),
+            buttons: HashMap::new(),
         })
     }
 
@@ -176,6 +259,21 @@ impl RuffleScreens {
         out
     }
 
+    /// Draw every screen the game rendered this frame into its texture; the textures bottom
+    /// first, for the window to stack.
+    pub fn layer_textures(&mut self) -> Vec<wgpu::Texture> {
+        let mut out = Vec::new();
+        for object in &self.rendered {
+            let Some(player) = self.players.get(object) else { continue };
+            let mut p = player.lock().unwrap();
+            p.render();
+            if let Some(renderer) = <dyn std::any::Any>::downcast_ref::<WgpuRenderBackend<TextureTarget>>(p.renderer()) {
+                out.push(renderer.target().texture.clone());
+            }
+        }
+        out
+    }
+
     /// The layers stacked into one picture.
     pub fn snapshot(&mut self) -> image::RgbaImage {
         let mut out = image::RgbaImage::from_pixel(WIDTH, HEIGHT, image::Rgba([0, 0, 0, 255]));
@@ -239,13 +337,19 @@ impl Screens for RuffleScreens {
                 Vec::new()
             }
             "OnTouchPressed" | "OnTouchMoved" | "OnTouchReleased" => {
+                // true when the finger is on something of this screen that reacts to it, so the
+                // game does not hand the touch to the screens below
                 let (x, y) = point();
+                let on_button = self.buttons.entry(object.to_string()).or_default().touch(&mut p, method, x, y);
+                let (_, was_pressing) = p.mouse_target();
                 let event = match method {
                     "OnTouchPressed" => PlayerEvent::MouseDown { x, y, button: MouseButton::Left, index: None },
                     "OnTouchMoved" => PlayerEvent::MouseMove { x, y },
                     _ => PlayerEvent::MouseUp { x, y, button: MouseButton::Left },
                 };
-                vec![Arg::Bool(p.handle_event(event))]
+                p.handle_event(event);
+                let (hovering, pressing) = p.mouse_target();
+                vec![Arg::Bool(on_button || hovering || pressing || was_pressing)]
             }
             // a picture slot (an exported bitmap such as "NA_Item_3.png") gets a picture; the
             // game falls back to a default picture when the size comes back 0, 0
@@ -263,7 +367,9 @@ impl Screens for RuffleScreens {
                 vec![Arg::Num(w as f64), Arg::Num(h as f64)]
             }
             "SetBtnEnable" => {
-                p.set_avm1_property(&text(0), "enabled", ExternalValue::Bool(truthy(args.get(1))));
+                let enabled = truthy(args.get(1));
+                p.set_avm1_property(&text(0), "enabled", ExternalValue::Bool(enabled));
+                self.buttons.entry(object.to_string()).or_default().set_enabled(&mut p, &text(0), enabled);
                 Vec::new()
             }
             "SetCustomEffect" => {
