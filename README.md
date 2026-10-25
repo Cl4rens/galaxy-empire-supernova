@@ -192,6 +192,7 @@ Uninstall any old copy of the original game first, because the signatures differ
 - [x] Item shop (dark matter), capsule and speed-ups
 - [x] Ship modification with devices
 - [x] Advanced ships: Devourer Interceptor, Titanenergetic Frigate, Proton Cannon, Annihilator, Reaper
+- [x] Intercept and interplanetary missiles
 - [x] Runs on Android 6-16 without crashes or permission dialogs
 - [ ] Support for 64-bit-only devices: needs an open client engine that runs the original Lua
       scripts and Flash UI from the player's APK (idea, not started)

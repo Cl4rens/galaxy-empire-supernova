@@ -149,7 +149,7 @@ RESEARCHES: dict[int, BuildingRule] = {
                                                 {RESEARCH_LAB: 8}, {PLASMA_TECH: 3}),
     ANTI_GRAVITY: BuildingRule("Anti-Gravity", 10000, 20000, 10000, 2, {RESEARCH_LAB: 12},
                                {HYPERSPACE_TECH: 8}),
-    MISSILE_TECH: BuildingRule("Missile Technology", 5000, 5000, 2000, 2, {RESEARCH_LAB: 5}, {WEAPONS_TECH: 5}),
+    MISSILE_TECH: BuildingRule("Combined Guidance Tech", 2000, 4000, 600, 2, {RESEARCH_LAB: 10}, {}),  # wiki
 }
 
 
@@ -205,6 +205,9 @@ UNITS: dict[int, BuildingRule] = {
     21: BuildingRule("Small Shield Dome", 10000, 10000, 0, 1, {SHIPYARD: 1}, {SHIELDING_TECH: 2}),
     22: BuildingRule("Large Shield Dome", 50000, 50000, 0, 1, {SHIPYARD: 6}, {SHIELDING_TECH: 6}),
     27: BuildingRule("Proton Cannon", 500000, 500000, 300000, 1, {SHIPYARD: 15, NANITE_FACTORY: 2}, {}),
+    # missiles: costs are Supernova's own (OGame's anti-ballistic and interplanetary missiles)
+    30: BuildingRule("Intercept Missile", 8000, 0, 2000, 1, {SHIPYARD: 4}, {MISSILE_TECH: 1}),
+    31: BuildingRule("Interplanetary Missile", 12500, 2500, 10000, 1, {SHIPYARD: 4}, {MISSILE_TECH: 1}),
 }
 
 # Units the client offers elsewhere (krypton shop) or never lets players build.
@@ -255,6 +258,7 @@ SHIPS: dict[int, ShipStats] = {
     26: ShipStats(4000, 4000, 2500, HYPERSPACE_DRIVE),  # Titanenergetic Frigate
     28: ShipStats(9000, 1, 1000, HYPERSPACE_DRIVE),  # Annihilator
     29: ShipStats(5000, 3000, 2000, HYPERSPACE_DRIVE),  # Reaper: not in the wiki, Supernova's own
+    31: ShipStats(1_000_000, 0, 1, HYPERSPACE_DRIVE),  # interplanetary missiles fly with the fleet
 }
 
 # Drive upgrades: (ship, research, level) -> (new drive, new speed)

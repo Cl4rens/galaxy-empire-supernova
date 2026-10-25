@@ -192,11 +192,16 @@ def _build_reapers(state: dict, n: int, planet: dict) -> str:
     return f"{reapers} Reaper(s) built from {reapers * REAPER_COMPONENTS:,} intricate components."
 
 
-def add_components(state: dict, enemy_lost: dict[int, int]) -> int:
+def components_for(enemy_lost: dict[int, int]) -> int:
     """Intricate components from large enemy ships destroyed in a battle: hull / 5,000 each."""
     from . import combat
-    found = sum(max(1, combat.STATS[t].hull // 5000) * n for t, n in enemy_lost.items()
-                if t in combat.STATS and combat.STATS[t].hull >= 7000 and t in planet_rules.eco.SHIPS)
+    return sum(max(1, combat.STATS[t].hull // 5000) * n for t, n in enemy_lost.items()
+               if t in combat.STATS and combat.STATS[t].hull >= 7000 and t in planet_rules.eco.SHIPS
+               and t not in combat.MISSILES)
+
+
+def add_components(state: dict, enemy_lost: dict[int, int]) -> int:
+    found = components_for(enemy_lost)
     if found:
         _add(state, COMPONENT, found)
     return found

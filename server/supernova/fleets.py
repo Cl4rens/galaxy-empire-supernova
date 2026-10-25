@@ -471,7 +471,7 @@ def _side(name: str, empire: dict, units: dict[int, int], planet: dict | None = 
                        kryptons.bonus(planet, "attack") + behemoth_bonus + ecm_bonus + lord.get("increase_attack", 0),
                        kryptons.bonus(planet, "shield") + ecm_bonus + lord.get("increase_shield", 0),
                        kryptons.bonus(planet, "armour") + ecm_bonus + lord.get("increase_armour", 0),
-                       devices.unit_bonuses(empire))
+                       devices.unit_bonuses(empire), planet_rules.research_level(empire, eco.MISSILE_TECH))
 
 
 def _salvage(player_id: int, debris: dict, own_units: dict[int, int], enemy_lost: dict[int, int],
@@ -555,6 +555,13 @@ def _battle(row, attacker: combat.Side, attacker_bonus: dict, defender: combat.S
         "defend_krypton_bonus": _krypton_bonus(defender),
         "round": rounds,
         "debirs": result["debris"],
+        # the client's full report: missiles, Annihilators, intricate components, loot ("booty")
+        "intercept_missile_info": result["intercept_missile_info"],
+        "interplanetary_missile_info": result["interplanetary_missile_info"],
+        "self_destruction": result["self_destruction"],
+        "reaper_frag_info": {"attacker_reaper_frag_got": items.components_for(result["defend_lost"]),
+                             "defender_reaper_frag_got": items.components_for(result["attack_lost"])},
+        "booty": {"metal": 0, "crystal": 0, "deuterium": 0, "krypton": 0},
     }
     return result
 
@@ -651,7 +658,8 @@ def _attack(row, target_owner: int, state: dict, planet: dict) -> str:
     if repaired:
         info["defender_recover_ratio"] = 0
     body = {"mission_type": ATTACK, "is_returning": False, "event_info": info, "notify_message": " ".join(notes),
-            "attack_result": dict(result["report"], loot=loot), "defender_repair_sw": int(bool(repaired))}
+            "attack_result": dict(result["report"], loot=loot, booty=dict(loot, krypton=0)),
+            "defender_repair_sw": int(bool(repaired))}
     subject = f"Battle report [{info['end_planet_pos']}]"
     for owner in {r["owner_id"] for r in group}:  # the client finds its side by attacker_name
         name = _username(owner)
@@ -725,7 +733,7 @@ def _attack_pirates(row) -> str:
         notes.append(salvage_note)
     body = {"mission_type": ATTACK_PIRATES, "is_returning": False, "event_info": info,
             "notify_message": ", ".join(notes),
-            "attack_result": dict(result["report"], loot=loot)}
+            "attack_result": dict(result["report"], loot=loot, booty=dict(loot, krypton=0))}
     mails.send(row["owner_id"], mails.REPORT, mails.SENDER_FLEET, attacker_name,
                f"Battle report [{info['end_planet_pos']}]", body, row["arrival_time"])
     return _fly_home(row, result["attacker_left"], loot)

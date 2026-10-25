@@ -427,6 +427,14 @@ def start_fleet_order(empire: dict, state: dict, fleet_id: int, count: int, now:
                      if o["fleet_type"] == ftype)
         if f["amount"] + queued + count > 1:
             raise GameError("Only one of these can be built")
+    if ftype in (30, 31):  # missiles: a planet holds as many as one battle can use
+        from . import combat
+        tech = research_level(empire, eco.MISSILE_TECH)
+        limit = combat.intercept_limit(tech) if ftype == 30 else combat.interplanetary_limit(tech)
+        queued = sum(o["total_count"] - o["delivered"] for o in planet["fleet_building_events"]
+                     if o["fleet_type"] == ftype)
+        if f["amount"] + queued + count > limit:
+            raise GameError(f"This planet can hold at most {limit} of these; research Combined Guidance Tech")
     unit_cost = eco.unit_cost(ftype)
     _pay(planet, tuple(c * count for c in unit_cost))
     seconds = eco.unit_seconds(ftype, level(planet, shipyard_type(planet)), level(planet, eco.NANITE_FACTORY))

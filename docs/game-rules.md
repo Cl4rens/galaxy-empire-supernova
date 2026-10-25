@@ -510,3 +510,25 @@ Values from the Galaxy Empire wiki; the Reaper's are Supernova's own.
 - Rapid fire (wiki): Devourer against light fighters 20, large cargo 10, interceptors and
   Behemoths 5; Frigate against large cargo 15, light fighters 10, destroyers, Devourers and
   Behemoths 5; Proton Cannon against interceptors, Devourers and Frigates 12.
+
+## Missiles
+
+Rules from the client (texts, order limits, battle report); costs and damage are Supernova's own.
+
+- Both need Combined Guidance Tech 1 (research lab 10; 2,000 metal, 4,000 crystal, 600
+  deuterium, doubling per level) and shipyard 4.
+- **Intercept Missile** (30, defense; 8,000 metal, 2,000 deuterium) and **Interplanetary
+  Missile** (31, flies with a fleet; 12,500 metal, 2,500 crystal, 10,000 deuterium). A planet
+  holds, and a battle uses, at most 20 + 3 x level intercept missiles (up to 170) and 2 x level
+  interplanetary missiles (up to 100).
+- Before a battle, in this order:
+  1. The defender's intercept missiles stop one attacking unit each: Annihilators first, then
+     interplanetary missiles, Iron Behemoths, interceptors, Devourers, Frigates. Used ones are
+     gone (not repaired like other defense).
+  2. Interplanetary missiles fire: the attacker's always, the planet's with a 50 % chance. Each
+     destroys one Reaper or, without Reapers, 1,000,000 hull points of the enemy's biggest ship
+     type (at least one ship). They are used up.
+  3. The attacker's Annihilators explode (see above).
+- Missiles never take part in the battle rounds; unused ones stay or fly home.
+- Battle reports now carry the client's full layout: loot (`booty`), intercepted units, missile
+  hits, Annihilator explosions and intricate components for both sides.

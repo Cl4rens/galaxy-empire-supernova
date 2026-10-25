@@ -36,6 +36,22 @@ ANNIHILATOR_DAMAGE = 500_000  # per explosion, shared by the enemy's unit types
 ANNIHILATOR_MULTIPLIER = {26: 5, 25: 4, 23: 4, 24: 3}  # wiki: bonus damage against these
 ANNIHILATOR_TRIGGERS = (23, 24, 25, 26)  # explosions go on while the enemy has two of these
 
+# Missiles (client texts and battle report; the numbers are Supernova's own)
+INTERCEPT_MISSILE, INTERPLANETARY_MISSILE = 30, 31
+MISSILES = (INTERCEPT_MISSILE, INTERPLANETARY_MISSILE)  # they never take part in the rounds
+INTERCEPT_TARGETS = (ANNIHILATOR, INTERPLANETARY_MISSILE, 24, 23, 25, 26)  # in this order, one each
+MISSILE_DAMAGE = 1_000_000  # an interplanetary missile that finds no Reaper hits the biggest ship type
+DEFENSE_LAUNCH_CHANCE = 0.5  # a planet's interplanetary missiles fire at an attack with this chance
+
+
+def intercept_limit(missile_tech: int) -> int:
+    """Intercept missiles one battle can use (the client caps orders the same way)."""
+    return min(170, 20 + 3 * missile_tech) if missile_tech else 0
+
+
+def interplanetary_limit(missile_tech: int) -> int:
+    return min(100, 2 * missile_tech)
+
 
 def _hull(utype: int) -> int:
     if utype in HULL:
@@ -48,7 +64,7 @@ STATS: dict[int, CombatStats] = {t: CombatStats(w, s, _hull(t)) for t, (w, s) in
     1: (50, 10), 2: (150, 25), 3: (400, 50), 4: (1000, 200), 5: (700, 400), 6: (1000, 500),
     7: (2000, 500), 8: (200000, 50000), 9: (5, 10), 10: (5, 25), 11: (50, 100), 12: (1, 10),
     13: (0, 0), 14: (1, 1), 15: (80, 20), 16: (100, 25), 17: (250, 100), 18: (1100, 200),
-    19: (150, 500), 20: (3000, 300), 21: (1, 2000), 22: (1, 10000), 23: (7000, 1500), 24: (5500, 4000),
+    19: (150, 500), 20: (3000, 300), 21: (1, 2000), 22: (1, 10000), 23: (7000, 1500), 24: (5500, 4000), 30: (0, 0), 31: (0, 0),
     25: (6500, 1500), 26: (5000, 3000), 27: (5000, 5000), 28: (0, 1), 29: (8000, 3000),
 }.items()}
 
@@ -85,6 +101,7 @@ class Side:
     shield_percent: int = 0
     armour_percent: int = 0
     unit_percent: dict[int, tuple[int, int, int]] = field(default_factory=dict)  # ship modification
+    missile_tech: int = 0  # Combined Guidance Tech level
 
     def _extra(self, utype: int, index: int) -> float:
         return self.unit_percent.get(utype, (0, 0, 0))[index] / 100
@@ -180,6 +197,49 @@ def _fleet_list(units: dict[int, int]) -> list[dict]:
     return [{"fleet_type": t, "amount": n} for t, n in sorted(units.items()) if n]
 
 
+def _with_units(side: Side, units: dict[int, int]) -> Side:
+    return Side(side.name, units, side.weapons, side.shielding, side.armour, side.attack_percent,
+                side.shield_percent, side.armour_percent, side.unit_percent, side.missile_tech)
+
+
+def intercept(attacker: dict[int, int], defender: Side) -> dict:
+    """The defender's intercept missiles stop Annihilators, interplanetary missiles and advanced
+    ships, one each, before the battle. Changes `attacker`; returns the report part."""
+    stock = defender.units.get(INTERCEPT_MISSILE, 0)
+    left = min(stock, intercept_limit(defender.missile_tech))
+    stopped = []
+    for t in INTERCEPT_TARGETS:
+        n = min(left, attacker.get(t, 0))
+        if n:
+            attacker[t] -= n
+            left -= n
+            stopped.append({"fleet_type": t, "amount": n})
+    used = min(stock, intercept_limit(defender.missile_tech)) - left
+    return {"origin": stock, "cost": used, "intercept": stopped}
+
+
+def launch(shooter: Side, own: dict[int, int], target: Side, enemy: dict[int, int], fire: bool) -> dict:
+    """Interplanetary missiles: each destroys one Reaper or, without Reapers, MISSILE_DAMAGE worth
+    of the enemy's biggest ship type. Changes `own` and `enemy`; returns the report part."""
+    stock = own.get(INTERPLANETARY_MISSILE, 0)
+    count = min(stock, interplanetary_limit(shooter.missile_tech)) if fire else 0
+    banned: dict[int, int] = {}
+    for _ in range(count):
+        if enemy.get(REAPER):
+            enemy[REAPER] -= 1
+            banned[REAPER] = banned.get(REAPER, 0) + 1
+            continue
+        ships = [t for t, n in enemy.items() if n > 0 and t in eco.SHIPS and t not in MISSILES]
+        if not ships:
+            break
+        t = max(ships, key=lambda u: STATS[u].hull)
+        killed = min(enemy[t], max(1, int(MISSILE_DAMAGE * shooter.weapon_factor() // target.hull_of(t))))
+        enemy[t] -= killed
+        banned[t] = banned.get(t, 0) + killed
+    own[INTERPLANETARY_MISSILE] = stock - count
+    return {"origin": stock, "cost": count, "ban": [{"fleet_type": t, "amount": n} for t, n in banned.items()]}
+
+
 def annihilate(attacker: Side, defender: Side) -> tuple[dict[int, int], dict[int, int], int]:
     """The attacker's Annihilators explode before the battle, one after the other, as long as the
     defender has at least two kinds of advanced ships (interceptors, Behemoths, Devourers,
@@ -202,13 +262,24 @@ def annihilate(attacker: Side, defender: Side) -> tuple[dict[int, int], dict[int
 def fight(attacker: Side, defender: Side, rng: random.Random | None = None) -> dict:
     """Run a battle. Returns rounds, survivors, winner ("attacker", "defender" or "draw")."""
     rng = rng or random.Random()
-    att_units, dfn_units, explosions = annihilate(attacker, defender)
-    att = _expand(Side(attacker.name, att_units, attacker.weapons, attacker.shielding, attacker.armour,
-                       attacker.attack_percent, attacker.shield_percent, attacker.armour_percent,
-                       attacker.unit_percent))
-    dfn = _expand(Side(defender.name, dfn_units, defender.weapons, defender.shielding, defender.armour,
-                       defender.attack_percent, defender.shield_percent, defender.armour_percent,
-                       defender.unit_percent))
+    # before the battle: intercept missiles, interplanetary missiles, Annihilators
+    att_units, dfn_units = dict(attacker.units), dict(defender.units)
+    intercepted = intercept(att_units, defender)
+    if intercepted["cost"]:
+        dfn_units[INTERCEPT_MISSILE] -= intercepted["cost"]
+    missiles = {"attacker_interplanetary_missile_info": launch(attacker, att_units, defender, dfn_units, True),
+                "defender_interplanetary_missile_info": launch(defender, dfn_units, attacker, att_units,
+                                                               rng.random() < DEFENSE_LAUNCH_CHANCE)}
+    bombers = att_units.get(ANNIHILATOR, 0)
+    before = dict(dfn_units)
+    att_units, dfn_units, explosions = annihilate(_with_units(attacker, att_units), _with_units(defender, dfn_units))
+    destruction = {"self_count": bombers, "left_count": att_units.get(ANNIHILATOR, 0),
+                   "attack_result": {str(t): n - dfn_units.get(t, 0) for t, n in before.items()
+                                     if n - dfn_units.get(t, 0) > 0}}
+    idle_att = {t: n for t, n in att_units.items() if t in MISSILES and n > 0}  # missiles do not fight
+    idle_dfn = {t: n for t, n in dfn_units.items() if t in MISSILES and n > 0}
+    att = _expand(_with_units(attacker, {t: n for t, n in att_units.items() if t not in MISSILES}))
+    dfn = _expand(_with_units(defender, {t: n for t, n in dfn_units.items() if t not in MISSILES}))
     rounds = []
     for _ in range(MAX_ROUNDS):
         if not att or not dfn:
@@ -235,8 +306,10 @@ def fight(attacker: Side, defender: Side, rng: random.Random | None = None) -> d
         winner = "draw"
     else:
         winner = "draw"
-    return {"rounds": rounds, "attacker_left": _survivors(att), "defender_left": _survivors(dfn), "winner": winner,
-            "explosions": explosions}
+    return {"rounds": rounds, "attacker_left": {**_survivors(att), **idle_att},
+            "defender_left": {**_survivors(dfn), **idle_dfn}, "winner": winner, "explosions": explosions,
+            "intercept_missile_info": intercepted, "interplanetary_missile_info": missiles,
+            "self_destruction": destruction}
 
 
 def losses(before: dict[int, int], after: dict[int, int]) -> dict[int, int]:
@@ -248,7 +321,7 @@ def rebuild_defense(lost: dict[int, int], rng: random.Random | None = None) -> d
     rng = rng or random.Random()
     rebuilt = {}
     for utype, n in lost.items():
-        if utype in eco.SHIPS:
+        if utype in eco.SHIPS or utype in MISSILES:  # used missiles have to be built again
             continue
         k = sum(1 for _ in range(n) if rng.random() < DEFENSE_REBUILD)
         if k:
@@ -260,7 +333,7 @@ def debris(lost_ships: dict[int, int]) -> dict[str, int]:
     """Metal and crystal left by destroyed ships (not defense)."""
     metal = crystal = 0
     for utype, n in lost_ships.items():
-        if utype in eco.SHIPS and utype in eco.UNITS:
+        if utype in eco.SHIPS and utype in eco.UNITS and utype not in MISSILES:
             m, c, _ = eco.unit_cost(utype)
             metal += m * n
             crystal += c * n
