@@ -55,33 +55,27 @@ Things we learned on the way (also useful for a native implementation):
 Tests (`python -m pytest tests`) run the engine on a small fake game with its own scripts and a
 local HTTP server, so they need no game files.
 
-## Stage 2: drawing the screens (started)
+## Stage 2: drawing the screens (playable on the desktop)
 
 The `.tfs` screens are ordinary SWF files with ActionScript 2 (they open in JPEXS), except for
-their pictures, which gameswf loads from `data2/` at run time. Done so far:
+their pictures, which gameswf loads from `data2/` at run time:
 
-- `supernova_client.screens` turns every screen into a standard SWF with its pictures
-  (146 screens). Each placeholder bitmap is replaced by the PNG/JPEG it is exported as.
+- Each placeholder bitmap is replaced by the PNG/JPEG it is exported as (146 screens).
 - The large atlases (`main_city_res.png`, ...) are PVR v2 textures in ETC1 with the alpha channel
-  in a separate `_alpha.pak`; `supernova_client.textures` decodes them (about 4 s per 2048x2048
-  atlas, no extra packages).
-- Pictures named `NA_*` stay empty: the game fills them at run time with `ReplaceTexture`.
+  in a separate `_alpha.pak`.
+- Pictures named `NA_*` start empty: the game fills them at run time with `ReplaceTexture`.
+
+`supernova_client.screens` (Python) does that conversion for inspection:
 
 ```sh
 python -m supernova_client.screens --apk ../apk/galaxy-empire-1-9-36.apk --out screens
 ```
 
-The city screen rendered by JPEXS from the converted file shows the original graphics. Ruffle
-also plays the screens; showing them live is the next step:
-
-- Use [Ruffle](https://ruffle.rs) (Rust, plays AS2 well) as a library and connect it to the
-  scripts like gameswf was: Lua's `InvokeASCallback(path, function, args)` calls an
-  ActionScript function on a movie clip, ActionScript's `fscommand(cmd, arg)` calls the Lua
-  class's `fscommand` (Ruffle has an `FSCommandProvider` for that).
-- `ReplaceTexture("NA_x.png", file)`: swap a bitmap by its export name for a PNG from `data2/`.
-- Fonts (`data2/Arial.ttf`) and the gray/additive effects (gameswf's GLSL shaders in the APK).
-- The Lua side moves to Rust with [mlua](https://github.com/mlua-rs/mlua) (vendored Lua 5.1),
-  following this Python engine function by function; its tests carry over.
+The engine itself is now [`engine-rs`](engine-rs/README.md): the Lua side in Rust with
+[mlua](https://github.com/mlua-rs/mlua), and every Flash object a [Ruffle](https://ruffle.rs)
+player, connected like gameswf did it (`InvokeASCallback`, `fscommand`, `ReplaceTexture`,
+native `btn...` buttons, text with `data2/Arial.ttf`). In a window it logs in and plays: news,
+city, fleet screens and buttons work. Still open: sound, a few placeholder texts.
 
 ## Stage 3: an Android app
 
