@@ -16,6 +16,7 @@ from . import accounts, acs, alliances, bookmarks, chat, checkin, combat, crypto
 from . import devices, ecm, flagships, fortresses, items, kryptons, lordship, notices, player, quests, ranking
 from . import daily, officers, repairs
 from . import galaxy_challenge as gc
+from . import arena
 from . import economy as eco
 from . import planet as planet_rules
 from . import universe
@@ -1683,15 +1684,182 @@ async def speed_up(world_id: int, event_id: int, request: Request, player_id: in
 # --- Star fortresses ------------------------------------------------------------------------
 
 
+# --- Conquer The Universe (the arena behind the star gate) ---------------------------------
+
+
+def arena_call(player_id: int, fn, params: dict | None = None, planet: bool = False):
+    """Run fn(ev, state, now) on the running arena; `planet` adds the empire and planet."""
+    now = time.time()
+    try:
+        with db.player_state(player_id) as state:
+            empire = state["empire"]
+            if params and _int(params, "planet_id"):
+                planet_rules.switch_planet(empire, _int(params, "planet_id"))
+            planet_rules.tick(empire, now)
+            with arena.event(now) as ev:
+                if arena.stage(ev, now) == 0:
+                    raise arena.ArenaError("Conquer The Universe is not running")
+                result = fn(ev, state, now)
+            if planet and isinstance(result, dict):
+                result = dict(result, empire=player.empire_summary(state), planet=planet_rules.client_view(empire, now))
+            return encrypted_json(result)
+    except planet_rules.GameError as e:
+        return error(str(e))
+
+
 @router.get("/challenge_events/{planet_id}")
-def galaxy_challenge_events(planet_id: int, player_id: int = Depends(current_player)):
-    """The star gate: without a running galaxy challenge the client shows the star fortresses."""
-    return encrypted_json({"switch_status": False})
+def arena_overview(planet_id: int, player_id: int = Depends(current_player)):
+    """The star gate: without a running arena the client shows the star fortresses."""
+    if not arena.running(time.time()):
+        return encrypted_json({"switch_status": False})
+    return arena_call(player_id, arena.overview, {"planet_id": str(planet_id)})
 
 
 @router.get("/challenge_event/switch")
-def galaxy_challenge_switch(player_id: int = Depends(current_player)):
-    return encrypted_json({"status": False})
+def arena_switch(player_id: int = Depends(current_player)):
+    return encrypted_json({"status": arena.running(time.time())})
+
+
+@router.post("/challenge_event/defending")
+@router.post("/challenge_event/speed_up_and_defend/{planet_id}")
+async def arena_garrison(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    return arena_call(player_id, lambda ev, state, now: arena.garrison(ev, state, now), params, planet=True)
+
+
+@router.post("/challenge_event/buy_hp_times_for_defending/{planet_id}")
+def arena_weaker_garrison(planet_id: int, player_id: int = Depends(current_player)):
+    return arena_call(player_id, lambda ev, state, now: arena.garrison(ev, state, now, pay=True),
+                      {"planet_id": str(planet_id)}, planet=True)
+
+
+def _arena_fight(ev, state, now, target: int):
+    return arena.challenge(ev, state, target, now)
+
+
+@router.post("/challenge_event/challenge")
+async def arena_challenge(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    target = _int(params, "target_rank")
+
+    def act(ev, state, now):
+        need = arena.check_challenge(ev, state, target, now)
+        if need == "cool":
+            price = arena.cool_down_price(ev, player_id, now)
+            return {"is_cooling_time": True, "msg": f"Your fleet is still cooling down. Challenge now for {price} credits?"}
+        if need == "buy":  # the client asks with this text and then buys
+            return f"No free challenges left today. One more for {arena.CHALLENGE_PRICE} credits?"
+        return _arena_fight(ev, state, now, target)
+    return arena_call(player_id, act, params, planet=True)
+
+
+@router.post("/challenge_event/speed_up_and_challenge")
+async def arena_skip_and_challenge(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    target = _int(params, "target_rank")
+
+    def act(ev, state, now):
+        arena.skip_cool_down(ev, state, now)
+        result = _arena_fight(ev, state, now, target)
+        return {"result": result, "activity_score": result["activity_score"],
+                "empire": player.empire_summary(state), "planet": planet_rules.client_view(state["empire"], now)}
+    return arena_call(player_id, act, params)
+
+
+@router.post("/challenge_event/buy_hp_times_for_challenge")
+async def arena_buy_challenge(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    target = _int(params, "target_rank")
+
+    def act(ev, state, now):
+        arena.buy_challenge(ev, state, now)
+        if arena.check_challenge(ev, state, target, now) == "cool":
+            return "You bought a challenge. Your fleet is still cooling down."
+        return _arena_fight(ev, state, now, target)
+    return arena_call(player_id, act, params, planet=True)
+
+
+@router.post("/challenge_event/speed_up/{planet_id}")
+def arena_skip_cool_down(planet_id: int, player_id: int = Depends(current_player)):
+    def act(ev, state, now):
+        arena.skip_cool_down(ev, state, now)
+        return {"msg": "Your fleet is ready."}
+    return arena_call(player_id, act, {"planet_id": str(planet_id)}, planet=True)
+
+
+@router.get("/challenge_event/refresh")
+def arena_refresh_price(player_id: int = Depends(current_player)):
+    return arena_call(player_id, lambda ev, state, now: f"New opponents for {arena.REFRESH_PRICE} credits?")
+
+
+@router.post("/challenge_event/make_sure_for_refresh/{planet_id}")
+def arena_refresh(planet_id: int, player_id: int = Depends(current_player)):
+    def act(ev, state, now):
+        arena.refresh(ev, state, now)
+        return {"msg": "New opponents are waiting.", "challenge_info": arena.challenge_info(ev, player_id, now)}
+    return arena_call(player_id, act, {"planet_id": str(planet_id)}, planet=True)
+
+
+@router.get("/challenge_event/battle_logs")
+def arena_logs(player_id: int = Depends(current_player)):
+    return arena_call(player_id, lambda ev, state, now: {"result": arena.battle_logs(ev, player_id)})
+
+
+@router.get("/challenge_event/get_battle_report/{report_id}")
+def arena_report(report_id: int, player_id: int = Depends(current_player)):
+    return arena_call(player_id, lambda ev, state, now: arena.report(ev, report_id))
+
+
+@router.get("/challenge_event/item_info")
+def arena_shop(player_id: int = Depends(current_player)):
+    return arena_call(player_id, lambda ev, state, now: {"activity_score": state.get("arena_points", 0),
+                                                         "all_items": arena.shop(ev, state)})
+
+
+@router.post("/challenge_event/exchange")
+async def arena_buy(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    return arena_call(player_id, lambda ev, state, now: arena.buy(ev, state, _int(params, "item_id"),
+                                                                  _int(params, "item_count", 1)), params)
+
+
+@router.post("/challenge_event/daily_reward/{planet_id}")
+def arena_daily_prize(planet_id: int, player_id: int = Depends(current_player)):
+    return arena_call(player_id, lambda ev, state, now: {"reward": arena.daily_prize(ev, state, now)},
+                      {"planet_id": str(planet_id)}, planet=True)
+
+
+@router.post("/challenge_event/ultimate_reward/{planet_id}")
+def arena_final_prize(planet_id: int, player_id: int = Depends(current_player)):
+    return arena_call(player_id, lambda ev, state, now: {"reward": arena.final_prize(ev, state, now)},
+                      {"planet_id": str(planet_id)}, planet=True)
+
+
+@router.post("/challenge_event/alliance")
+def arena_alliance(player_id: int = Depends(current_player)):
+    return arena_call(player_id, arena.alliance_view)
+
+
+@router.get("/challenge_event/add_alliance_active_score")
+@router.get("/challenge_event/add_alliance_morale_score")
+def arena_alliance_points_price(request: Request, player_id: int = Depends(current_player)):
+    morale = "morale" in request.url.path
+    points, price = arena.BUY_MORALE if morale else arena.BUY_ACTIVE
+    what = "morale point" if morale else "activist points"
+    return arena_call(player_id, lambda ev, state, now: {
+        "msg": f"Spend {price} dark matter from the alliance treasury for {points} {what}?"})
+
+
+@router.post("/challenge_event/make_sure_for_add_active_score")
+@router.post("/challenge_event/make_sure_for_add_morale_score")
+def arena_alliance_points(request: Request, player_id: int = Depends(current_player)):
+    morale = "morale" in request.url.path
+    return arena_call(player_id, lambda ev, state, now: arena.buy_alliance_points(ev, player_id, morale, now))
+
+
+@router.get("/challenge_event/alliance_active_reward")
+def arena_activist_reward(player_id: int = Depends(current_player)):
+    return arena_call(player_id, arena.activist_reward)
 
 
 @router.get("/fortresses")

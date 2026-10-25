@@ -44,3 +44,24 @@ def test_other_scripts_are_untouched_and_changes_are_detected():
     assert client_tweaks.apply(original) == original
     with pytest.raises(RuntimeError):  # the expected function is missing
         client_tweaks.apply(chunk(b"@./GameUICityUIUp.lua", ins(30, 0, 1)).replace(b"setTap4fun", b"setTap5fun"))
+
+
+def jmp(offset: int) -> bytes:
+    return struct.pack("<I", 22 | (offset + 131071) << 14)
+
+
+def test_arena_shop_skips_missing_icons():
+    """`if id ~= nil or tonumber(id) ~= -1 then self:UpdateFlashTexture(...) end` becomes `and`."""
+    constants = [b"tonumber", None, -1.0, b"UpdateFlashTexture", b"updateExList"]
+    code = (ins(23, 0, 3, 256 + 1) + jmp(4)  # 0: EQ id nil, 1: JMP -> 6 (the call)
+            + ins(5, 4, 0, 0) + ins(28, 4, 2, 2)  # 2-3: tonumber(id)
+            + ins(23, 1, 4, 256 + 2) + jmp(3)  # 4: EQ id -1, 5: JMP -> 9 (after the if)
+            + ins(11, 5, 0, 256 + 3) + ins(0, 7, 3) + ins(28, 5, 3, 1)  # 6-8: self:UpdateFlashTexture(id)
+            + ins(30, 0, 1))  # 9: return
+    fn = lua51.Function(None, 1, 9, 0, 3, 0, 8, code, constants)
+    main = lua51.Function(b"@./GameUITop.lua", 0, 0, 0, 0, 2, 2, ins(30, 0, 1), [], [fn])
+    _, patched = lua51.load(client_tweaks.apply(lua51.dump(HEADER, main)))
+    new = [struct.unpack_from("<I", patched.protos[0].code, i)[0] for i in range(0, len(code), 4)]
+    assert client_tweaks._decode(new[0])[:4] == (23, 1, 3, 257)  # nil: run the JMP
+    assert client_tweaks._decode(new[1])[4] == 7  # ... past the if (instruction 9)
+    assert patched.protos[0].code[8:] == code[8:]

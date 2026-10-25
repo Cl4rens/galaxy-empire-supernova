@@ -726,6 +726,33 @@ hired officers in `buff_list: [{buffer_name, end_time, buffer_desc, buff_type, i
 | `GET gc_quest/daily`, `gc_quest/alliance` | `{list: [{lable, list: [task]}]}` like the daily tasks |
 | `POST gc_quest/receive_reward` `id` | `{info, empire, planet}` |
 
+### Conquer The Universe (arena)
+
+The star gate asks `challenge_events/{planet}`; `switch_status: false` opens the star fortresses
+instead. The client sends most parameters in the query string, also for POST.
+
+| Request | Answer |
+|---------|--------|
+| `GET challenge_events/{planet}` | `{switch_status, challenge_status: {status 1 garrison/2 challenge/3 prize, current_time, last_time (stage end)}, daily_reward_info: {time_nodes}, self_info, challenge_info: {top_ten_info, above_info: {rank: entry}}}` |
+| `self_info` | `{user_id, user_name, server_name, current_rank, highest_rank, rank_list_max (ranks above it show "-"), defend_num, defending_capacity, fighting_capacity, defending_fleets_info, fighting_fleets_info ({type: amount} or ""), reward {"1" points, "2" credits, "3" dark matter}, alliance_buff {active, morale (fractions)}, hit_point_last_times (free challenges), hp_wait_time (timestamp), fight_logs_num, yesterday_rank (>0: daily prize to collect), ultimate_reward (true: nothing to collect), activity_score (points), speed_per_min, alliance_info {has_alliance, alliance_name, position}, alliance_reward}` |
+| entry | `{rank, is_robot, user_name, user_id, server, defend_num, defending_capacity, defending_fleets_info, reward, defender_alliance_buff}`; the list shows two rewards per entry (an entry with one shows "undefined") |
+| `GET challenge_event/switch` | `{status}` |
+| `POST challenge_event/defending` `planet_id, recognize` | `{msg, hp: {hit_point_last_times, hp_wait_time, defending_capacity, current_time, dark_matter}, defending_fleets_info, update}`; without `hp` the client asks and calls `buy_hp_times_for_defending/{planet}` |
+| `POST challenge_event/challenge` `target_rank, planet_id` | the result; `{is_cooling_time, msg}` (then `speed_up_and_challenge` answers `{result, activity_score, empire, planet}`); or a plain string question (then `buy_hp_times_for_challenge` answers the result) |
+| result | `{win: win/lose, challenger {user_name, current_rank}, defender {user_name, defending_fleets_info}, reward, activity_score, defend, report_id, battle_log: {round: [normal battle rounds], attacker_alliance_buff, defender_alliance_buff, survived_attacker_power, survived_defender_power: {challenge_fleet_capacity}}}` |
+| `POST challenge_event/speed_up/{planet}` | `{msg, empire, planet}` |
+| `GET challenge_event/refresh` (a string question), `POST challenge_event/make_sure_for_refresh/{planet}` | `{msg, challenge_info, empire, planet}` |
+| `GET challenge_event/battle_logs` | `{result: [{results_of_battle, fighting_time, opponent_type (0: I attacked), opponent_server_name, opponent_user_name, challenger_fighting_capacity, defender_defending_capacity, att_original_rank, def_original_rank}]}` |
+| `GET challenge_event/get_battle_report/{id}` | the `battle_log` |
+| `GET challenge_event/item_info`, `POST challenge_event/exchange` `item_id, item_count` | `{activity_score, all_items: [{id, name, desc, img, item_type, fleet_type, batch_count, sale_score, challenge_id, max_number, buy_amount}]}`, `{got_item, item_id, buy_amount, max_num, activity_score}` |
+| `POST challenge_event/daily_reward/{planet}`, `ultimate_reward/{planet}` | `{reward, empire, planet}` |
+| `POST challenge_event/alliance` | `{alliance_buff, alliance_current_score {all_active, max_active_score, all_morale, max_morale_score, membership_active, membership_morale}, my_current_score {active_score, morale_score}, alliance_storage [{number: DM}, {number: credits}], inactive_membership [{user_name, last_active_time, is_challenge, monthly_active_num, current_rank}], planet {current_server_time}}` |
+| `GET challenge_event/add_alliance_active_score` / `add_alliance_morale_score`, `POST make_sure_for_add_active_score` / `make_sure_for_add_morale_score` | `{msg}`, `{alliance_storage, current_alliance_active_score, current_alliance_morale_score}` |
+| `GET challenge_event/alliance_active_reward` | a string |
+
+The arena shop list has more entries than icon slots on tall screens; the client then crashes
+in `GameUITop:hanglde_updateExchangeItem`. The patcher fixes that check (client_tweaks.py).
+
 ### Errors
 
 For a status other than 200 the client shows the response body **as text** (or the `<title>` of

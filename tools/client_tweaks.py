@@ -8,7 +8,8 @@ import struct
 
 import lua51
 
-OP_LOADBOOL = 2
+OP_LOADBOOL, OP_SELF, OP_JMP, OP_EQ = 2, 11, 22, 23
+RK_CONSTANT = 256  # B/C operands from this value on name constants
 
 
 def _source(chunk: bytes) -> str:
@@ -32,8 +33,41 @@ def show_daily_tasks(fn: lua51.Function) -> bool:
     return False
 
 
+def _decode(ins: int) -> tuple[int, int, int, int, int]:
+    """(op, A, B, C, sBx)"""
+    return ins & 0x3F, ins >> 6 & 0xFF, ins >> 23, ins >> 14 & 0x1FF, (ins >> 14) - 131071
+
+
+def arena_shop_icons(fn: lua51.Function) -> bool:
+    """GameUITop:hanglde_updateExchangeItem() checks `if textureId ~= nil or tonumber(textureId)
+    ~= -1 then self:UpdateFlashTexture(textureId, ...)`, which is always true. On tall screens
+    the shop list has more entries than icon slots, an entry gets no texture id and the client
+    stops with an error. Make the first test skip the icon when the id is nil (`and`)."""
+    if b"updateExList" not in fn.constants or b"UpdateFlashTexture" not in fn.constants:
+        return False
+    nil_k = RK_CONSTANT + fn.constants.index(None)
+    update_k = RK_CONSTANT + fn.constants.index(b"UpdateFlashTexture")
+    code = [struct.unpack_from("<I", fn.code, pos)[0] for pos in range(0, len(fn.code), 4)]
+    for i in range(len(code) - 6):
+        op, a, b, c, _ = _decode(code[i])
+        jop, _, _, _, jump = _decode(code[i + 1])
+        if not (op == OP_EQ and a == 0 and c == nil_k and jop == OP_JMP):
+            continue
+        body = i + 2 + jump  # where `textureId ~= nil` jumps: the call of UpdateFlashTexture
+        if _decode(code[body])[0] != OP_SELF or _decode(code[body])[3] != update_k:
+            continue
+        # the second test's JMP skips the body; its target is the end of the if
+        second = next(j for j in range(i + 2, body) if _decode(code[j])[0] == OP_JMP)
+        end = second + 1 + _decode(code[second])[4]
+        code[i] |= 1 << 6  # EQ A=1: fall through to the second test when textureId is not nil
+        code[i + 1] = OP_JMP | (end - (i + 2) + 131071) << 14  # nil: jump past the if
+        fn.code = b"".join(struct.pack("<I", x) for x in code)
+        return True
+    return False
+
+
 # source file -> tweaks for its functions
-TWEAKS = {"GameUICityUIUp.lua": [show_daily_tasks]}
+TWEAKS = {"GameUICityUIUp.lua": [show_daily_tasks], "GameUITop.lua": [arena_shop_icons]}
 
 
 def apply(chunk: bytes) -> bytes:

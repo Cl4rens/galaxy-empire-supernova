@@ -621,3 +621,44 @@ The operator starts it (`admin gc-start`); it follows the client's help texts an
   resource crates for dark matter once a day.
 
 All numbers the texts do not give are Supernova's own.
+
+## Conquer The Universe (arena)
+
+The operator starts it (`admin arena-start`); it follows the client's help texts. While it
+runs, the star gate opens the arena instead of the star fortresses.
+
+- Stages: garrison (default 24 h), challenge (6 days), prize (1 day).
+- Ships: heavy fighters, cruisers, battleships, battlecruisers, bombers and destroyers of the
+  current planet. Power = weapons + shields + a tenth of the hull of every ship.
+- Garrison: puts these ships on guard; the first garrison gives the lowest rank. The garrison
+  keeps its power when the ships leave. A new garrison must be stronger, else it costs 50
+  credits.
+- The rank list starts with 100 robot fleets (G.E.F. drones); players start below them.
+- Challenge (challenge stage, needs a rank): attack one of 4 random higher ranks with the ships
+  of the current planet. Basic attributes only (no research), no losses. A win swaps the places.
+  3 challenges a day are free, 2 more cost 20 credits each; 10 minutes cool-down (1 credit per
+  minute to skip); new opponents for 5 credits.
+- Points: 20 per win, 5 per loss, plus prizes; at most 1,000,000, kept between events. They
+  buy ECM chips, krypton stones, alloy boxes, 1 h speed-ups, Devourer Interceptors (1,500) and
+  Titanenergetic Frigates (2,500) in the arena shop, each with a limit per event.
+- Daily prize (every 24 h of the challenge stage, by rank at that time) and final prize (rank
+  when the challenge stage ends), points / credits / dark matter:
+
+| Rank | Daily | Final |
+|------|-------|-------|
+| 1 | 300 / - / 50 | 1,500 / 100 / 250 |
+| 2 | 250 / - / 40 | 1,200 / 50 / 200 |
+| 3 | 200 / - / 30 | 1,000 / 25 / 150 |
+| 4-10 | 150 / - / 20 | 700 / - / 100 |
+| 11-50 | 100 / - / 10 | 400 / - / 50 |
+| 51-100 | 60 / - / 5 | 200 / - / 20 |
+| below | 30 / - / 1 | 100 / - / 5 |
+
+- Alliances (texts): every challenge gives the alliance 1 activist point (5 per member and
+  day), a member's first win of a day 1 morale point. The next day 4 activist points become 1 %
+  weapons and each morale point 1 % armour in arena battles (at most 80 and 20 points a day).
+  The president and vice-presidents can buy 4 activist points or 1 morale point for 40 dark
+  matter from the treasury. Members of an alliance with an activist bonus collect 20 points and
+  5 dark matter a day.
+
+All numbers the texts do not give are Supernova's own.

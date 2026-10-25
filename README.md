@@ -44,7 +44,8 @@ What the patcher does:
 1. **Verify** that your APK is a supported version by comparing its SHA-256 hash.
 2. **Patch** the client so it connects to the server address you choose instead of the
    dead official servers, and make a few small script changes the server needs (for example,
-   the daily tasks button, which the client always hid).
+   the daily tasks button, which the client always hid, and a crash in the arena shop on tall
+   screens).
 3. **Re-sign** the APK so Android will install it.
 
 Please **do not share patched APKs**. Share this repository instead, so everyone builds their
@@ -130,6 +131,8 @@ python -m supernova.admin gift <username|all> "<title>" "<text>" metal=5000 9=2 
 python -m supernova.admin gc-start [--in MINUTES] [--rounds 96] [--round-minutes 60]   # Galaxy Challenge
 python -m supernova.admin gc-status
 python -m supernova.admin gc-stop                          # ends it now and hands out the rewards
+python -m supernova.admin arena-start [--in MINUTES] [--garrison-hours 24] [--challenge-days 6] [--prize-days 1]
+python -m supernova.admin arena-stop                       # Conquer The Universe: on to the prize stage
 ```
 
 ### 4. Build the patched APK
@@ -202,6 +205,7 @@ the game keeps the scripts it unpacked on its first start and would not see the 
 - [x] Daily tasks
 - [x] Officers, terraformers and credit items in the shop (credits only from the operator)
 - [x] Galaxy Challenge (Fight G.E.F.), started by the operator
+- [x] Conquer The Universe arena behind the star gate, started by the operator
 - [x] Runs on Android 6-16 without crashes or permission dialogs
 - [ ] Support for 64-bit-only devices: needs an open client engine that runs the original Lua
       scripts and Flash UI from the player's APK (idea, not started)

@@ -16,6 +16,8 @@
     python -m supernova.admin gc-start [--in MINUTES] [--rounds 96] [--round-minutes 60]
     python -m supernova.admin gc-stop
     python -m supernova.admin gc-status
+    python -m supernova.admin arena-start [--in MINUTES] [--garrison-hours 24] [--challenge-days 6] [--prize-days 1]
+    python -m supernova.admin arena-stop
 
 Run it while the server is running or stopped; changes are visible at the player's next request.
 """
@@ -213,6 +215,20 @@ def cmd_gc_status(args) -> None:
             print(f"  {gc._alliance_name(aid):<20} {a['score']:>10,} points")
 
 
+def cmd_arena_start(args) -> None:
+    from . import arena
+    at = time.time() + args.in_minutes * 60
+    event_id = arena.start(at, args.garrison_hours * 3600, args.challenge_days * 86400, args.prize_days * 86400,
+                           args.day_minutes * 60)
+    print(f"Conquer The Universe {event_id} starts {time.strftime('%Y-%m-%d %H:%M', time.localtime(at))}")
+
+
+def cmd_arena_stop(args) -> None:
+    from . import arena
+    arena.stop(time.time())
+    print("ok: the prize stage has begun")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(required=True)
@@ -269,6 +285,14 @@ def main() -> None:
     gc_start.set_defaults(func=cmd_gc_start)
     sub.add_parser("gc-stop").set_defaults(func=cmd_gc_stop)
     sub.add_parser("gc-status").set_defaults(func=cmd_gc_status)
+    arena_start = sub.add_parser("arena-start")
+    arena_start.add_argument("--in", dest="in_minutes", type=float, default=0)
+    arena_start.add_argument("--garrison-hours", type=float, default=24)
+    arena_start.add_argument("--challenge-days", type=float, default=6)
+    arena_start.add_argument("--prize-days", type=float, default=1)
+    arena_start.add_argument("--day-minutes", type=float, default=1440, help="time between daily prizes")
+    arena_start.set_defaults(func=cmd_arena_start)
+    sub.add_parser("arena-stop").set_defaults(func=cmd_arena_stop)
     args = parser.parse_args()
     args.func(args)
 
