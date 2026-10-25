@@ -125,7 +125,7 @@ def new_state(player_id: int, username: str, home: dict | None = None) -> dict:
         "salt": secrets.token_hex(8),
         "account_level": 0,
         "empire": empire,
-        "vip_info": {"vip_left": 0},
+        "vip_info": {"vip_level": 0, "vip_left": 0},
         "grows": {},
         "purchase": {},
         "events": [],
@@ -178,7 +178,8 @@ def planets_info(empire: dict) -> list[dict]:
     } for p in empire["planets"]]
 
 
-HIDDEN_EMPIRE_FIELDS = ("main_planet", "planets", "current_planet_id", "dark_matter_income", "fleet_devices")
+HIDDEN_EMPIRE_FIELDS = ("main_planet", "planets", "current_planet_id", "dark_matter_income", "fleet_devices",
+                        "officers")
 PRIVATE_STATE = ("empire", "next_event_id", "quests", "bookmarks", "checkin", "kryptons", "flagships", "ecm",
                  "fortress", "items", "daily")
 
@@ -187,6 +188,7 @@ def empire_view(state: dict, now: float) -> dict:
     """The empire object as the client expects it."""
     empire = state["empire"]
     view = {k: v for k, v in empire.items() if k not in HIDDEN_EMPIRE_FIELDS}
+    view["vip_info"] = {"vip_level": 0, "vip_left": 0}  # there is no VIP system
     view.update(score=ranking.points(state)["score"], rank=ranking.rank_of(state["user_id"]),
                 gift_id=gifts.pending_id(state["user_id"]))
     return dict(view, main_planet=planet_rules.client_view(empire, now), **planet_rules.researches_view(empire),
@@ -198,6 +200,7 @@ def empire_summary(state: dict) -> dict:
     """Empire fields without the planet, for responses that send the planet separately."""
     empire = state["empire"]
     summary = {k: v for k, v in empire.items() if k not in HIDDEN_EMPIRE_FIELDS}
+    summary["vip_info"] = {"vip_level": 0, "vip_left": 0}  # there is no VIP system
     summary["planets_info"] = planets_info(empire)
     summary.update(planet_rules.researches_view(empire))
     summary["fleet_hanging_events"] = fleets.events_view(empire["user_id"])

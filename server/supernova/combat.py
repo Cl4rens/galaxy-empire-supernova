@@ -102,6 +102,7 @@ class Side:
     armour_percent: int = 0
     unit_percent: dict[int, tuple[int, int, int]] = field(default_factory=dict)  # ship modification
     missile_tech: int = 0  # Combined Guidance Tech level
+    defense_save: int = 0  # percent of the otherwise lost defense an engineer saves
 
     def _extra(self, utype: int, index: int) -> float:
         return self.unit_percent.get(utype, (0, 0, 0))[index] / 100
@@ -199,7 +200,7 @@ def _fleet_list(units: dict[int, int]) -> list[dict]:
 
 def _with_units(side: Side, units: dict[int, int]) -> Side:
     return Side(side.name, units, side.weapons, side.shielding, side.armour, side.attack_percent,
-                side.shield_percent, side.armour_percent, side.unit_percent, side.missile_tech)
+                side.shield_percent, side.armour_percent, side.unit_percent, side.missile_tech, side.defense_save)
 
 
 def intercept(attacker: dict[int, int], defender: Side) -> dict:
@@ -316,14 +317,16 @@ def losses(before: dict[int, int], after: dict[int, int]) -> dict[int, int]:
     return {t: n - after.get(t, 0) for t, n in before.items() if n - after.get(t, 0) > 0}
 
 
-def rebuild_defense(lost: dict[int, int], rng: random.Random | None = None) -> dict[int, int]:
-    """Destroyed defense units that are repaired after the battle."""
+def rebuild_defense(lost: dict[int, int], rng: random.Random | None = None, save: int = 0) -> dict[int, int]:
+    """Destroyed defense units that are repaired after the battle; `save` percent of the rest
+    is saved too (engineer)."""
     rng = rng or random.Random()
+    chance = DEFENSE_REBUILD + (1 - DEFENSE_REBUILD) * save / 100
     rebuilt = {}
     for utype, n in lost.items():
         if utype in eco.SHIPS or utype in MISSILES:  # used missiles have to be built again
             continue
-        k = sum(1 for _ in range(n) if rng.random() < DEFENSE_REBUILD)
+        k = sum(1 for _ in range(n) if rng.random() < chance)
         if k:
             rebuilt[utype] = k
     return rebuilt

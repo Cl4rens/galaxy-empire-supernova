@@ -1,22 +1,35 @@
-"""The item shop ("Universe Store"), the item depot ("My Capsule") and speed-ups.
+"""The item shop ("Space Store"), the item depot ("Capsule") and speed-ups.
 
-Items are bought with dark matter and land in the depot, from where the player uses them.
-Speed-up items are used from a running construction, research or shipyard order; dark matter
-can also finish such an order at once. Supernova has no real-money purchases, so every item
-costs dark matter (pay type 1). Catalog and prices are Supernova's own.
+Items are bought with dark matter or credits and land in the depot, from where the player uses
+them. Speed-up items are used from a running construction, research or shipyard order; dark
+matter can also finish such an order at once.
+
+The catalog follows the Galaxy Empire wiki (galaxyempire.fandom.com/wiki/Space_Store): resource
+containers, speed stones (credits), officers (dark matter at level 1, credits above), terraformers
+(credits) and the like. Prices the wiki does not give are Supernova's own. Supernova has no
+real-money purchases; credits only come from the server operator for now.
+
+Icons: the original server sent pictures by URL; the client keeps only a few it had downloaded
+(icons/item_res_NN.png), and the battle report shows what they are: 01 deuterium, 03 crystal,
+04 metal, 05 dark matter, 06 dark energy, 07 alloy, 08 credits, 09 speed-up, 10 galaxium,
+11 krypton, 12 ECM chip, 13 crystal ore, 14 energy gel, 15 titanenergetic cube; 16, 11, 07 and
+18 are also the armour, shield, attack and speed symbols of ship modification.
 """
 
 import math
+import random
+import time
 from dataclasses import dataclass
 
-from . import ecm, flagships, kryptons
+from . import ecm, flagships, kryptons, officers
 from . import planet as planet_rules
 
 DARK_MATTER, CREDITS = 1, 2  # pay_type
-FEATURED, RESOURCE, SPEEDUP, AFFAIR, OTHER = 0, 1, 2, 3, 4  # shop tabs
+FEATURED, RESOURCE, SPEEDUP, AFFAIR, OTHER = 0, 1, 2, 3, 4  # shop tabs; AFFAIR is "Officer"
 SECONDS_PER_DARK_MATTER = 300  # finishing an order at once costs 1 dark matter per 5 minutes left
 MAX_ANNIHILATORS = 200  # wiki
 COMPONENT, REAPER_COMPONENTS = 5001, 3000  # wiki: a Reaper takes 3,000 intricate components
+CURRENCY = {DARK_MATTER: "dark matter", CREDITS: "credits"}
 
 
 class ItemError(planet_rules.GameError):
@@ -41,49 +54,91 @@ class Item:
     device: tuple[int, int] | None = None  # (device type, grade), see devices.py
     unit: int = 0  # a ship this item turns into
     sold: bool = True
+    pay_type: int = DARK_MATTER
+    officer: tuple[str, int, int] | None = None  # (kind, level, days)
+    fields: int = 0  # terraformer: up to this many extra fields
+    shortcut: int = 0  # quick-buy list the item appears in (GameUIQuickBuyMall)
 
 
-def _res(item_id, name, amount, index, icon, price, featured=False, code=""):
+# quick-buy lists of the client
+SHORTCUT_METAL, SHORTCUT_CRYSTAL, SHORTCUT_DEUTERIUM, SHORTCUT_FIELDS, SHORTCUT_OFFICERS = 1, 2, 3, 4, 11
+
+
+def _container(item_id, name, size, amount, index, icon, price, shortcut, featured=False, code=""):
     resources = tuple(amount if i == index else 0 for i in range(3))
-    return Item(item_id, RESOURCE, f"{name} {amount:,}", f"{amount:,} {name.lower()} for the planet you are on.",
-                icon, price, resources=resources, featured=featured, code=code)
+    return Item(item_id, RESOURCE, f"{name} Container ({size})",
+                f"{amount:,} {name.lower()} for the planet you are on.", icon, price, resources=resources,
+                featured=featured, code=code, shortcut=shortcut)
 
 
-def _speedup(item_id, label, seconds, price, featured=False):
-    return Item(item_id, SPEEDUP, f"Speed-up {label}",
-                f"Shortens a running construction, research or shipyard order by {label}.",
-                "item_res_09.png", price, seconds=seconds, featured=featured)
+def _speedup(item_id, label, seconds, price, pay_type=DARK_MATTER, featured=False):
+    name = f"Speed Stone {label}" if pay_type == CREDITS else f"Speed-up {label}"
+    return Item(item_id, SPEEDUP, name, f"Shortens a running construction, research or shipyard order by {label}.",
+                "item_res_09.png", price, seconds=seconds, featured=featured, pay_type=pay_type)
+
+
+def _officers() -> list[Item]:
+    out = []
+    for n, ((kind, lv, days), (pay, price)) in enumerate(officers.PRICES.items()):
+        effect = officers.EFFECT[kind][lv - 1]
+        out.append(Item(6001 + n, AFFAIR, f"{officers.NAMES[kind]} Lv.{lv} ({days} days)",
+                        officers.DESCRIPTIONS[kind].format(effect) + f" Hired for {days} days.",
+                        officers.ICON, price, pay_type=pay, officer=(kind, lv, days), shortcut=SHORTCUT_OFFICERS,
+                        featured=(kind, lv, days) == (officers.GEOLOGIST, 1, 7)))
+    return out
 
 
 CATALOG = [
     # code 1101: the tutorial points at this item when it asks the player to buy resources
-    _res(1101, "Metal", 10_000, 0, "item_res_04.png", 2, featured=True, code="1101"),
-    _res(1102, "Metal", 100_000, 0, "item_res_04.png", 15),
-    _res(1103, "Crystal", 10_000, 1, "item_res_03.png", 3),
-    _res(1104, "Crystal", 100_000, 1, "item_res_03.png", 22),
-    _res(1105, "Deuterium", 10_000, 2, "item_res_01.png", 4),
-    _res(1106, "Deuterium", 100_000, 2, "item_res_01.png", 30),
+    _container(1101, "Metal", "S", 10_000, 0, "item_res_04.png", 2, SHORTCUT_METAL, featured=True, code="1101"),
+    _container(1102, "Metal", "M", 100_000, 0, "item_res_04.png", 15, SHORTCUT_METAL),
+    _container(1107, "Metal", "L", 1_000_000, 0, "item_res_04.png", 120, SHORTCUT_METAL),
+    _container(1103, "Crystal", "S", 10_000, 1, "item_res_03.png", 3, SHORTCUT_CRYSTAL),
+    _container(1104, "Crystal", "M", 100_000, 1, "item_res_03.png", 22, SHORTCUT_CRYSTAL),
+    _container(1108, "Crystal", "L", 1_000_000, 1, "item_res_03.png", 180, SHORTCUT_CRYSTAL),
+    _container(1105, "Gas", "S", 10_000, 2, "item_res_01.png", 4, SHORTCUT_DEUTERIUM),
+    _container(1106, "Gas", "M", 100_000, 2, "item_res_01.png", 30, SHORTCUT_DEUTERIUM),
+    _container(1109, "Gas", "L", 1_000_000, 2, "item_res_01.png", 240, SHORTCUT_DEUTERIUM),
     _speedup(2101, "5 min", 300, 1),
     _speedup(2102, "30 min", 1800, 5, featured=True),
     _speedup(2103, "1 h", 3600, 9),
     _speedup(2104, "4 h", 4 * 3600, 30),
     _speedup(2105, "12 h", 12 * 3600, 80),
-    Item(3101, AFFAIR, "ECM chips x5", "Five core chips for ECM module upgrades.", "item_res_10.png", 20,
+    # the wiki's speed stones, sold for credits
+    _speedup(2201, "1m", 60, 2, CREDITS),
+    _speedup(2202, "5m", 300, 8, CREDITS),
+    _speedup(2203, "30m", 1800, 40, CREDITS),
+    _speedup(2204, "1h", 3600, 70, CREDITS),
+    _speedup(2205, "5h", 5 * 3600, 300, CREDITS),
+    _speedup(2206, "24h", 24 * 3600, 1200, CREDITS),
+    Item(3101, OTHER, "ECM chips x5", "Five core chips for ECM module upgrades.", "item_res_12.png", 20,
          ecm_chips=5),
-    Item(3102, AFFAIR, "Alloy fragment box", f"{flagships.BOX_ALLOY} alloy fragments for the Pioneer Lab.",
-         "item_res_07.png", 15, alloy=flagships.BOX_ALLOY),
-    Item(3103, AFFAIR, "Krypton stones x500", "500 krypton stones for the Krypton Lab.", "item_res_13.png", 15,
+    Item(3102, OTHER, "Alloy fragment box", f"{flagships.BOX_ALLOY} alloy fragments for the Pioneer Lab.",
+         "hiEnergy_alloy_box.png", 15, alloy=flagships.BOX_ALLOY),
+    Item(3104, OTHER, "Alloy fragment box (credits)", f"{flagships.BOX_ALLOY} alloy fragments for the Pioneer Lab.",
+         "hiEnergy_alloy_box.png", 150, alloy=flagships.BOX_ALLOY, pay_type=CREDITS),
+    Item(3103, OTHER, "Krypton stones x500", "500 krypton stones for the Krypton Lab.", "item_res_11.png", 15,
          krypton_stones=500),
+    # wiki: small / medium / large terraformer for 99 / 249 / 599 credits, 1-15 / 1-20 / 1-25 fields;
+    # only the best roll so far counts
+    Item(3201, OTHER, "Terraformer (S)", "Adds 1-15 building fields to the planet you are on (the best result "
+         "of all terraformers used there counts). Not for moons.", "chests.png", 99, pay_type=CREDITS, fields=15,
+         shortcut=SHORTCUT_FIELDS),
+    Item(3202, OTHER, "Terraformer (M)", "Adds 1-20 building fields to the planet you are on (the best result "
+         "counts). Not for moons.", "chests.png", 249, pay_type=CREDITS, fields=20, shortcut=SHORTCUT_FIELDS),
+    Item(3203, OTHER, "Terraformer (L)", "Adds 1-25 building fields to the planet you are on (the best result "
+         "counts). Not for moons.", "chests.png", 599, pay_type=CREDITS, fields=25, shortcut=SHORTCUT_FIELDS),
     Item(5002, OTHER, "Annihilator construction permit",
          f"Builds one Annihilator on the planet you are on. A commander can have at most {MAX_ANNIHILATORS}.",
          "ship_destruction_star.png", 25, unit=28),
     Item(5003, OTHER, "Devourer Interceptor", "One Devourer Interceptor for the planet you are on. "
          "Its shots pass through shields.", "item_res_14.png", 50, unit=25),
     Item(5004, OTHER, "Titanenergetic Frigate", "One Titanenergetic Frigate for the planet you are on. "
-         "Its armour is immense.", "item_res_12.png", 80, unit=26),
+         "Its armour is immense.", "item_res_15.png", 80, unit=26),
     Item(COMPONENT, OTHER, "Intricate component", f"Left behind by large warships destroyed in battle. "
-         f"{REAPER_COMPONENTS:,} build one Reaper.", "item_res_15.png", 0, sold=False),
+         f"{REAPER_COMPONENTS:,} build one Reaper.", "box_activity.png", 0, sold=False),
 ]
+CATALOG += _officers()
 from . import devices  # noqa: E402 (devices builds its items with Item)
 
 CATALOG += devices.catalog()
@@ -99,7 +154,7 @@ def item(item_id: int) -> Item:
 
 def _view(i: Item) -> dict:
     return {"id": i.id, "game_item_id": i.id, "name": i.name, "desc": i.desc, "img": f"icons/{i.icon}",
-            "pay_type": DARK_MATTER, "sale_price": i.price, "code": i.code, "item_type": 1, "category": i.category,
+            "pay_type": i.pay_type, "sale_price": i.price, "code": i.code, "item_type": 1, "category": i.category,
             "is_featured": i.featured, "is_gift": False, "step_gacha": 0}
 
 
@@ -128,6 +183,11 @@ def _add(state: dict, item_id: int, n: int) -> None:
         depot.pop(str(item_id), None)
 
 
+def add(state: dict, item_id: int, n: int) -> None:
+    """Put items into the capsule (rewards, drops)."""
+    _add(state, item(item_id).id, n)
+
+
 def depot_view(state: dict, category: int) -> list[dict]:
     return [owned_view(state, i) for i in CATALOG
             if amount(state, i.id) and (i.category == category or (category == FEATURED and i.featured))]
@@ -137,25 +197,27 @@ def owned_view(state: dict, i: Item) -> dict:
     return dict(_view(i), amount=amount(state, i.id), can_be_use=i.category != SPEEDUP and i.device is None)
 
 
-def _pay(state: dict, price: int) -> None:
+def _pay(state: dict, price: int, pay_type: int = DARK_MATTER) -> None:
     empire = state["empire"]
-    if empire.get("dark_matter_count", 0) < price:
-        raise ItemError(f"You need {price:,} dark matter")
-    empire["dark_matter_count"] -= price
+    key = "dark_matter_count" if pay_type == DARK_MATTER else "gu_count"
+    if empire.get(key, 0) < price:
+        raise ItemError(f"You need {price:,} {CURRENCY[pay_type]}")
+    empire[key] = empire.get(key, 0) - price
 
 
 def buy(state: dict, item_id: int, n: int) -> dict:
     i = item(item_id)
     if not 1 <= n <= 999 or not i.sold:
         raise ItemError("Invalid number" if i.sold else "This item is not for sale")
-    _pay(state, i.price * n)
+    _pay(state, i.price * n, i.pay_type)
     _add(state, i.id, n)
     empire = state["empire"]
     return {"darkmatter": empire["dark_matter_count"], "credits": empire.get("gu_count", 0),
             "info": f"{i.name} x{n} is in your capsule.", "id": i.id, "item_type": 1}
 
 
-def use(state: dict, item_id: int, n: int, planet: dict) -> str:
+def use(state: dict, item_id: int, n: int, planet: dict, now: float | None = None,
+        rng: random.Random | None = None) -> str:
     i = item(item_id)
     if i.category == SPEEDUP:
         raise ItemError("Use speed-ups on a running construction, research or shipyard order")
@@ -169,6 +231,15 @@ def use(state: dict, item_id: int, n: int, planet: dict) -> str:
         owned = sum(planet_rules.fleet(p, 28)["amount"] for p in planet_rules.bodies(state["empire"]))
         if owned + n > MAX_ANNIHILATORS:
             raise ItemError(f"A commander can have at most {MAX_ANNIHILATORS} Annihilators")
+    if i.fields and planet_rules.is_moon(planet):
+        raise ItemError("Terraformers do not work on moons")
+    info = f"Used {i.name} x{n}."
+    if i.officer:
+        kind, lv, days = i.officer
+        try:
+            info = officers.hire(state["empire"], kind, lv, days * n, time.time() if now is None else now)
+        except ValueError as e:
+            raise ItemError(str(e)) from None
     _add(state, i.id, -n)
     if i.unit:
         planet_rules.fleet(planet, i.unit)["amount"] += n
@@ -180,7 +251,15 @@ def use(state: dict, item_id: int, n: int, planet: dict) -> str:
         flagships.data(state)["alloy"] += i.alloy * n
     if i.krypton_stones:
         kryptons.add_stones(state, i.krypton_stones * n)
-    return f"Used {i.name} x{n}."
+    if i.fields:
+        rng = rng or random.Random()
+        best = max(rng.randint(1, i.fields) for _ in range(n))
+        before = planet.get("extra_fields", 0)
+        planet["extra_fields"] = max(before, best)
+        info = (f"The terraformer found room for {best} fields; the planet now has {planet['extra_fields']} extra "
+                "fields." if best > before else f"The terraformer found room for {best} fields; the planet keeps its "
+                f"{before} extra fields.")
+    return info
 
 
 def _build_reapers(state: dict, n: int, planet: dict) -> str:
@@ -210,6 +289,28 @@ def add_components(state: dict, enemy_lost: dict[int, int]) -> int:
 def discard(state: dict, item_id: int) -> None:
     i = item(item_id)
     _add(state, i.id, -amount(state, i.id))
+
+
+# --- Quick buy (the shortcut lists of resource settings, planet info, officers ...) -------------
+
+
+def shortcut_view(state: dict, shortcut: int) -> list[dict]:
+    return [owned_view(state, i) for i in CATALOG if i.shortcut == shortcut and i.sold]
+
+
+def buy_and_use(state: dict, item_id: int, planet: dict, now: float) -> str:
+    i = item(item_id)
+    if not i.sold:
+        raise ItemError("This item is not for sale")
+    _pay(state, i.price, i.pay_type)
+    _add(state, i.id, 1)
+    try:
+        return use(state, i.id, 1, planet, now)
+    except ItemError:
+        _add(state, i.id, -1)
+        key = "dark_matter_count" if i.pay_type == DARK_MATTER else "gu_count"
+        state["empire"][key] += i.price
+        raise
 
 
 # --- Speed-ups -----------------------------------------------------------------------------------
@@ -248,9 +349,24 @@ def speedup_info(state: dict, kind: str, event_id: int, now: float) -> dict:
     event, _ = _running(state["empire"], kind, event_id, now)
     left = max(0, int(event["finish_time"] - now))
     # this screen always draws a credit icon next to the price, so the price says what it is
-    return {"items": [dict(owned_view(state, i), sale_price=f"{i.price} DM") for i in CATALOG
-                      if i.category == SPEEDUP],
+    return {"items": [dict(owned_view(state, i), sale_price=f"{i.price} {'DM' if i.pay_type == DARK_MATTER else 'Cr'}")
+                      for i in CATALOG if i.category == SPEEDUP],
             "left_time": left, "dark_matter_count": instant_price(left)}
+
+
+def finish_now(state: dict, kind: str, event_id: int, now: float) -> None:
+    """Finish an order without paying (the client's quick finish in the last minute)."""
+    empire = state["empire"]
+    event, planet = _running(empire, kind, event_id, now)
+    _shorten(empire, kind, event, planet, event["finish_time"] - now, now)
+
+
+def _shorten(empire: dict, kind: str, event: dict, planet: dict | None, seconds: float, now: float) -> None:
+    event["finish_time"] -= seconds
+    if kind == SHIPYARD:
+        event["start_time"] -= seconds
+        planet_rules._reschedule_shipyard(planet, now)
+    planet_rules.tick(empire, now)
 
 
 def speed_up(state: dict, kind: str, event_id: int, item_id: int, buy_first: bool, now: float) -> None:
@@ -267,14 +383,10 @@ def speed_up(state: dict, kind: str, event_id: int, item_id: int, buy_first: boo
         if i.category != SPEEDUP:
             raise ItemError("This is not a speed-up")
         if buy_first:
-            _pay(state, i.price)
+            _pay(state, i.price, i.pay_type)
         elif not amount(state, i.id):
             raise ItemError(f"You have no {i.name}")
         else:
             _add(state, i.id, -1)
         seconds = min(left, i.seconds)
-    event["finish_time"] -= seconds
-    if kind == SHIPYARD:
-        event["start_time"] -= seconds
-        planet_rules._reschedule_shipyard(planet, now)
-    planet_rules.tick(empire, now)
+    _shorten(empire, kind, event, planet, seconds, now)

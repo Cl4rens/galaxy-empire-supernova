@@ -675,6 +675,16 @@ category 4.
 The client hides the daily tasks button (`GameUICityUIUp:SetTap4funButtonVisible` passes
 `false`); the patcher flips that one value (`tools/client_tweaks.py`).
 
+### Quick buy
+
+| Request | Answer |
+|---------|--------|
+| `GET users/{id}/game_items_shortcuts?shortcuts=N` (1-3 metal/crystal/gas containers, 4 terraformers, 11 officers; others empty) | `{items: [item + amount]}` |
+| `POST users/{id}/buy_and_use_game_item` `game_item_id, planet_id` | like `use_game_item` |
+
+Items now carry `pay_type` 1 (dark matter) or 2 (credits). `GET users/my_buffs_ext` lists the
+hired officers in `buff_list: [{buffer_name, end_time, buffer_desc, buff_type, img}]`.
+
 ### Errors
 
 For a status other than 200 the client shows the response body **as text** (or the `<title>` of

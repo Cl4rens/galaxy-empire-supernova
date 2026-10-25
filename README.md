@@ -117,7 +117,7 @@ Server operators can manage players from the command line (in Docker:
 ```sh
 python -m supernova.admin list
 python -m supernova.admin show <username>
-python -m supernova.admin give <username> metal=10000 crystal=5000 deuterium=2000
+python -m supernova.admin give <username> metal=10000 crystal=5000 deuterium=2000 credits=500 dark_matter=50
 python -m supernova.admin set-building <username> <building_type> <level> [lot]
 python -m supernova.admin give-fleet <username> 9=5 1=10      # fleet_type=count
 python -m supernova.admin set-research <username> <research_type> <level>
@@ -197,6 +197,7 @@ the game keeps the scripts it unpacked on its first start and would not see the 
 - [x] Advanced ships: Devourer Interceptor, Titanenergetic Frigate, Proton Cannon, Annihilator, Reaper
 - [x] Intercept and interplanetary missiles
 - [x] Daily tasks
+- [x] Officers, terraformers and credit items in the shop (credits only from the operator)
 - [x] Runs on Android 6-16 without crashes or permission dialogs
 - [ ] Support for 64-bit-only devices: needs an open client engine that runs the original Lua
       scripts and Flash UI from the player's APK (idea, not started)

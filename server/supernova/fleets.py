@@ -16,7 +16,7 @@ import time
 
 from . import combat, config, db, ranking
 from . import economy as eco
-from . import daily, devices, ecm, flagships, items, kryptons, lordship, mails, npc, protection, quests, repairs
+from . import daily, devices, ecm, flagships, items, officers, kryptons, lordship, mails, npc, protection, quests, repairs
 from . import planet as planet_rules
 from . import universe
 
@@ -475,7 +475,8 @@ def _side(name: str, empire: dict, units: dict[int, int], planet: dict | None = 
                        kryptons.bonus(planet, "attack") + behemoth_bonus + ecm_bonus + lord.get("increase_attack", 0),
                        kryptons.bonus(planet, "shield") + ecm_bonus + lord.get("increase_shield", 0),
                        kryptons.bonus(planet, "armour") + ecm_bonus + lord.get("increase_armour", 0),
-                       devices.unit_bonuses(empire), planet_rules.research_level(empire, eco.MISSILE_TECH))
+                       devices.unit_bonuses(empire), planet_rules.research_level(empire, eco.MISSILE_TECH),
+                       officers.defense_save(empire))
 
 
 def _salvage(player_id: int, debris: dict, own_units: dict[int, int], enemy_lost: dict[int, int],
@@ -540,7 +541,7 @@ def _battle(row, attacker: combat.Side, attacker_bonus: dict, defender: combat.S
     result = combat.fight(attacker, defender)
     result["attack_lost"] = combat.losses(attacker.units, result["attacker_left"])
     result["defend_lost"] = combat.losses(defender.units, result["defender_left"])
-    result["rebuilt"] = combat.rebuild_defense(result["defend_lost"])
+    result["rebuilt"] = combat.rebuild_defense(result["defend_lost"], save=defender.defense_save)
     lost = {t: result["attack_lost"].get(t, 0) + result["defend_lost"].get(t, 0)
             for t in {*result["attack_lost"], *result["defend_lost"]}}
     result["debris"] = combat.debris(lost)  # only ships leave debris
@@ -694,6 +695,9 @@ def _attack(row, target_owner: int, state: dict, planet: dict) -> str:
                                             else body["attack_result"]["winner_name"]))
         prefix = f"Coordinated attack: {attacker_name}." if len(names) > 1 else ""
         own["notify_message"] = " ".join(filter(None, [prefix, body["notify_message"], salvage_notes[owner]]))
+        if result["winner"] == "attacker":  # wiki: devices come from battles against players
+            with db.player_state(owner) as s:
+                own["notify_message"] += " " + devices.drop(s, devices.BATTLE_DROPS)
         own.update(attack_alloy_detection_num=gains[owner]["alloy"], attack_dark_energy_num=gains[owner]["dark_energy"])
         mails.send(owner, mails.REPORT, mails.SENDER_FLEET, name, subject, own, row["arrival_time"])
     defender_body = dict(body, notify_message=" ".join(filter(None, [body["notify_message"], defender_note])))
@@ -814,10 +818,21 @@ def _expedition(row) -> str:
         result = _battle(row, _side(name, owner_state["empire"], ships), _tech_bonus(owner_state["empire"]),
                          npc.pirate_side(outcome["pirates"], 1),
                          {"attack_bonus_percent": 0, "shield_bonus_percent": 0, "armour_bonus_percent": 0})
+        lost = combat.losses(ships, result["attacker_left"])
         ships = result["attacker_left"]
         expedition_result["attack_report"] = result["report"]
     elif situation == npc.BLACK_HOLE:
-        ships = {}
+        lost, ships = ships, {}
+    if situation in (npc.PIRATES, npc.BLACK_HOLE):
+        guider = officers.percent(db.load_state(owner)["empire"], officers.GUIDER)
+        saved = {t: n * guider // 100 for t, n in lost.items() if n * guider // 100}
+        for t, n in saved.items():
+            ships[t] = ships.get(t, 0) + n
+        if saved:
+            outcome["message"] += f" Your guider brought {sum(saved.values())} ships back."
+    if random.random() < devices.EXPEDITION_DROP_CHANCE:
+        with db.player_state(owner) as state:
+            outcome["message"] += " " + devices.drop(state, random.randint(1, 5))
 
     now = row["arrival_time"]
     info = _event_info(row, now)

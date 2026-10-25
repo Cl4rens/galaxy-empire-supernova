@@ -80,7 +80,12 @@ def fields(planet: dict) -> tuple[int, int]:
     used = sum(b["building_level"] for b in planet["buildings"])
     if is_moon(planet):
         return used, 1 + MOON_FIELDS_PER_BASE_LEVEL * level(planet, eco.MOON_BASE)
-    return used, PLANET_FIELDS
+    return used, PLANET_FIELDS + planet.get("extra_fields", 0)  # terraformers add fields
+
+
+def _faster(planet: dict, key: str, seconds: int) -> int:
+    """Officers shorten timers by a percentage (planet["officer"], kept up to date by tick)."""
+    return max(1, int(seconds * (100 - planet.get("officer", {}).get(key, 0)) / 100))
 
 
 def sensor_range(moon: dict) -> int:
@@ -121,7 +126,9 @@ def production(planet: dict, empire: dict) -> dict:
     satellites = fleet(planet, eco.SOLAR_SATELLITE)["amount"] * eco.SOLAR_SATELLITE_ENERGY
     fusion_level = level(planet, eco.FUSION_REACTOR)
     fusion_pct = planet["fusion_reactor_percent"] / 100
+    officer = planet.get("officer", {})
     fusion = eco.fusion_energy(fusion_level, research_level(empire, eco.ENERGY_TECH)) * fusion_pct
+    fusion *= 1 + officer.get("fusion", 0) / 100
     produced = solar + fusion + satellites
     used = sum(eco.mine_energy(m, level(planet, m)) * pct[m] for m in eco.MINES)
     factor = min(1.0, produced / used) if used > 0 else 1.0
@@ -132,7 +139,8 @@ def production(planet: dict, empire: dict) -> dict:
     fortress = {res: fortresses.production_bonus(empire, res) for res in RESOURCES}
 
     def mine(btype: int, resource: str) -> float:
-        krypton = 1 + (planet.get("krypton_bonus", {}).get(resource, 0) + lord.get(f"increase_{resource}", 0) + fortress[resource]) / 100
+        krypton = 1 + (planet.get("krypton_bonus", {}).get(resource, 0) + lord.get(f"increase_{resource}", 0) + fortress[resource]
+                       + officer.get("mines", 0)) / 100
         return eco.BASE_PRODUCTION[resource] + eco.mine_output(btype, level(planet, btype)) * pct[btype] * factor * krypton
 
     return {
@@ -200,8 +208,11 @@ def tick(empire: dict, now: float | None = None) -> None:
     """Bring every planet up to `now`: production, constructions, research and shipyard."""
     now = time.time() if now is None else now
     _dark_matter_income(empire, now)
+    from . import officers  # officers is small, but keeps this module free of shop rules
+    boost = officers.boosts(empire, now)
     for planet in bodies(empire):
         add_missing_fleets(planet)
+        planet["officer"] = boost
         _tick_planet(empire, planet, now)
         planet["transmit_recharge_event"] = [e for e in planet.get("transmit_recharge_event", [])
                                              if e["finish_time"] > now]
@@ -303,12 +314,12 @@ def start_building_event(empire: dict, state: dict, building_id: int, event_type
             if lot not in FREE_LOTS or lot in taken:
                 raise GameError("This building lot is not free")
         cost = eco.upgrade_cost(btype, current)
-        seconds = eco.build_seconds(cost[0], cost[1], *robotics_levels(planet))
+        seconds = _faster(planet, "build", eco.build_seconds(cost[0], cost[1], *robotics_levels(planet)))
     elif event_type == EVENT_TEARDOWN:
         if current == 0:
             raise GameError("Nothing to tear down")
         cost = eco.teardown_cost(btype, current)
-        seconds = eco.build_seconds(cost[0], cost[1], *robotics_levels(planet))
+        seconds = _faster(planet, "build", eco.build_seconds(cost[0], cost[1], *robotics_levels(planet)))
     else:
         raise GameError("Unknown event type")
 
@@ -365,7 +376,7 @@ def start_research(empire: dict, state: dict, research_id: int, now: float) -> d
     if not _requirements_met(planet, empire, rtype, eco.RESEARCHES):
         raise GameError("Requirements not met")
     cost = eco.research_cost(rtype, research["research_level"])
-    seconds = eco.research_seconds(cost[0], cost[1], lab["building_level"])
+    seconds = _faster(planet, "research", eco.research_seconds(cost[0], cost[1], lab["building_level"]))
     _pay(planet, cost)
     empire["research_upgrading_events"].append({
         "event_id": _next_event_id(state),
@@ -438,6 +449,8 @@ def start_fleet_order(empire: dict, state: dict, fleet_id: int, count: int, now:
     unit_cost = eco.unit_cost(ftype)
     _pay(planet, tuple(c * count for c in unit_cost))
     seconds = eco.unit_seconds(ftype, level(planet, shipyard_type(planet)), level(planet, eco.NANITE_FACTORY))
+    if ftype not in eco.SHIPS:
+        seconds = _faster(planet, "defense", seconds)
     queue_end = max((o["finish_time"] for o in planet["fleet_building_events"]), default=now)
     start = int(max(now, queue_end))
     planet["fleet_building_events"].append({
@@ -484,7 +497,7 @@ def building_view(planet: dict, b: dict) -> dict:
         "up_metal_require": up[0],
         "up_crystal_require": up[1],
         "up_deuterium_require": up[2],
-        "up_time": eco.build_seconds(up[0], up[1], robotics, nanite),
+        "up_time": _faster(planet, "build", eco.build_seconds(up[0], up[1], robotics, nanite)),
         "up_extra_energy": round(eco.mine_energy(btype, lv + 1) - eco.mine_energy(btype, lv))
         if btype in eco.MINES else 0,
         "tech_tree": _tech_tree(rule),
@@ -495,7 +508,7 @@ def building_view(planet: dict, b: dict) -> dict:
             "down_metal_require": down[0],
             "down_crystal_require": down[1],
             "down_deuterium_require": down[2],
-            "down_time": eco.build_seconds(down[0], down[1], robotics, nanite),
+            "down_time": _faster(planet, "build", eco.build_seconds(down[0], down[1], robotics, nanite)),
         })
     return view
 
@@ -516,7 +529,8 @@ def client_view(empire: dict, now: float) -> dict:
     """The main_planet object as the client expects it."""
     planet = empire["main_planet"]
     rates = production(planet, empire)
-    hidden = ("buildings", "building_events", "last_update", "moon", "last_scan", "krypton_bonus", "repair")
+    hidden = ("buildings", "building_events", "last_update", "moon", "last_scan", "krypton_bonus", "repair",
+              "officer")
     view = {k: v for k, v in planet.items() if k not in hidden}
     view.update({res: int(planet[res]) for res in RESOURCES})
     view.update({f"{res}_max": capacity(planet, res) for res in RESOURCES})
@@ -538,6 +552,9 @@ def client_view(empire: dict, now: float) -> dict:
         "field_max": fields(planet)[1],
         "temp_max": 150 - 12 * planet["planet_position"],
         "temp_min": 110 - 12 * planet["planet_position"],
+        # no projection: the client checks for 0, not for empty values
+        "planet_icon": planet.get("planet_icon") or 0,
+        "planet_icon_info": planet.get("planet_icon_info") or 0,
     })
     return view
 
@@ -559,7 +576,8 @@ def research_view(empire: dict, research: dict) -> dict:
         "up_metal_require": cost[0],
         "up_crystal_require": cost[1],
         "up_deuterium_require": cost[2],
-        "up_time": eco.research_seconds(cost[0], cost[1], level(empire["main_planet"], eco.RESEARCH_LAB)),
+        "up_time": _faster(empire["main_planet"], "research",
+                           eco.research_seconds(cost[0], cost[1], level(empire["main_planet"], eco.RESEARCH_LAB))),
         "tech_tree": _tech_tree(rule),
     })
     return view
@@ -598,8 +616,9 @@ def fleet_view(planet: dict, f: dict) -> dict:
             "metal_require": rule.metal,
             "crystal_require": rule.crystal,
             "deuterium_require": rule.deuterium,
-            "up_time": eco.unit_seconds(ftype, level(planet, shipyard_type(planet)),
-                                        level(planet, eco.NANITE_FACTORY)),
+            "up_time": _faster(planet, "defense" if ftype not in eco.SHIPS else "",
+                               eco.unit_seconds(ftype, level(planet, shipyard_type(planet)),
+                                                level(planet, eco.NANITE_FACTORY))),
             "tech_tree": _tech_tree(rule),
         })
     else:

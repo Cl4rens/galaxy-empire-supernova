@@ -2,7 +2,7 @@
 
     python -m supernova.admin list
     python -m supernova.admin show <username>
-    python -m supernova.admin give <username> metal=10000 crystal=5000 deuterium=2000
+    python -m supernova.admin give <username> metal=10000 crystal=5000 deuterium=2000 credits=500 dark_matter=50
     python -m supernova.admin set-building <username> <building_type> <level> [lot]
     python -m supernova.admin give-fleet <username> 9=5 1=10      (fleet_type=count)
     python -m supernova.admin set-research <username> <research_type> <level>
@@ -52,18 +52,25 @@ def cmd_show(args) -> None:
         }, indent=2))
 
 
+CURRENCIES = {"dark_matter": "dark_matter_count", "credits": "gu_count"}
+
+
 def cmd_give(args) -> None:
     amounts = {}
     for item in args.amounts:
         resource, _, value = item.partition("=")
-        if resource not in planet_rules.RESOURCES or not value.lstrip("-").isdigit():
-            raise SystemExit(f"Expected resource=amount with resource in {planet_rules.RESOURCES}, got {item!r}")
+        if resource not in (*planet_rules.RESOURCES, *CURRENCIES) or not value.lstrip("-").isdigit():
+            raise SystemExit(f"Expected name=amount with name in {(*planet_rules.RESOURCES, *CURRENCIES)}, got {item!r}")
         amounts[resource] = int(value)
     with db.player_state(player_id(args.username)) as state:
-        planet_rules.tick(state["empire"], time.time())
-        p = state["empire"]["main_planet"]
+        empire = state["empire"]
+        planet_rules.tick(empire, time.time())
+        p = empire["main_planet"]
         for resource, value in amounts.items():
-            p[resource] = max(0, p[resource] + value)
+            if resource in CURRENCIES:
+                empire[CURRENCIES[resource]] = max(0, empire.get(CURRENCIES[resource], 0) + value)
+            else:
+                p[resource] = max(0, p[resource] + value)
     print("ok")
 
 

@@ -465,6 +465,25 @@ Following the client's help texts, with Supernova's numbers:
 
 ## Item shop and speed-ups
 
+The catalog follows the wiki's Space Store: resource containers (S/M/L), speed-ups for dark
+matter and the wiki's speed stones (1m to 24h) for credits, officers (tab "Officer"),
+terraformers (S/M/L for 99/249/599 credits: 1-15/20/25 extra building fields, the best roll
+counts), devices, ECM chips, alloy boxes (also for credits) and krypton stones. Credits cannot
+be bought; the operator hands them out (`admin give <user> credits=500`).
+
+Officers (wiki prices: level 1 for dark matter, 7 or 30 days; levels 2 and 3 for credits, 7 days):
+
+| Officer | Effect (Lv.1 / 2 / 3) |
+|---------|-----------------------|
+| Commander | construction time -10 / -10 / -20 % |
+| Engineer | fusion energy +10 / +10 / +20 %; saves 50 / 70 / 75 % of the defense that would be lost |
+| Technocrat | research time -25 / -30 / -35 % |
+| Geologist | mine output +10 / +20 / +30 % |
+| Admiral | defense construction time -10 / -15 / -20 % |
+| Guider | 35 / 45 / 55 % of the ships an expedition loses come back |
+
+The wiki's extra building queues and fleet slots do not apply (Supernova has neither limit).
+
 - Everything in the shop costs dark matter; bought items go to the capsule (depot) and are
   used from there: resource packs (on the current planet), ECM chips, alloy fragment boxes,
   krypton stones.
@@ -482,12 +501,14 @@ The original game sold dark matter for real money. Supernova hands it out instea
 
 ## Ship modification
 
-- Devices (hull plating, shield emitter, weapon module, thruster) are bought in the shop: basic
-  ones (10 dark matter) for battlecruisers, bombers and destroyers, advanced ones (30) for plasma
-  cannons, interceptors and Iron Behemoths.
-- Level n -> n + 1 of a device type uses n + 1 devices and needs 100,000 x (n + 1) points;
-  at most level 10. Each level gives +3 % armour, shields or attack, or +2 % speed, for that
-  ship type only. Defense gets no thrusters.
+- Devices (wiki names: Ship Armor Plate, Energy Device, Power Adaptor, Engine System): Lv1
+  for battlecruisers, bombers, destroyers and plasma cannons, Lv2 for the advanced ships and
+  proton cannons. They come from expeditions (25 %: 1-5 devices), from battles a player wins
+  against another player (3) and from the shop (2 / 6 dark matter).
+- Level n of a device type takes 2^(n-1) devices and 100K, 150K, 200K, then +200K up to 1.4M
+  (level 9), 1.8M, 2.2M, then +400K points (wiki up to level 11). Levels 1-9 add 10 % each,
+  level 10 20 % and each further level 30 %, for that ship type only; at most level 20.
+  Defense gets no engine systems.
 
 ## Advanced ships
 

@@ -14,7 +14,7 @@ from fastapi.responses import PlainTextResponse, Response
 
 from . import accounts, acs, alliances, bookmarks, chat, checkin, combat, crypto, db, faq, fleets, gifts, mails
 from . import devices, ecm, flagships, fortresses, items, kryptons, lordship, notices, player, quests, ranking
-from . import daily, repairs
+from . import daily, officers, repairs
 from . import economy as eco
 from . import planet as planet_rules
 from . import universe
@@ -213,13 +213,14 @@ def unit_info(fleet_id: int, player_id: int = Depends(current_player)):
 
 @router.get("/users/my_buffs_ext")
 def buffs(planet_id: int = 0, player_id: int = Depends(current_player)):
-    """Active buffs (none yet: they come from shop items) and the planet's krypton bonuses."""
+    """Active officers and the planet's krypton bonuses."""
     with db.player_state(player_id) as state:
         kryptons.sync_planets(state)
         planet = planet_rules.find_planet(state["empire"], planet_id) or state["empire"]["main_planet"]
         storage = kryptons.storage_view(state)
         found = next((b["buffs"] for b in storage["kryptons"]["all_buffs"] if b["planet_id"] == planet["planet_id"]), [])
-        return encrypted_json({"buff_list": [], "krypton_buffs": found, "kryptons": planet["kryptons"]})
+        return encrypted_json({"buff_list": officers.buff_list(state["empire"], time.time()),
+                               "krypton_buffs": found, "kryptons": planet["kryptons"]})
 
 
 @router.get("/planets/{planet_id}.json")
@@ -364,6 +365,31 @@ async def change_password(user_id: int, request: Request, player_id: int = Depen
 def vip_info(user_id: int, player_id: int = Depends(current_player)):
     """There is no VIP system; the task detail screen asks anyway."""
     return encrypted_json({"vip_info": {"vip_level": 0, "vip_left": 0}})
+
+
+@router.get("/users/{user_id}/game_items_shortcuts")
+def item_shortcuts(user_id: int, shortcuts: int = 0, player_id: int = Depends(current_player)):
+    """Quick-buy lists (resource containers, terraformers, officers ...)."""
+    with db.player_state(player_id) as state:
+        return encrypted_json({"items": items.shortcut_view(state, shortcuts)})
+
+
+@router.post("/users/{user_id}/buy_and_use_game_item")
+async def buy_and_use_item(world_id: int, user_id: int, request: Request, player_id: int = Depends(current_player)):
+    params = await form(request)
+    now = time.time()
+
+    def act():
+        with db.player_state(player_id) as state:
+            use_planet(state, params)
+            empire = state["empire"]
+            planet_rules.tick(empire, now)
+            item_id = _int(params, "game_item_id")
+            info = items.buy_and_use(state, item_id, empire["main_planet"], now)
+            planet_rules.tick(empire, now)
+            return {"info": info, "categories": [items.owned_view(state, items.item(item_id))],
+                    "empire": player.empire_summary(state), "planet": planet_rules.client_view(empire, now)}
+    return item_call(act)
 
 
 # Ship modification (devices.py); before /users/{user_id}, which would take these paths
@@ -1463,7 +1489,8 @@ async def use_item(world_id: int, user_id: int, request: Request, player_id: int
             empire = state["empire"]
             planet_rules.tick(empire, now)
             item_id = _int(params, "game_item_id")
-            info = items.use(state, item_id, _int(params, "number", 1), empire["main_planet"])
+            info = items.use(state, item_id, _int(params, "number", 1), empire["main_planet"], now)
+            planet_rules.tick(empire, now)  # officers take effect at once
             return {"info": info, "categories": [items.owned_view(state, items.item(item_id))],
                     "empire": player.empire_summary(state), "planet": planet_rules.client_view(empire, now)}
     return item_call(act)
