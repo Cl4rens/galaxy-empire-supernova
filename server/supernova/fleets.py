@@ -475,11 +475,16 @@ def _side(name: str, empire: dict, units: dict[int, int], planet: dict | None = 
 
 
 def _salvage(player_id: int, debris: dict, own_units: dict[int, int], enemy_lost: dict[int, int],
-             state: dict | None = None) -> str:
-    """Alloy fragments (and dark energy, when Behemoths fought) for one side of a battle."""
+             state: dict | None = None, gains: dict | None = None) -> str:
+    """Alloy fragments (and dark energy, when Behemoths fought) for one side of a battle. The
+    amounts also go into `gains` (alloy, dark_energy) for the battle report."""
+    gains = {} if gains is None else gains
+    gains.update(alloy=0, dark_energy=0)
+
     def apply(s: dict) -> str:
         notes = []
         alloy = flagships.salvage(s, debris)
+        gains["alloy"] = alloy
         if alloy:
             notes.append(f"Alloy fragments: {alloy:,}")
         components = items.add_components(s, enemy_lost)
@@ -487,7 +492,8 @@ def _salvage(player_id: int, debris: dict, own_units: dict[int, int], enemy_lost
             notes.append(f"Intricate components: {components:,}")
         if own_units.get(flagships.BEHEMOTH):
             lost_points = sum(sum(eco.unit_cost(t)) * n for t, n in enemy_lost.items() if t in eco.UNITS) // 1000
-            notes.append(f"Dark energy: {flagships.gather_dark_energy(s, lost_points):,}")
+            gains["dark_energy"] = flagships.gather_dark_energy(s, lost_points)
+            notes.append(f"Dark energy: {gains['dark_energy']:,}")
         return ", ".join(notes)
     if state is not None:
         return apply(state)
@@ -547,8 +553,8 @@ def _battle(row, attacker: combat.Side, attacker_bonus: dict, defender: combat.S
         "attack_end_fleets_count": sum(result["attacker_left"].values()),
         "defend_start_fleets_count": defender.count(),
         "defend_end_fleets_count": sum(result["defender_left"].values()) + sum(result["rebuilt"].values()),
-        "attack_bonus_info": {"tech_bonus": attacker_bonus},
-        "defend_bonus_info": {"tech_bonus": defender_bonus},
+        "attack_bonus_info": {"tech_bonus": attacker_bonus, "kry_bonus": _krypton_bonus(attacker)},
+        "defend_bonus_info": {"tech_bonus": defender_bonus, "kry_bonus": _krypton_bonus(defender)},
         "attack_bonus": attacker_bonus,
         "defend_bonus": defender_bonus,
         "attack_krypton_bonus": _krypton_bonus(attacker),
@@ -564,6 +570,17 @@ def _battle(row, attacker: combat.Side, attacker_bonus: dict, defender: combat.S
         "booty": {"metal": 0, "crystal": 0, "deuterium": 0, "krypton": 0},
     }
     return result
+
+
+# The battle report lists the ship modification of these types (the modification screen's);
+# attackers show the first nine. Without this part the client hides missiles and Annihilators.
+DEVICE_REPORT_TYPES = (5, 6, 7, 23, 24, 25, 26, 28, 29, 20, 27)
+
+
+def _device_report(attacker_empire: dict | None, defender_empire: dict | None) -> dict:
+    def row(empire, types):
+        return [{str(t): devices.bonus(empire, t, devices.ATTACK) if empire else 0} for t in types]
+    return {"attack": row(attacker_empire, DEVICE_REPORT_TYPES[:9]), "defend": row(defender_empire, DEVICE_REPORT_TYPES)}
 
 
 def _loot_text(loot: dict) -> str:
@@ -629,9 +646,12 @@ def _attack(row, target_owner: int, state: dict, planet: dict) -> str:
     result = _battle(row, _side(attacker_name, owner_state["empire"], attack_units, origin, owner_state),
                      _tech_bonus(owner_state["empire"]),
                      _side(defender_name, state["empire"], defend_units, planet, state), _tech_bonus(state["empire"]))
-    salvage_notes = {r["owner_id"]: _salvage(r["owner_id"], result["debris"], _ships(r), result["defend_lost"])
-                     for r in group}
-    defender_note = _salvage(target_owner, result["debris"], defend_units, result["attack_lost"], state)
+    gains = {r["owner_id"]: {} for r in group}
+    salvage_notes = {r["owner_id"]: _salvage(r["owner_id"], result["debris"], _ships(r), result["defend_lost"],
+                                             gains=gains[r["owner_id"]]) for r in group}
+    defender_gains: dict = {}
+    defender_note = _salvage(target_owner, result["debris"], defend_units, result["attack_lost"], state,
+                             gains=defender_gains)
     for f in planet["fleets"]:
         if f["fleet_type"] in defend_units:
             f["amount"] = result["defender_left"].get(f["fleet_type"], 0) + result["rebuilt"].get(f["fleet_type"], 0)
@@ -659,7 +679,9 @@ def _attack(row, target_owner: int, state: dict, planet: dict) -> str:
         info["defender_recover_ratio"] = 0
     body = {"mission_type": ATTACK, "is_returning": False, "event_info": info, "notify_message": " ".join(notes),
             "attack_result": dict(result["report"], loot=loot, booty=dict(loot, krypton=0)),
-            "defender_repair_sw": int(bool(repaired))}
+            "defender_repair_sw": int(bool(repaired)), "device": _device_report(owner_state["empire"], state["empire"]),
+            "defend_alloy_detection_num": defender_gains["alloy"],
+            "defend_dark_energy_num": defender_gains["dark_energy"]}
     subject = f"Battle report [{info['end_planet_pos']}]"
     for owner in {r["owner_id"] for r in group}:  # the client finds its side by attacker_name
         name = _username(owner)
@@ -668,6 +690,7 @@ def _attack(row, target_owner: int, state: dict, planet: dict) -> str:
                                             else body["attack_result"]["winner_name"]))
         prefix = f"Coordinated attack: {attacker_name}." if len(names) > 1 else ""
         own["notify_message"] = " ".join(filter(None, [prefix, body["notify_message"], salvage_notes[owner]]))
+        own.update(attack_alloy_detection_num=gains[owner]["alloy"], attack_dark_energy_num=gains[owner]["dark_energy"])
         mails.send(owner, mails.REPORT, mails.SENDER_FLEET, name, subject, own, row["arrival_time"])
     defender_body = dict(body, notify_message=" ".join(filter(None, [body["notify_message"], defender_note])))
     mails.send(target_owner, mails.REPORT, mails.SENDER_FLEET, defender_name, subject, defender_body,
@@ -708,7 +731,8 @@ def _attack_pirates(row) -> str:
     origin = planet_rules.find_planet(owner_state["empire"], row["origin_planet_id"])
     result = _battle(row, _side(attacker_name, owner_state["empire"], _ships(row), origin, owner_state),
                      _tech_bonus(owner_state["empire"]), pirates, pirate_bonus)
-    salvage_note = _salvage(row["owner_id"], result["debris"], _ships(row), result["defend_lost"])
+    gains: dict = {}
+    salvage_note = _salvage(row["owner_id"], result["debris"], _ships(row), result["defend_lost"], gains=gains)
     loot = {res: 0 for res in RESOURCES}
     stones = chips = dark_matter = 0
     if result["winner"] == "attacker":
@@ -733,7 +757,9 @@ def _attack_pirates(row) -> str:
         notes.append(salvage_note)
     body = {"mission_type": ATTACK_PIRATES, "is_returning": False, "event_info": info,
             "notify_message": ", ".join(notes),
-            "attack_result": dict(result["report"], loot=loot, booty=dict(loot, krypton=0))}
+            "attack_result": dict(result["report"], loot=loot, booty=dict(loot, krypton=0)),
+            "device": _device_report(owner_state["empire"], None),
+            "attack_alloy_detection_num": gains["alloy"], "attack_dark_energy_num": gains["dark_energy"]}
     mails.send(row["owner_id"], mails.REPORT, mails.SENDER_FLEET, attacker_name,
                f"Battle report [{info['end_planet_pos']}]", body, row["arrival_time"])
     return _fly_home(row, result["attacker_left"], loot)
