@@ -71,7 +71,7 @@ fn disassemble(out: &mut String, data: &[u8], version: u8, pool: &mut Vec<String
 
 fn walk(tags: &[Tag], version: u8, sprite: u16, names: &std::collections::HashMap<u16, String>, filter: Option<&str>) {
     let mut frame = 1;
-    let mut show = |title: String, data: &[u8]| {
+    let show = |title: String, data: &[u8]| {
         let mut out = String::new();
         disassemble(&mut out, data, version, &mut Vec::new(), 1);
         if filter.is_none_or(|f| out.contains(f)) {

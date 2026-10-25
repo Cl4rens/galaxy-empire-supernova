@@ -15,7 +15,28 @@ const DEFINE_BITS_JPEG2: u16 = 21;
 const DEFINE_EDIT_TEXT: u16 = 37;
 const DEFINE_BITS_LOSSLESS2: u16 = 36;
 const EXPORT_ASSETS: u16 = 56;
+const PLACE_OBJECT2: u16 = 26;
+const DEFINE_SPRITE: u16 = 39;
+const PLACE_OBJECT3: u16 = 70;
+/// Text fields with an instance name like this get the game's text of that key (gameswf did it)
+const TEXT_KEY_PREFIX: &str = "LC_";
+/// Layout marks in such names, not part of the key: single line / multiple lines, centred
+/// ("LC_MENU_SLHM_TAB_OFFICER" shows "LC_MENU_TAB_OFFICER")
+const TEXT_LAYOUT_MARKS: [&str; 2] = ["SLHM_", "MLHM_"];
+
+/// Single-line fields shrink their text to fit, down to this much of its size.
+const MIN_TEXT_SCALE: f64 = 0.5;
+
+/// The game's text for a text field named `name`.
+fn field_text(name: &str, text: &impl Fn(&str) -> Option<String>) -> Option<String> {
+    text(name).or_else(|| {
+        let key = TEXT_LAYOUT_MARKS.iter().fold(name.to_string(), |key, mark| key.replacen(mark, "", 1));
+        (key != name).then(|| text(&key)).flatten()
+    })
+}
 const PVR_TAG: u32 = 0x2152_5650; // "PVR!"
+/// The font gameswf drew text fields with
+pub const FONT: &str = "data2/Arial.ttf";
 const MODIFIERS: [(i32, i32); 8] = [(2, 8), (5, 17), (9, 29), (13, 42), (18, 60), (24, 80), (33, 106), (47, 183)];
 
 fn u16_at(d: &[u8], p: usize) -> u16 {
@@ -66,9 +87,201 @@ fn device_font_text(data: &[u8]) -> Vec<u8> {
     out
 }
 
-/// The SWF (uncompressed) with every placeholder picture filled by `picture(name)` and every
-/// text field set to the device font.
-pub fn fill_bitmaps(swf: &[u8], mut picture: impl FnMut(&str) -> Option<Vec<u8>>) -> Result<Vec<u8>> {
+/// Reads bits of a SWF record, highest first.
+struct Bits<'a> {
+    data: &'a [u8],
+    bit: usize,
+}
+
+impl Bits<'_> {
+    fn ub(&mut self, n: usize) -> u32 {
+        let mut v = 0;
+        for _ in 0..n {
+            let byte = self.data.get(self.bit / 8).copied().unwrap_or(0);
+            v = (v << 1) | ((byte >> (7 - self.bit % 8)) & 1) as u32;
+            self.bit += 1;
+        }
+        v
+    }
+
+    /// Bytes used, up to the next whole byte.
+    fn len(&self) -> usize {
+        self.bit.div_ceil(8)
+    }
+}
+
+fn matrix_len(data: &[u8]) -> usize {
+    let mut bits = Bits { data, bit: 0 };
+    for _ in 0..2 {
+        if bits.ub(1) == 1 {
+            let n = bits.ub(5) as usize;
+            bits.ub(2 * n);
+        }
+    }
+    let n = bits.ub(5) as usize;
+    bits.ub(2 * n);
+    bits.len()
+}
+
+fn color_transform_len(data: &[u8]) -> usize {
+    let mut bits = Bits { data, bit: 0 };
+    let (add, mult) = (bits.ub(1), bits.ub(1));
+    let n = bits.ub(4) as usize;
+    bits.ub(4 * n * (add + mult) as usize);
+    bits.len()
+}
+
+/// The instance name each character is placed with (PlaceObject2/3, in sprites too).
+fn instance_names(body: &[u8], all: &[(u16, usize, usize, std::ops::Range<usize>)], out: &mut HashMap<u16, String>) {
+    for (code, _, _, range) in all {
+        let d = &body[range.clone()];
+        match *code {
+            DEFINE_SPRITE if d.len() > 4 => instance_names(d, &tags(d, 4), out),
+            PLACE_OBJECT2 | PLACE_OBJECT3 if d.len() > 3 => {
+                let flags = d[0];
+                let mut p = if *code == PLACE_OBJECT3 { 2 } else { 1 } + 2;
+                if *code == PLACE_OBJECT3 && d[1] & 0x08 != 0 {
+                    p += d[p..].iter().position(|&b| b == 0).map_or(d.len(), |e| e + 1); // class name
+                }
+                let id = if flags & 0x02 != 0 && p + 2 <= d.len() {
+                    p += 2;
+                    Some(u16_at(d, p - 2))
+                } else {
+                    None
+                };
+                if flags & 0x04 != 0 {
+                    p += matrix_len(&d[p.min(d.len())..]);
+                }
+                if flags & 0x08 != 0 {
+                    p += color_transform_len(&d[p.min(d.len())..]);
+                }
+                if flags & 0x10 != 0 {
+                    p += 2; // ratio
+                }
+                if let (Some(id), true) = (id, flags & 0x20 != 0 && p < d.len()) {
+                    let end = d[p..].iter().position(|&b| b == 0).map_or(d.len(), |e| p + e);
+                    out.entry(id).or_insert_with(|| String::from_utf8_lossy(&d[p..end]).to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// `html` with its text replaced by `text`, keeping the tags (alignment, font, size).
+fn replace_html_text(html: &str, text: &str) -> String {
+    let escaped = text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+    let mut out = String::new();
+    let mut placed = false;
+    let mut rest = html;
+    while !rest.is_empty() {
+        if rest.starts_with('<') {
+            let end = rest.find('>').map_or(rest.len(), |e| e + 1);
+            out.push_str(&rest[..end]);
+            rest = &rest[end..];
+        } else {
+            let end = rest.find('<').unwrap_or(rest.len());
+            if !placed && !rest[..end].trim().is_empty() {
+                out.push_str(&escaped);
+                placed = true;
+            }
+            rest = &rest[end..];
+        }
+    }
+    if !placed {
+        out.push_str(&escaped);
+    }
+    out
+}
+
+/// Width of `text` in pixels at font size `size`.
+fn text_width(font: &ttf_parser::Face, text: &str, size: f64) -> f64 {
+    let units: f64 = text
+        .chars()
+        .map(|c| font.glyph_index(c).and_then(|g| font.glyph_hor_advance(g)).unwrap_or(0) as f64)
+        .sum();
+    units * size / font.units_per_em() as f64
+}
+
+/// The font size (pixels) that fits `text` into `width` pixels on one line, if it needs one.
+fn fitting_size(font: &ttf_parser::Face, text: &str, size: f64, width: f64) -> Option<f64> {
+    let room = width - 4.0;
+    let needed = text_width(font, text, size);
+    (needed > room && needed > 0.0).then(|| (size * (room / needed).max(MIN_TEXT_SCALE)).floor())
+}
+
+/// A DefineEditText with `text` as its initial text; with `fit`, a smaller font size where the
+/// text would not fit on one line.
+fn with_initial_text(data: &[u8], text: &str, fit: Option<&ttf_parser::Face>) -> Option<Vec<u8>> {
+    let nbits = (data.get(2)? >> 3) as usize;
+    let mut bounds = Bits { data: data.get(2..)?, bit: 5 };
+    let (x_min, x_max) = (bounds.ub(nbits), bounds.ub(nbits));
+    let signed = |v: u32| if nbits > 0 && v >> (nbits - 1) & 1 == 1 { v as i64 - (1i64 << nbits) } else { v as i64 };
+    let width = (signed(x_max) - signed(x_min)) as f64 / 20.0;
+    let flags_at = 2 + (5 + 4 * nbits).div_ceil(8);
+    let (f1, f2) = (*data.get(flags_at)?, *data.get(flags_at + 1)?);
+    let mut p = flags_at + 2;
+    let height_at = (f1 & 0x01 != 0).then_some(p + 2);
+    if f1 & 0x01 != 0 {
+        p += 4; // font id, height
+    }
+    if f2 & 0x80 != 0 {
+        p += data.get(p..)?.iter().position(|&b| b == 0)? + 1; // font class
+    }
+    if f1 & 0x04 != 0 {
+        p += 4; // color
+    }
+    if f1 & 0x02 != 0 {
+        p += 2; // max length
+    }
+    if f2 & 0x20 != 0 {
+        p += 9; // layout
+    }
+    p += data.get(p..)?.iter().position(|&b| b == 0)? + 1; // variable name
+    let old = if f1 & 0x80 != 0 {
+        let end = data.get(p..)?.iter().position(|&b| b == 0).map_or(data.len(), |e| p + e);
+        String::from_utf8_lossy(&data[p..end]).to_string()
+    } else {
+        String::new()
+    };
+    let mut out = data[..p].to_vec();
+    let new = if f2 & 0x02 != 0 {
+        let mut html = replace_html_text(&old, text);
+        if let Some(font) = fit {
+            // the size of the first <font size="..."> sets the line
+            if let Some(start) = html.find("size=\"").map(|i| i + 6) {
+                let end = start + html[start..].find('"').unwrap_or(0);
+                if let Some(size) = html[start..end].parse::<f64>().ok().and_then(|size| fitting_size(font, text, size, width)) {
+                    html.replace_range(start..end, &size.to_string());
+                }
+            }
+        }
+        html
+    } else {
+        if let (Some(font), Some(at)) = (fit, height_at) {
+            let size = u16_at(data, at) as f64 / 20.0;
+            if let Some(size) = fitting_size(font, text, size, width) {
+                out[at..at + 2].copy_from_slice(&((size * 20.0) as u16).to_le_bytes());
+            }
+        }
+        text.to_string()
+    };
+    out[flags_at] |= 0x80; // HasText
+    out.extend(new.as_bytes());
+    out.push(0);
+    Some(out)
+}
+
+/// The SWF (uncompressed) with every placeholder picture filled by `picture(name)`, every text
+/// field set to the device font, and the text fields named after a game text (`LC_...`) filled
+/// by `text(key)`; single-line ones (`SLHM`) shrink the text to fit, measured with `font`.
+pub fn fill_bitmaps(
+    swf: &[u8],
+    mut picture: impl FnMut(&str) -> Option<Vec<u8>>,
+    text: impl Fn(&str) -> Option<String>,
+    font: Option<&[u8]>,
+) -> Result<Vec<u8>> {
+    let font = font.and_then(|f| ttf_parser::Face::parse(f, 0).ok());
     let body = match &swf[..3] {
         b"CWS" => {
             let mut out = Vec::new();
@@ -94,6 +307,8 @@ pub fn fill_bitmaps(swf: &[u8], mut picture: impl FnMut(&str) -> Option<Vec<u8>>
             }
         }
     }
+    let mut instances = HashMap::new();
+    instance_names(&body, &all, &mut instances);
     let mut out = body[..first].to_vec();
     for (code, start, head, range) in &all {
         if (*code == DEFINE_BITS_LOSSLESS || *code == DEFINE_BITS_LOSSLESS2) && range.len() == 7 {
@@ -113,7 +328,13 @@ pub fn fill_bitmaps(swf: &[u8], mut picture: impl FnMut(&str) -> Option<Vec<u8>>
             continue;
         }
         if *code == DEFINE_EDIT_TEXT {
-            out.extend(tag(DEFINE_EDIT_TEXT, &device_font_text(&body[range.clone()])));
+            let mut field = device_font_text(&body[range.clone()]);
+            let key = instances.get(&u16_at(&body, range.start)).filter(|n| n.starts_with(TEXT_KEY_PREFIX));
+            let fit = font.as_ref().filter(|_| key.is_some_and(|k| k.contains(TEXT_LAYOUT_MARKS[0])));
+            if let Some(localized) = key.and_then(|k| field_text(k, &text)).and_then(|t| with_initial_text(&field, &t, fit)) {
+                field = localized;
+            }
+            out.extend(tag(DEFINE_EDIT_TEXT, &field));
             continue;
         }
         out.extend(&body[*start..*start + head + range.len()]);
@@ -244,15 +465,19 @@ impl Converter {
         data
     }
 
-    /// A screen ("data2/Login.tfs") as a standard SWF.
-    pub fn screen(&mut self, assets: &Assets, path: &str) -> Result<Vec<u8>> {
+    /// A screen ("data2/Login.tfs") as a standard SWF, with the game texts in `texts`. Kept
+    /// for the next time once the game has loaded its texts.
+    pub fn screen(&mut self, assets: &Assets, texts: &HashMap<String, String>, path: &str) -> Result<Vec<u8>> {
         if let Some(swf) = self.screens.get(path) {
             return Ok(swf.clone());
         }
         let Some(tfs) = assets.file(path.trim_start_matches("./")) else { bail!("no screen {path}") };
         let tfs = tfs.to_vec();
-        let swf = fill_bitmaps(&tfs, |name| self.picture(assets, name))?;
-        self.screens.insert(path.to_string(), swf.clone());
+        let font = assets.file(FONT).map(<[u8]>::to_vec);
+        let swf = fill_bitmaps(&tfs, |name| self.picture(assets, name), |key| texts.get(key).cloned(), font.as_deref())?;
+        if !texts.is_empty() {
+            self.screens.insert(path.to_string(), swf.clone());
+        }
         Ok(swf)
     }
 }

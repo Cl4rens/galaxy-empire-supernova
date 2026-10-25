@@ -22,13 +22,11 @@ use ruffle_render_wgpu::target::TextureTarget;
 use ruffle_render_wgpu::wgpu;
 
 use crate::assets::Assets;
-use crate::convert::Converter;
-use crate::engine::{Arg, Screens};
+use crate::convert::{Converter, FONT};
+use crate::engine::{Arg, Screens, Texts};
 
 pub const WIDTH: u32 = 640;
 pub const HEIGHT: u32 = 960;
-/// The font gameswf drew text fields with
-const FONT: &str = "data2/Arial.ttf";
 
 type Commands = Arc<Mutex<Vec<(String, String, String)>>>;
 
@@ -140,7 +138,13 @@ struct Fit {
     min_scale: f64,
     base_size: Option<f64>,
     text: Option<String>,
+    /// found by its name (`SINGLE_LINE_MARK`), not asked for by SetLineMax
+    by_name: bool,
 }
+
+/// Text fields named with this keep their text on one line, smaller if need be (gameswf did it)
+const SINGLE_LINE_MARK: &str = "_SLHM";
+const SINGLE_LINE_MIN_SCALE: f64 = 0.5;
 
 fn to_external(arg: &Arg) -> ExternalValue {
     match arg {
@@ -196,17 +200,25 @@ impl RuffleScreens {
 
     /// RGBA pixels of a picture the game names for ReplaceTexture: a data2 file or a
     /// downloaded one, with its size.
+    /// The pixels premultiplied by their alpha, as Ruffle keeps bitmaps.
     fn picture(&mut self, assets: &Assets, name: &str) -> Option<image::RgbaImage> {
         let data = self.converter.picture(assets, name).or_else(|| std::fs::read(name).ok())?;
-        image::load_from_memory(&data).ok().map(|i| i.to_rgba8())
+        let mut picture = image::load_from_memory(&data).ok()?.to_rgba8();
+        for pixel in picture.pixels_mut() {
+            let a = pixel[3] as u16;
+            for c in 0..3 {
+                pixel[c] = ((pixel[c] as u16 * a + 127) / 255) as u8;
+            }
+        }
+        Some(picture)
     }
 
     pub fn descriptors(&self) -> Arc<Descriptors> {
         self.descriptors.clone()
     }
 
-    fn load(&mut self, assets: &Assets, object: &str, path: &str) -> Result<()> {
-        let swf = self.converter.screen(assets, path)?;
+    fn load(&mut self, assets: &Assets, texts: &Texts, object: &str, path: &str) -> Result<()> {
+        let swf = self.converter.screen(assets, texts, path)?;
         tracing::debug!("{object}: load {path}");
         if let Some(dir) = std::env::var_os("SUPERNOVA_DUMP_SCREENS") {
             let name = path.rsplit('/').next().unwrap_or(path).replace(".tfs", ".swf");
@@ -293,11 +305,11 @@ impl RuffleScreens {
 }
 
 impl Screens for RuffleScreens {
-    fn call(&mut self, assets: &Assets, object: &str, method: &str, args: &[Arg]) -> Vec<Arg> {
+    fn call(&mut self, assets: &Assets, texts: &Texts, object: &str, method: &str, args: &[Arg]) -> Vec<Arg> {
         let text = |i: usize| args.get(i).map(Arg::text).unwrap_or_default();
         tracing::trace!("{object}.{method}");
         if method == "Load" {
-            if let Err(e) = self.load(assets, object, &text(0)) {
+            if let Err(e) = self.load(assets, texts, object, &text(0)) {
                 tracing::warn!("{object}: cannot load {}: {e}", text(0));
             }
             return Vec::new();
@@ -322,7 +334,16 @@ impl Screens for RuffleScreens {
             "Update" => {
                 let dt = args.first().map(Arg::text).and_then(|s| s.parse::<f64>().ok()).unwrap_or(33.0);
                 p.tick(FloatDuration::from_millis(dt));
-                for fit in self.fits.get_mut(object).into_iter().flatten() {
+                let fits = self.fits.entry(object.to_string()).or_default();
+                let named: std::collections::HashSet<String> = p.text_field_paths(SINGLE_LINE_MARK).into_iter().collect();
+                fits.retain(|f| !f.by_name || named.contains(&f.target));
+                for target in named {
+                    if !fits.iter().any(|f| f.target == target) {
+                        let min_scale = SINGLE_LINE_MIN_SCALE;
+                        fits.push(Fit { target, min_scale, base_size: None, text: None, by_name: true });
+                    }
+                }
+                for fit in fits.iter_mut() {
                     if let Some((base, text)) = p.fit_avm1_text(&fit.target, fit.min_scale, fit.base_size, fit.text.as_deref()) {
                         fit.base_size = Some(base);
                         fit.text = Some(text);
@@ -361,9 +382,7 @@ impl Screens for RuffleScreens {
                 let replaced = p.replace_bitmap(&text(0), |width, height| {
                     image::imageops::resize(&picture, width, height, image::imageops::FilterType::Triangle).into_raw()
                 });
-                if !replaced {
-                    tracing::debug!("{object}: no picture slot {}", text(0));
-                }
+                tracing::debug!("{object}: picture slot {} <- {} ({w}x{h}, slot found: {replaced})", text(0), text(1));
                 vec![Arg::Num(w as f64), Arg::Num(h as f64)]
             }
             "SetBtnEnable" => {
@@ -382,6 +401,7 @@ impl Screens for RuffleScreens {
                     min_scale: args.get(2).map(Arg::text).and_then(|s| s.parse().ok()).unwrap_or(0.6),
                     base_size: None,
                     text: None,
+                    by_name: false,
                 };
                 let fits = self.fits.entry(object.to_string()).or_default();
                 fits.retain(|f| f.target != fit.target);

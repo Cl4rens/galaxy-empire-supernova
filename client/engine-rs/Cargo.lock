@@ -3337,6 +3337,7 @@ dependencies = [
  "swf 0.3.0",
  "tracing",
  "tracing-subscriber",
+ "ttf-parser",
  "ureq",
  "winit",
  "zip",

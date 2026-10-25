@@ -32,10 +32,10 @@ index 073af1ef..85d4308b 100644
 +/// Look names up without regard to case in every SWF version, as gameswf did (Supernova).
 +pub static CASE_INSENSITIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 diff --git a/core/src/external.rs b/core/src/external.rs
-index 071f1e73..319b3adb 100644
+index 071f1e73..3b599be4 100644
 --- a/core/src/external.rs
 +++ b/core/src/external.rs
-@@ -424,3 +424,226 @@ impl<'gc> ExternalInterface<'gc> {
+@@ -424,3 +424,247 @@ impl<'gc> ExternalInterface<'gc> {
          self.fs_commands.on_fs_command(command, args)
      }
  }
@@ -262,11 +262,32 @@ index 071f1e73..319b3adb 100644
 +pub fn set_avm1_case_insensitive(on: bool) {
 +    crate::avm1::CASE_INSENSITIVE.store(on, std::sync::atomic::Ordering::Relaxed);
 +}
++
++/// The paths of the text fields whose instance name contains `marker` (gameswf fitted the text
++/// of fields named "..._SLHM_..." into one line).
++pub fn text_field_paths(context: &mut UpdateContext<'_>, marker: &str) -> Vec<String> {
++    use crate::display_object::{DisplayObject, TDisplayObject, TDisplayObjectContainer};
++    fn walk(object: DisplayObject<'_>, marker: &str, out: &mut Vec<String>) {
++        if object.as_edit_text().is_some() && object.name().is_some_and(|n| n.to_string().contains(marker)) {
++            out.push(object.path().to_string());
++        }
++        if let Some(container) = object.as_container() {
++            for child in container.iter_render_list() {
++                walk(child, marker, out);
++            }
++        }
++    }
++    let mut out = Vec::new();
++    if let Some(root) = context.stage.root_clip() {
++        walk(root, marker, &mut out);
++    }
++    out
++}
 diff --git a/core/src/player.rs b/core/src/player.rs
-index c3756621..8f67f764 100644
+index c3756621..b63f4e74 100644
 --- a/core/src/player.rs
 +++ b/core/src/player.rs
-@@ -2535,6 +2535,62 @@ impl Player {
+@@ -2535,6 +2535,71 @@ impl Player {
          })
      }
  
@@ -279,7 +300,11 @@ index c3756621..8f67f764 100644
 +    ) -> ExternalValue {
 +        let args: Vec<ExternalValue> = args.into_iter().collect();
 +        self.mutate_with_update_context(|context| {
-+            crate::external::call_avm1_function(context, target, function, args)
++            let result = crate::external::call_avm1_function(context, target, function, args);
++            // gameswf ran what the call queued (such as the first frame of clips it attached)
++            // before returning, and the scripts count on it
++            Self::run_actions(context);
++            result
 +        })
 +    }
 +
@@ -319,6 +344,11 @@ index c3756621..8f67f764 100644
 +    /// The topmost native button under a stage point; see `external::find_avm1_button`.
 +    pub fn find_avm1_button(&mut self, x: f64, y: f64, prefix: &str) -> Option<String> {
 +        self.mutate_with_update_context(|context| crate::external::find_avm1_button(context, x, y, prefix))
++    }
++
++    /// Paths of the text fields named with `marker`; see `external::text_field_paths`.
++    pub fn text_field_paths(&mut self, marker: &str) -> Vec<String> {
++        self.mutate_with_update_context(|context| crate::external::text_field_paths(context, marker))
 +    }
 +
 +    /// Replace an exported bitmap's pixels; see `external::replace_bitmap`.

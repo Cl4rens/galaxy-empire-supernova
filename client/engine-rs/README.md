@@ -24,6 +24,11 @@ cargo build --release
 | `ReplaceTexture(slot, picture)` | `replace_bitmap(slot, pixels)` |
 | native buttons (clips named `btn...`) | `find_avm1_button(x, y, "btn")`, then `focus_in`/`released` and `on_clicked` from `screens.rs` |
 | names without regard to case | `set_avm1_case_insensitive(true)` |
+| scripts of attached clips run at once | `call_avm1_function` runs the queued actions before it returns |
+| text fields named `..._SLHM_...` fit one line | `text_field_paths("_SLHM")`, then `fit_avm1_text` from `screens.rs` |
+
+Text fields named after a game text (`LC_MENU_TAB_OFFICER`, also with the layout mark
+`SLHM_`/`MLHM_` in it) get that text when `convert.rs` converts the screen.
 
 Flash commands come back through Ruffle's `FsCommandProvider`.
 
@@ -56,6 +61,7 @@ filled from the ETC1 textures, and text fields draw with the game's `data2/Arial
 ```
 
 `screenshots` logs in and saves the title screen and the first screen after the login.
+`screen-convert <apk> <dir> ItemShop.tfs a1.png` writes screens as SWF and pictures as PNG.
 `SUPERNOVA_LAYERS=1` also saves every Flash object on its own, `SUPERNOVA_DUMP_SCREENS=<dir>`
 writes the converted screens as SWF files, and `RUST_LOG=supernova_engine=debug` shows the
 requests and ActionScript calls. `avm1-dump <screen.swf> [text]` prints a screen's

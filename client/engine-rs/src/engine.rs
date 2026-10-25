@@ -72,11 +72,15 @@ impl Arg {
     }
 }
 
+/// The game's texts by key, e.g. "LC_MENU_Buy" -> "Buy"
+pub type Texts = HashMap<String, String>;
+
 /// What the game does with its Flash screens. The headless recorder only remembers the calls;
 /// the Ruffle screens draw them.
 pub trait Screens {
-    /// A method call on a Flash object (Load, InvokeASCallback, Update, ReplaceTexture, ...).
-    fn call(&mut self, assets: &Assets, object: &str, method: &str, args: &[Arg]) -> Vec<Arg>;
+    /// A method call on a Flash object (Load, InvokeASCallback, Update, ReplaceTexture, ...);
+    /// `texts` is the game's text table (`LC_MENU_X` -> text) as loaded so far.
+    fn call(&mut self, assets: &Assets, texts: &Texts, object: &str, method: &str, args: &[Arg]) -> Vec<Arg>;
     /// Commands the screens sent since the last call: (object, command, argument).
     fn commands(&mut self) -> Vec<(String, String, String)> {
         Vec::new()
@@ -92,7 +96,7 @@ pub struct Recorder {
 }
 
 impl Screens for Recorder {
-    fn call(&mut self, _assets: &Assets, object: &str, method: &str, args: &[Arg]) -> Vec<Arg> {
+    fn call(&mut self, _assets: &Assets, _texts: &Texts, object: &str, method: &str, args: &[Arg]) -> Vec<Arg> {
         self.calls.push((object.to_string(), method.to_string(), args.to_vec()));
         if method == "ReplaceTexture" { vec![Arg::Num(1.0), Arg::Num(1.0)] } else { Vec::new() }
     }
@@ -119,7 +123,7 @@ pub struct State {
     save_dir: PathBuf,
     udid: String,
     language: String,
-    texts: HashMap<String, String>,
+    texts: Texts,
     pub missing: HashMap<String, u32>,
     pub alerts: Vec<(String, String)>,
     pub requests: Vec<(String, String, u16)>,
@@ -513,8 +517,8 @@ fn native_table(lua: &Lua, state: &Rc<RefCell<State>>) -> Result<Table> {
         let rest: Vec<Arg> = args.iter().skip(2).map(Arg::from_lua).collect();
         let result = {
             let mut s = st.borrow_mut();
-            let State { assets, screens, .. } = &mut *s;
-            screens.call(assets, &object, &method, &rest)
+            let State { assets, texts, screens, .. } = &mut *s;
+            screens.call(assets, texts, &object, &method, &rest)
         };
         let values: Vec<Value> = result.iter().map(|r| r.to_lua(lua)).collect::<mlua::Result<_>>()?;
         Ok(MultiValue::from_vec(values))
