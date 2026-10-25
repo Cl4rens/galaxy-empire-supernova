@@ -33,3 +33,13 @@ DARK_MATTER_PER_DAY = float(os.environ.get("SUPERNOVA_DARK_MATTER_PER_DAY", "0")
 # Star fortress battles (see fortresses.py) repeat every week / SPEED from this moment
 # (seconds since 1970). Default: Sunday 19:00 UTC.
 FORTRESS_BATTLE_OFFSET = int(os.environ.get("SUPERNOVA_FORTRESS_BATTLE", str(3 * 86400 + 19 * 3600)))
+
+# Backups of the database into DATA_DIR/backups: every BACKUP_HOURS hours (0: off), keeping the
+# newest BACKUP_KEEP files.
+BACKUP_HOURS = float(os.environ.get("SUPERNOVA_BACKUP_HOURS", "6"))
+BACKUP_KEEP = int(os.environ.get("SUPERNOVA_BACKUP_KEEP", "28"))
+
+# Events that start by themselves: a new Galaxy Challenge / Conquer The Universe arena this many
+# days after the previous one started (0: only the operator starts them, see admin.py).
+GC_EVERY_DAYS = float(os.environ.get("SUPERNOVA_GC_EVERY_DAYS", "0"))
+ARENA_EVERY_DAYS = float(os.environ.get("SUPERNOVA_ARENA_EVERY_DAYS", "0"))

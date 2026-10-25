@@ -18,6 +18,11 @@
     python -m supernova.admin gc-status
     python -m supernova.admin arena-start [--in MINUTES] [--garrison-hours 24] [--challenge-days 6] [--prize-days 1]
     python -m supernova.admin arena-stop
+    python -m supernova.admin events
+    python -m supernova.admin stats
+    python -m supernova.admin backup
+    python -m supernova.admin ban <username> "<reason>"
+    python -m supernova.admin unban <username>
 
 Run it while the server is running or stopped; changes are visible at the player's next request.
 """
@@ -229,6 +234,47 @@ def cmd_arena_stop(args) -> None:
     print("ok: the prize stage has begun")
 
 
+def cmd_events(args) -> None:
+    from . import arena
+    from . import galaxy_challenge as gc
+    now = time.time()
+    with gc.event(now, hand_out=True) as ev:
+        names = {0: "not running", 1: "battle", 2: "finished (exchange still open)"}
+        print("Galaxy Challenge:", f"event {ev['id']}, {names[gc.status(ev, now)]}" if ev else "none yet")
+    with arena.event(now) as ev:
+        names = {0: "not running", 1: "garrison", 2: "challenge", 3: "prize"}
+        print("Conquer The Universe:", f"event {ev['id']}, {names[arena.stage(ev, now)]}" if ev else "none yet")
+
+
+def cmd_stats(args) -> None:
+    from . import operations
+    for key, value in operations.stats().items():
+        print(f"{key:<14} {value}")
+
+
+def cmd_backup(args) -> None:
+    from . import operations
+    print(operations.backup())
+
+
+def cmd_ban(args) -> None:
+    from . import operations
+    try:
+        operations.ban(args.username, args.reason)
+    except ValueError as e:
+        raise SystemExit(str(e))
+    print("ok")
+
+
+def cmd_unban(args) -> None:
+    from . import operations
+    try:
+        operations.unban(args.username)
+    except ValueError as e:
+        raise SystemExit(str(e))
+    print("ok")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(required=True)
@@ -293,6 +339,16 @@ def main() -> None:
     arena_start.add_argument("--day-minutes", type=float, default=1440, help="time between daily prizes")
     arena_start.set_defaults(func=cmd_arena_start)
     sub.add_parser("arena-stop").set_defaults(func=cmd_arena_stop)
+    sub.add_parser("events").set_defaults(func=cmd_events)
+    sub.add_parser("stats").set_defaults(func=cmd_stats)
+    sub.add_parser("backup").set_defaults(func=cmd_backup)
+    ban = sub.add_parser("ban")
+    ban.add_argument("username")
+    ban.add_argument("reason", nargs="?", default="Your account is banned.")
+    ban.set_defaults(func=cmd_ban)
+    unban = sub.add_parser("unban")
+    unban.add_argument("username")
+    unban.set_defaults(func=cmd_unban)
     args = parser.parse_args()
     args.func(args)
 

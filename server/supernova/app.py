@@ -7,13 +7,14 @@ Settings come from environment variables, see supernova/config.py.
 
 import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 
-from . import config, crypto, fleets, fortresses, gateway, world
+from . import config, crypto, db, fleets, fortresses, gateway, operations, world
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("supernova")
@@ -41,6 +42,7 @@ async def fleet_processor():
         try:
             await asyncio.to_thread(fleets.process_due)
             await asyncio.to_thread(fortresses.process_due)
+            await asyncio.to_thread(operations.housekeeping, time.time())
         except Exception:
             log.exception("fleet processing failed")
         await asyncio.sleep(1)
@@ -68,6 +70,17 @@ async def require_client_key(request: Request, call_next):
 @app.exception_handler(world.NotLoggedIn)
 def not_logged_in(request: Request, exc: world.NotLoggedIn):
     return world.error("Please log in again", 401)
+
+
+@app.exception_handler(db.Banned)
+def banned(request: Request, exc: db.Banned):
+    return world.error(str(exc), 403)
+
+
+@app.get("/health")
+def health():
+    """For container health checks and monitoring."""
+    return {"status": "ok", "players": operations.player_count()}
 
 
 @app.middleware("http")

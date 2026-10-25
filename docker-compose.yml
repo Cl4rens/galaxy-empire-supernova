@@ -11,6 +11,13 @@ services:
     environment:
       SUPERNOVA_WORLD_NAME: Supernova
       SUPERNOVA_SPEED: "1"   # game speed: production and build times
+      SUPERNOVA_BACKUP_HOURS: "6"   # database backups in /data/backups
+      SUPERNOVA_GC_EVERY_DAYS: "0"   # e.g. 14: a Galaxy Challenge every two weeks
+      SUPERNOVA_ARENA_EVERY_DAYS: "0"   # e.g. 10: an arena every ten days
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 1m
+      timeout: 10s
     restart: unless-stopped
 
 volumes:

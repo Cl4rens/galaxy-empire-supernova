@@ -17,7 +17,9 @@ CREATE TABLE IF NOT EXISTS players (
     password   TEXT,
     udid       TEXT,
     created_at INTEGER NOT NULL,
-    state      TEXT NOT NULL
+    state      TEXT NOT NULL,
+    last_seen  INTEGER NOT NULL DEFAULT 0,
+    banned     TEXT
 );
 CREATE TABLE IF NOT EXISTS planets (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -212,6 +214,11 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
+    player_columns = [r[1] for r in conn.execute("PRAGMA table_info(players)")]
+    if player_columns and "last_seen" not in player_columns:
+        with conn:
+            conn.execute("ALTER TABLE players ADD COLUMN last_seen INTEGER NOT NULL DEFAULT 0")
+            conn.execute("ALTER TABLE players ADD COLUMN banned TEXT")
     alliance_columns = [r[1] for r in conn.execute("PRAGMA table_info(alliances)")]
     if alliance_columns and "bag_credits" not in alliance_columns:
         with conn:
@@ -311,9 +318,29 @@ def create_session(player_id: int) -> str:
     return token
 
 
+class Banned(Exception):
+    """The player behind a session is banned; the message is the operator's reason."""
+
+
+_seen: dict[int, float] = {}
+SEEN_INTERVAL = 300  # last_seen is written at most this often per player
+
+
 def session_player(token: str) -> int | None:
-    row = connect().execute("SELECT player_id FROM sessions WHERE token = ?", (token,)).fetchone()
-    return row["player_id"] if row else None
+    row = connect().execute(
+        "SELECT s.player_id, p.banned FROM sessions s JOIN players p ON p.id = s.player_id WHERE s.token = ?",
+        (token,)).fetchone()
+    if row is None:
+        return None
+    if row["banned"] is not None:
+        raise Banned(row["banned"] or "Your account is banned.")
+    now = time.time()
+    if now - _seen.get(row["player_id"], 0) > SEEN_INTERVAL:
+        _seen[row["player_id"]] = now
+        conn = connect()
+        with _lock, conn:
+            conn.execute("UPDATE players SET last_seen = ? WHERE id = ?", (int(now), row["player_id"]))
+    return row["player_id"]
 
 
 _player_locks: dict[int, threading.Lock] = {}

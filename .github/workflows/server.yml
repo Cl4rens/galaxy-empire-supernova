@@ -43,6 +43,12 @@ jobs:
           for i in $(seq 1 20); do curl -sf localhost:8000/servers.json && break; sleep 1; done
           curl -sf localhost:8000/servers/auto_update
           test "$(curl -s -o /dev/null -w '%{http_code}' localhost:8000/world/1/passive_events)" = 503
+          curl -sf localhost:8000/health | grep -q '"status":"ok"'
+      - name: Admin tools and backup inside the container
+        run: |
+          docker exec supernova python -m supernova.admin stats
+          docker exec supernova python -m supernova.admin backup
+          docker exec supernova sh -c 'ls /data/backups/supernova-*.db'
       - name: Container logs
         if: always()
         run: docker logs supernova

@@ -110,7 +110,22 @@ Optional settings: `SUPERNOVA_SPEED` (game speed, default 1), `SUPERNOVA_NEWBIE_
 the 1:5 rule no longer protects, default 500000), `SUPERNOVA_FORTRESS_BATTLE` (time of a
 star fortress battle in seconds since 1970; battles repeat every week / speed, default Sunday
 19:00 UTC), `SUPERNOVA_STARTING_DARK_MATTER` (dark matter of new players, default 200),
-`SUPERNOVA_DARK_MATTER_PER_DAY` (dark matter every player earns per day, default 0).
+`SUPERNOVA_DARK_MATTER_PER_DAY` (dark matter every player earns per day, default 0),
+`SUPERNOVA_BACKUP_HOURS` (database backup every so many hours, default 6, 0 = off),
+`SUPERNOVA_BACKUP_KEEP` (backups kept, default 28), `SUPERNOVA_GC_EVERY_DAYS` /
+`SUPERNOVA_ARENA_EVERY_DAYS` (start a Galaxy Challenge / arena by itself this many days after the
+previous one started; default 0 = only by command).
+
+**Running it for others:**
+
+- Backups land in `backups/` next to the database (in Docker: inside the `supernova-data`
+  volume, `/data/backups`). To restore one, stop the server, replace `supernova.db` with the
+  backup file, start again. `docker compose cp supernova:/data/backups ./backups` copies them out.
+- `GET /health` answers `{"status": "ok", "players": n}`; the Docker setup uses it as health check.
+- `admin stats` shows players, how many were active in the last hour/day/week, alliances and
+  the last backup; `admin events` shows the state of the Galaxy Challenge and the arena.
+- `admin ban <username> "<reason>"` logs the player out and shows the reason at every login;
+  `admin unban` lifts it.
 
 Server operators can manage players from the command line (in Docker:
 `docker compose exec supernova python -m supernova.admin ...`):
@@ -133,6 +148,11 @@ python -m supernova.admin gc-status
 python -m supernova.admin gc-stop                          # ends it now and hands out the rewards
 python -m supernova.admin arena-start [--in MINUTES] [--garrison-hours 24] [--challenge-days 6] [--prize-days 1]
 python -m supernova.admin arena-stop                       # Conquer The Universe: on to the prize stage
+python -m supernova.admin events                           # state of both events
+python -m supernova.admin stats                            # players, activity, last backup
+python -m supernova.admin backup                           # write a backup now
+python -m supernova.admin ban <username> "<reason>"
+python -m supernova.admin unban <username>
 ```
 
 ### 4. Build the patched APK
@@ -208,6 +228,7 @@ the game keeps the scripts it unpacked on its first start and would not see the 
 - [x] Conquer The Universe arena behind the star gate, started by the operator
 - [x] Gift packs, invitation codes, empty purchase menu
 - [x] Growth packages; chests with alliance members instead of Facebook
+- [x] Operation: backups, events on a schedule, bans, statistics, health check
 - [x] Runs on Android 6-16 without crashes or permission dialogs
 - [ ] Support for 64-bit-only devices: needs an open client engine that runs the original Lua
       scripts and Flash UI from the player's APK (idea, not started)
