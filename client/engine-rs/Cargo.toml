@@ -13,7 +13,7 @@ exclude = ["ruffle"]
 ruffle_core = { path = "ruffle/core", features = ["default_font"] }
 ruffle_render_wgpu = { path = "ruffle/render/wgpu" }
 futures = "0.3.32"
-image = { version = "0.25.10", default-features = false, features = ["png"] }
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg"] }
 anyhow = "1.0"
 tracing = "0.1.43"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }

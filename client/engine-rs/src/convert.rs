@@ -98,14 +98,19 @@ pub fn fill_bitmaps(swf: &[u8], mut picture: impl FnMut(&str) -> Option<Vec<u8>>
     for (code, start, head, range) in &all {
         if (*code == DEFINE_BITS_LOSSLESS || *code == DEFINE_BITS_LOSSLESS2) && range.len() == 7 {
             let id = u16_at(&body, range.start);
-            if let Some(data) = names.get(&id).and_then(|n| picture(n)) {
-                if data.starts_with(b"\x89PNG\r\n\x1a\n") || data.starts_with(b"\xff\xd8") {
-                    let mut content = id.to_le_bytes().to_vec();
-                    content.extend(&data);
-                    out.extend(tag(DEFINE_BITS_JPEG2, &content));
-                    continue;
-                }
-            }
+            let data = names
+                .get(&id)
+                .and_then(|n| picture(n))
+                .filter(|d| d.starts_with(b"\x89PNG\r\n\x1a\n") || d.starts_with(b"\xff\xd8"));
+            // pictures the game puts in at run time (ReplaceTexture) start transparent
+            let data = match data {
+                Some(d) => d,
+                None => transparent_png(u16_at(&body, range.start + 3).into(), u16_at(&body, range.start + 5).into())?,
+            };
+            let mut content = id.to_le_bytes().to_vec();
+            content.extend(&data);
+            out.extend(tag(DEFINE_BITS_JPEG2, &content));
+            continue;
         }
         if *code == DEFINE_EDIT_TEXT {
             out.extend(tag(DEFINE_EDIT_TEXT, &device_font_text(&body[range.clone()])));
@@ -118,6 +123,18 @@ pub fn fill_bitmaps(swf: &[u8], mut picture: impl FnMut(&str) -> Option<Vec<u8>>
     swf_out.extend(((out.len() + 8) as u32).to_le_bytes());
     swf_out.extend(out);
     Ok(swf_out)
+}
+
+fn transparent_png(width: u32, height: u32) -> Result<Vec<u8>> {
+    let (width, height) = (width.max(1), height.max(1));
+    let mut png = Vec::new();
+    image::codecs::png::PngEncoder::new(&mut png).write_image(
+        &vec![0; (width * height * 4) as usize],
+        width,
+        height,
+        image::ExtendedColorType::Rgba8,
+    )?;
+    Ok(png)
 }
 
 pub fn is_pvr(data: &[u8]) -> bool {

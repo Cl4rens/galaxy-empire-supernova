@@ -1,48 +1,188 @@
 diff --git a/core/src/external.rs b/core/src/external.rs
-index 071f1e73..b75e8995 100644
+index 071f1e73..a855899d 100644
 --- a/core/src/external.rs
 +++ b/core/src/external.rs
-@@ -424,3 +424,35 @@ impl<'gc> ExternalInterface<'gc> {
+@@ -424,3 +424,175 @@ impl<'gc> ExternalInterface<'gc> {
          self.fs_commands.on_fs_command(command, args)
      }
  }
++// What gameswf let the game do to a movie from outside, for players that drive a movie the
++// same way (Supernova).
 +
-+/// Call `function` on the AVM1 object at `target` (a target path such as `_level2.panel`), like
-+/// gameswf's `InvokeASCallback`. For players that drive a movie from outside (Supernova).
++/// Run `f` with the AVM1 object at `target` (a target path such as `_root.panel`).
++fn with_avm1_object<R>(
++    context: &mut UpdateContext<'_>,
++    target: &str,
++    f: impl for<'a, 'gc> FnOnce(&mut Avm1Activation<'a, 'gc>, Avm1Object<'gc>) -> R,
++) -> Option<R> {
++    use crate::display_object::TDisplayObject;
++    use crate::string::WString;
++    let base_clip = context.stage.root_clip()?;
++    let mut activation = Avm1Activation::from_nothing(
++        context,
++        Avm1ActivationIdentifier::root("[external]"),
++        base_clip,
++    );
++    let start = base_clip.object1_or_bare(activation.gc());
++    let path = WString::from_utf8(target);
++    match activation.resolve_target_path(base_clip, start, &path, false, true) {
++        Ok(Some(object)) => Some(f(&mut activation, object)),
++        _ => {
++            tracing::warn!("no object at {}", target);
++            None
++        }
++    }
++}
++
++/// Call `function` on the AVM1 object at `target`, like gameswf's `InvokeASCallback`.
 +pub fn call_avm1_function(
 +    context: &mut UpdateContext<'_>,
 +    target: &str,
 +    function: &str,
 +    args: Vec<Value>,
 +) -> Value {
++    with_avm1_object(context, target, |activation, object| {
++        let args: Vec<Avm1Value> = args.into_iter().map(|v| v.into_avm1(activation)).collect();
++        let name = AvmString::new_utf8(activation.gc(), function);
++        match object.call_method(name, &args, activation, crate::avm1::ExecutionReason::Special) {
++            Ok(value) => Value::from_avm1(activation, value).unwrap_or(Value::Null),
++            Err(_) => Value::Null,
++        }
++    })
++    .unwrap_or(Value::Null)
++}
++
++/// Set the property `name` of the AVM1 object at `target` (gameswf's `SetBtnEnable` sets
++/// `enabled`).
++pub fn set_avm1_property(context: &mut UpdateContext<'_>, target: &str, name: &str, value: Value) -> bool {
++    with_avm1_object(context, target, |activation, object| {
++        let value = value.into_avm1(activation);
++        let name = AvmString::new_utf8(activation.gc(), name);
++        object.set(name, value, activation).is_ok()
++    })
++    .unwrap_or(false)
++}
++
++/// Draw the display object at `target` in gray, or normally again (gameswf's
++/// `SetCustomEffect(target, "Gray", true)`).
++pub fn set_avm1_gray(context: &mut UpdateContext<'_>, target: &str, gray: bool) -> bool {
++    use crate::display_object::TDisplayObject;
++    with_avm1_object(context, target, |_, object| {
++        let Some(display_object) = object.as_display_object() else {
++            return false;
++        };
++        let filters: Box<[ruffle_render::filters::Filter]> = if gray {
++            let (r, g, b) = (0.299, 0.587, 0.114);
++            let matrix = [
++                r, g, b, 0.0, 0.0, //
++                r, g, b, 0.0, 0.0, //
++                r, g, b, 0.0, 0.0, //
++                0.0, 0.0, 0.0, 1.0, 0.0,
++            ];
++            Box::new([ruffle_render::filters::Filter::ColorMatrixFilter(swf::ColorMatrixFilter { matrix })])
++        } else {
++            Box::new([])
++        };
++        display_object.set_filters(filters);
++        true
++    })
++    .unwrap_or(false)
++}
++
++/// Replace the pixels of the bitmap the root movie exports as `name` (gameswf's
++/// `ReplaceTexture`). `pixels(width, height)` gives RGBA pixels at the bitmap's size; shapes
++/// filled with the bitmap show the new pixels. Returns false without such a bitmap.
++pub fn replace_bitmap(
++    context: &mut UpdateContext<'_>,
++    name: &str,
++    pixels: impl FnOnce(u32, u32) -> Vec<u8>,
++) -> bool {
++    use crate::character::Character;
 +    use crate::display_object::TDisplayObject;
 +    use crate::string::WString;
-+    let Some(base_clip) = context.stage.root_clip() else {
-+        return Value::Null;
++    use ruffle_render::bitmap::{Bitmap, BitmapFormat, PixelRegion};
++    let Some(root) = context.stage.root_clip() else {
++        return false;
 +    };
-+    let mut activation = Avm1Activation::from_nothing(
-+        context,
-+        Avm1ActivationIdentifier::root("[InvokeASCallback]"),
-+        base_clip,
-+    );
-+    let args: Vec<Avm1Value> = args.into_iter().map(|v| v.into_avm1(&mut activation)).collect();
-+    let start = base_clip.object1_or_bare(activation.gc());
-+    let path = WString::from_utf8(target);
-+    let Ok(Some(object)) = activation.resolve_target_path(base_clip, start, &path, false, true) else {
-+        tracing::warn!("InvokeASCallback: no object at {}", target);
-+        return Value::Null;
++    let Some(library) = context.library.library_for_movie(root.movie()) else {
++        return false;
 +    };
-+    let name = AvmString::new_utf8(activation.gc(), function);
-+    match object.call_method(name, &args, &mut activation, crate::avm1::ExecutionReason::Special) {
-+        Ok(value) => Value::from_avm1(&mut activation, value).unwrap_or(Value::Null),
-+        Err(_) => Value::Null,
++    let Some((_, Character::Bitmap(bitmap))) = library.character_by_export_name(&WString::from_utf8(name)) else {
++        return false;
++    };
++    let size = bitmap.compressed().size();
++    let (width, height) = (size.width as u32, size.height as u32);
++    let Ok(handle) = bitmap.bitmap_handle(context.renderer) else {
++        return false;
++    };
++    let data = pixels(width, height);
++    let new = Bitmap::new(width, height, BitmapFormat::Rgba, data);
++    context
++        .renderer
++        .update_texture(&handle, new, PixelRegion::for_whole_size(width, height))
++        .is_ok()
++}
++
++/// Shrink the text of the text field at `target` until it fits its width, down to
++/// `min_scale` of `base_size` (gameswf's `SetLineMax(target, true, min_scale)`). Does nothing
++/// while the text is still `last_text`. Returns the base font size and the text it fitted.
++pub fn fit_avm1_text(
++    context: &mut UpdateContext<'_>,
++    target: &str,
++    min_scale: f64,
++    base_size: Option<f64>,
++    last_text: Option<&str>,
++) -> Option<(f64, String)> {
++    with_avm1_object(context, target, |activation, object| {
++        fit_text(activation, object, min_scale, base_size, last_text).ok().flatten()
++    })
++    .flatten()
++}
++
++fn fit_text<'gc>(
++    activation: &mut Avm1Activation<'_, 'gc>,
++    object: Avm1Object<'gc>,
++    min_scale: f64,
++    base_size: Option<f64>,
++    last_text: Option<&str>,
++) -> Result<Option<(f64, String)>, Avm1Error<'gc>> {
++    let text = object.get(AvmString::new_utf8(activation.gc(), "text"), activation)?;
++    let text = text.coerce_to_string(activation)?.to_string();
++    if last_text == Some(text.as_str()) {
++        return Ok(None);
 +    }
++    let get_format = AvmString::new_utf8(activation.gc(), "getTextFormat");
++    let set_format = AvmString::new_utf8(activation.gc(), "setTextFormat");
++    let size_name = AvmString::new_utf8(activation.gc(), "size");
++    let reason = crate::avm1::ExecutionReason::Special;
++    let format = object.call_method(get_format, &[], activation, reason)?;
++    let Avm1Value::Object(format) = format else {
++        return Ok(None);
++    };
++    let base = match base_size {
++        Some(size) => size,
++        None => format.get(size_name, activation)?.coerce_to_f64(activation)?,
++    };
++    if !base.is_finite() || base <= 0.0 {
++        return Ok(None);
++    }
++    format.set(size_name, base, activation)?;
++    object.call_method(set_format, &[format.into()], activation, reason)?;
++    let width = object.get(AvmString::new_utf8(activation.gc(), "_width"), activation)?.coerce_to_f64(activation)?;
++    let text_width = object.get(AvmString::new_utf8(activation.gc(), "textWidth"), activation)?.coerce_to_f64(activation)?;
++    let room = width - 4.0;
++    if text_width > room && text_width > 0.0 {
++        let size = (base * (room / text_width).max(min_scale)).floor();
++        format.set(size_name, size, activation)?;
++        object.call_method(set_format, &[format.into()], activation, reason)?;
++    }
++    Ok(Some((base, text)))
 +}
 diff --git a/core/src/player.rs b/core/src/player.rs
-index c3756621..a6ef5f9b 100644
+index c3756621..e3a97199 100644
 --- a/core/src/player.rs
 +++ b/core/src/player.rs
-@@ -2535,6 +2535,19 @@ impl Player {
+@@ -2535,6 +2535,49 @@ impl Player {
          })
      }
  
@@ -57,6 +197,36 @@ index c3756621..a6ef5f9b 100644
 +        self.mutate_with_update_context(|context| {
 +            crate::external::call_avm1_function(context, target, function, args)
 +        })
++    }
++
++    /// Set a property of the AVM1 object at `target`; see `external::set_avm1_property`.
++    pub fn set_avm1_property(&mut self, target: &str, name: &str, value: ExternalValue) -> bool {
++        self.mutate_with_update_context(|context| {
++            crate::external::set_avm1_property(context, target, name, value)
++        })
++    }
++
++    /// Draw the object at `target` in gray or normally; see `external::set_avm1_gray`.
++    pub fn set_avm1_gray(&mut self, target: &str, gray: bool) -> bool {
++        self.mutate_with_update_context(|context| crate::external::set_avm1_gray(context, target, gray))
++    }
++
++    /// Shrink a text field's text to fit its width; see `external::fit_avm1_text`.
++    pub fn fit_avm1_text(
++        &mut self,
++        target: &str,
++        min_scale: f64,
++        base_size: Option<f64>,
++        last_text: Option<&str>,
++    ) -> Option<(f64, String)> {
++        self.mutate_with_update_context(|context| {
++            crate::external::fit_avm1_text(context, target, min_scale, base_size, last_text)
++        })
++    }
++
++    /// Replace an exported bitmap's pixels; see `external::replace_bitmap`.
++    pub fn replace_bitmap(&mut self, name: &str, pixels: impl FnOnce(u32, u32) -> Vec<u8>) -> bool {
++        self.mutate_with_update_context(|context| crate::external::replace_bitmap(context, name, pixels))
 +    }
 +
      pub fn spoofed_url(&self) -> Option<&str> {

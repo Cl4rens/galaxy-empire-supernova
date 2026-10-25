@@ -52,6 +52,15 @@ pub struct RuffleScreens {
     /// objects in the order the game rendered them this frame
     pub rendered: Vec<String>,
     pub missing: HashMap<String, u32>,
+    /// text fields that shrink their text to fit (SetLineMax), per object
+    fits: HashMap<String, Vec<Fit>>,
+}
+
+struct Fit {
+    target: String,
+    min_scale: f64,
+    base_size: Option<f64>,
+    text: Option<String>,
 }
 
 fn to_external(arg: &Arg) -> ExternalValue {
@@ -60,6 +69,15 @@ fn to_external(arg: &Arg) -> ExternalValue {
         Arg::Bool(b) => ExternalValue::Bool(*b),
         Arg::Num(n) => ExternalValue::Number(*n),
         Arg::Str(s) => ExternalValue::String(s.clone()),
+    }
+}
+
+fn truthy(arg: Option<&Arg>) -> bool {
+    match arg {
+        Some(Arg::Bool(b)) => *b,
+        Some(Arg::Num(n)) => *n != 0.0,
+        Some(Arg::Str(s)) => !s.is_empty() && s != "false" && s != "0",
+        _ => false,
     }
 }
 
@@ -89,7 +107,15 @@ impl RuffleScreens {
             commands: Arc::default(),
             rendered: Vec::new(),
             missing: HashMap::new(),
+            fits: HashMap::new(),
         })
+    }
+
+    /// RGBA pixels of a picture the game names for ReplaceTexture: a data2 file or a
+    /// downloaded one, with its size.
+    fn picture(&mut self, assets: &Assets, name: &str) -> Option<image::RgbaImage> {
+        let data = self.converter.picture(assets, name).or_else(|| std::fs::read(name).ok())?;
+        image::load_from_memory(&data).ok().map(|i| i.to_rgba8())
     }
 
     pub fn descriptors(&self) -> Arc<Descriptors> {
@@ -198,6 +224,12 @@ impl Screens for RuffleScreens {
             "Update" => {
                 let dt = args.first().map(Arg::text).and_then(|s| s.parse::<f64>().ok()).unwrap_or(33.0);
                 p.tick(FloatDuration::from_millis(dt));
+                for fit in self.fits.get_mut(object).into_iter().flatten() {
+                    if let Some((base, text)) = p.fit_avm1_text(&fit.target, fit.min_scale, fit.base_size, fit.text.as_deref()) {
+                        fit.base_size = Some(base);
+                        fit.text = Some(text);
+                    }
+                }
                 Vec::new()
             }
             "Render" => {
@@ -215,8 +247,45 @@ impl Screens for RuffleScreens {
                 };
                 vec![Arg::Bool(p.handle_event(event))]
             }
-            // pictures the game puts in at run time: not yet (they keep their placeholder)
-            "ReplaceTexture" => vec![Arg::Num(1.0), Arg::Num(1.0)],
+            // a picture slot (an exported bitmap such as "NA_Item_3.png") gets a picture; the
+            // game falls back to a default picture when the size comes back 0, 0
+            "ReplaceTexture" => {
+                let Some(picture) = self.picture(assets, &text(1)) else {
+                    return vec![Arg::Num(0.0), Arg::Num(0.0)];
+                };
+                let (w, h) = picture.dimensions();
+                let replaced = p.replace_bitmap(&text(0), |width, height| {
+                    image::imageops::resize(&picture, width, height, image::imageops::FilterType::Triangle).into_raw()
+                });
+                if !replaced {
+                    tracing::debug!("{object}: no picture slot {}", text(0));
+                }
+                vec![Arg::Num(w as f64), Arg::Num(h as f64)]
+            }
+            "SetBtnEnable" => {
+                p.set_avm1_property(&text(0), "enabled", ExternalValue::Bool(truthy(args.get(1))));
+                Vec::new()
+            }
+            "SetCustomEffect" => {
+                p.set_avm1_gray(&text(0), text(1) == "Gray" && truthy(args.get(2)));
+                Vec::new()
+            }
+            "SetLineMax" => {
+                let fit = Fit {
+                    target: text(0),
+                    min_scale: args.get(2).map(Arg::text).and_then(|s| s.parse().ok()).unwrap_or(0.6),
+                    base_size: None,
+                    text: None,
+                };
+                let fits = self.fits.entry(object.to_string()).or_default();
+                fits.retain(|f| f.target != fit.target);
+                if truthy(args.get(1)) {
+                    fits.push(fit);
+                }
+                Vec::new()
+            }
+            // gameswf settings without a meaning here
+            "SetTextBufferingEnabled" | "clearFonts" => Vec::new(),
             _ => {
                 *self.missing.entry(method.to_string()).or_default() += 1;
                 Vec::new()

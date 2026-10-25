@@ -13,9 +13,17 @@ python setup_ruffle.py          # Ruffle at a fixed commit, plus ruffle.patch
 cargo build --release
 ```
 
-`ruffle.patch` adds `Player::call_avm1_function(target, function, args)`: what gameswf's
-`InvokeASCallback` does, calling an ActionScript function on a movie clip. Flash commands
-come back through Ruffle's `FsCommandProvider`.
+`ruffle.patch` adds to Ruffle's `Player` what gameswf let the game do to a movie from outside:
+
+| gameswf | Player |
+|---|---|
+| `InvokeASCallback` | `call_avm1_function(target, function, args)` |
+| `SetBtnEnable` | `set_avm1_property(target, "enabled", value)` |
+| `SetCustomEffect(target, "Gray", on)` | `set_avm1_gray(target, on)` |
+| `SetLineMax(target, true, min)` | `fit_avm1_text(target, min, ...)`, after every frame |
+| `ReplaceTexture(slot, picture)` | `replace_bitmap(slot, pixels)` |
+
+Flash commands come back through Ruffle's `FsCommandProvider`.
 
 ## Try a screen
 
