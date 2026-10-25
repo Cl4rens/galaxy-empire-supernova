@@ -1089,8 +1089,17 @@ async def flagship_research_start(world_id: int, request: Request, player_id: in
 
 
 @router.post("/flagship_researches/speedup.json")
-def flagship_research_speedup(player_id: int = Depends(current_player)):
-    return error("Speeding up is not available on Supernova")
+async def flagship_research_speedup(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    """Finish a pioneer research with dark matter (`id` names the research event)."""
+    params = await form(request)
+    now = time.time()
+
+    def act():
+        with db.player_state(player_id) as state:
+            items.speed_up(state, items.PIONEER, _int(params, "id"), _int(params, "game_item_id"), False, now)
+            return {"empire": player.empire_summary(state), "planet": planet_rules.client_view(state["empire"], now),
+                    "update": {}}
+    return item_call(act)
 
 
 # --- Electronic counter measures and system lords ------------------------------------------
@@ -1434,6 +1443,118 @@ async def daily_task_reward(world_id: int, request: Request, player_id: int = De
     return item_call(act)
 
 
+# --- Small planet and fleet actions ------------------------------------------------------------
+
+
+@router.post("/planets/{planet_id}/change_percent.json")
+async def change_mine_percent(world_id: int, planet_id: int, request: Request,
+                              player_id: int = Depends(current_player)):
+    """Resource settings: how hard a mine (or power plant) works, in steps of 10 %."""
+    params = await form(request)
+    name, percent = params.get("name", ""), _int(params, "percent", -1)
+    if name not in planet_rules.PERCENT_FIELDS or not 0 <= percent <= 100 or percent % 10:
+        return error("Invalid setting")
+    now = time.time()
+    with db.player_state(player_id) as state:
+        empire = state["empire"]
+        planet_rules.switch_planet(empire, planet_id)
+        planet_rules.tick(empire, now)
+        empire["main_planet"][name] = percent
+        return encrypted_json(planet_rules.client_view(empire, now))
+
+
+@router.post("/planets/{planet_id}/toggle_radar.json")
+async def toggle_radar(world_id: int, planet_id: int, request: Request, player_id: int = Depends(current_player)):
+    on = (await form(request)).get("toggle_on") == "1"
+    now = time.time()
+    with db.player_state(player_id) as state:
+        empire = state["empire"]
+        planet_rules.switch_planet(empire, planet_id)
+        planet_rules.tick(empire, now)
+        empire["main_planet"]["radar_on"] = on
+        return encrypted_json(planet_rules.client_view(empire, now))
+
+
+@router.post("/building_events/{event_id}/sprint")
+def building_sprint(event_id: int, player_id: int = Depends(current_player)):
+    """The free "quick finish" of the last minute of a construction."""
+    now = time.time()
+
+    def act():
+        with db.player_state(player_id) as state:
+            items.finish_now(state, items.BUILDING, event_id, now)
+            empire = state["empire"]
+            planet = empire["main_planet"]
+            return {"update": {"buildings": [planet_rules.building_view(planet, b) for b in planet["buildings"]],
+                               "fleets": [planet_rules.fleet_view(planet, f) for f in planet["fleets"]],
+                               "researches": [planet_rules.research_view(empire, r) for r in empire["researches"]]},
+                    "empire": player.empire_summary(state), "planet": planet_rules.client_view(empire, now)}
+    return item_call(act)
+
+
+@router.get("/fleet_hanging_events/{event_id}/acce_cost")
+def accelerate_cost(event_id: int, player_id: int = Depends(current_player)):
+    def act():
+        engines, credits = fleets.accelerate_cost(fleets.returning_flight(player_id, event_id), time.time())
+        return {"item_cost": engines, "credit_cost": credits}
+    return item_call(act)
+
+
+@router.post("/fleet_hanging_events/{event_id}/acce")
+def accelerate(event_id: int, player_id: int = Depends(current_player)):
+    """Bring a returning fleet home now: a light speed engine from the capsule, else credits."""
+    now = time.time()
+
+    def act():
+        with db.player_state(player_id) as state:
+            fleets.accelerate(player_id, state, event_id, now)
+            planet = state["empire"]["main_planet"]
+            return {"update": {"fleets": [planet_rules.fleet_view(planet, f) for f in planet["fleets"]]},
+                    "empire": dict(player.empire_summary(state), credits=state["empire"].get("gu_count", 0)),
+                    "planet": planet_rules.client_view(state["empire"], now)}
+    return item_call(act)
+
+
+@router.get("/planets/{planet_id}/stop_auto_explore")
+def stop_auto_explore(planet_id: int, player_id: int = Depends(current_player)):
+    return encrypted_json({})  # Supernova has no automatic exploration (nebula navigator)
+
+
+@router.post("/acses/{event_id}/new_acs")
+def new_acs(event_id: int, player_id: int = Depends(current_player)):
+    """Every attack of an alliance member is open for a coordinated attack already."""
+    now = time.time()
+    with db.player_state(player_id) as state:
+        return fleet_response(state, now)
+
+
+@router.get("/users/{user_id}/pay_info")
+def pay_info(user_id: int, player_id: int = Depends(current_player)):
+    return encrypted_json({"pay_total": 0})
+
+
+@router.post("/users/{user_id}/update_birthday")
+def update_birthday(user_id: int, player_id: int = Depends(current_player)):
+    return encrypted_json({})
+
+
+@router.post("/users/{user_id}/the_ghost_exchange_cost")
+async def interceptor_cost(world_id: int, user_id: int, request: Request, player_id: int = Depends(current_player)):
+    """The interceptor fusion screen: galaxium in the capsule and the extra price for `number`."""
+    n = max(1, _int(await form(request), "number", 1))
+    with db.player_state(player_id) as state:
+        galaxium = items.owned_view(state, items.item(items.GALAXIUM))
+        return encrypted_json({"item": dict(galaxium, desc=f"{items.INTERCEPTOR_GALAXIUM} galaxium per interceptor; "
+                                                         f"from {items.FREE_INTERCEPTORS:,} interceptors on also 1 "
+                                                         "dark matter or 2 credits each."),
+                               "cost": items.fusion_cost(state, n)})
+
+
+@router.get("/ranks/{key}/activity")
+def activity_rank(key: str, player_id: int = Depends(current_player)):
+    return encrypted_json({"rank": [], "global_rank": [], "personal": {"single": {}, "global": {}}})
+
+
 # --- Item shop, depot and speed-ups ------------------------------------------------------------
 
 
@@ -1489,6 +1610,12 @@ async def use_item(world_id: int, user_id: int, request: Request, player_id: int
             empire = state["empire"]
             planet_rules.tick(empire, now)
             item_id = _int(params, "game_item_id")
+            if item_id == items.GALAXIUM:  # the interceptor fusion screen
+                items.fuse_interceptors(state, _int(params, "number", 1), _int(params, "pay_type", 1),
+                                        empire["main_planet"])
+                return {"energy_particle_amount": items.amount(state, items.GALAXIUM),
+                        "dark_matter": empire["dark_matter_count"], "gu": empire.get("gu_count", 0),
+                        "interceptor": planet_rules.fleet(empire["main_planet"], 23)["amount"]}
             info = items.use(state, item_id, _int(params, "number", 1), empire["main_planet"], now)
             planet_rules.tick(empire, now)  # officers take effect at once
             return {"info": info, "categories": [items.owned_view(state, items.item(item_id))],
@@ -1508,7 +1635,7 @@ async def discard_item(world_id: int, user_id: int, request: Request, player_id:
 
 
 SPEEDUP_KINDS = {"building_events": items.BUILDING, "fleet_building_events": items.SHIPYARD,
-                 "research_upgrading_events": items.RESEARCH}
+                 "research_upgrading_events": items.RESEARCH, "flagship_researches": items.PIONEER}
 
 
 def _speedup_kind(request: Request) -> str:
@@ -1516,6 +1643,7 @@ def _speedup_kind(request: Request) -> str:
 
 
 @router.get("/building_events/{event_id}/speedup_info.json")
+@router.get("/flagship_researches/{event_id}/speedup_info.json")
 @router.get("/fleet_building_events/{event_id}/speedup_info.json")
 @router.get("/research_upgrading_events/{event_id}/speedup_info.json")
 def speedup_info(event_id: int, request: Request, player_id: int = Depends(current_player)):
@@ -1527,6 +1655,7 @@ def speedup_info(event_id: int, request: Request, player_id: int = Depends(curre
 @router.post("/building_events/{event_id}/speedup.json")
 @router.post("/fleet_building_events/{event_id}/speedup.json")
 @router.post("/research_upgrading_events/{event_id}/speedup.json")
+@router.post("/flagship_researches/{event_id}/buy_and_use_stone.json")
 @router.post("/building_events/{event_id}/buy_and_use_stone.json")
 @router.post("/fleet_building_events/{event_id}/buy_and_use_stone.json")
 @router.post("/research_upgrading_events/{event_id}/buy_and_use_stone.json")

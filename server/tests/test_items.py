@@ -64,7 +64,7 @@ def test_speed_up_building_with_item_and_dark_matter():
     info = decrypt_json(c.get(f"/world/1/building_events/{event_id}/speedup_info.json"))
     left = info["left_time"]
     assert left > 600 and info["dark_matter_count"] == items.instant_price(left)
-    assert {i["game_item_id"] for i in info["items"]} == {i.id for i in items.CATALOG if i.category == items.SPEEDUP}
+    assert {i["game_item_id"] for i in info["items"]} == {i.id for i in items.CATALOG if i.category == items.SPEEDUP and i.seconds}
 
     assert c.post(f"/world/1/building_events/{event_id}/speedup.json", content="game_item_id=2101").status_code == 400
     decrypt_json(c.post(f"/world/1/building_events/{event_id}/buy_and_use_stone.json", content="game_item_id=2101"))

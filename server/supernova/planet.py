@@ -83,6 +83,17 @@ def fields(planet: dict) -> tuple[int, int]:
     return used, PLANET_FIELDS + planet.get("extra_fields", 0)  # terraformers add fields
 
 
+PERCENT_FIELDS = ("metal_mine_percent", "crystal_mine_percent", "deuterium_mine_percent", "solar_plant_percent",
+                  "fusion_reactor_percent")
+
+
+def radar_energy(planet: dict) -> int:
+    """Energy a switched-on radar center needs (Supernova: 10 per level; the wiki only says it
+    costs energy)."""
+    lv = level(planet, eco.RADAR_CENTER)
+    return 10 * lv if lv and planet.get("radar_on", True) else 0
+
+
 def _faster(planet: dict, key: str, seconds: int) -> int:
     """Officers shorten timers by a percentage (planet["officer"], kept up to date by tick)."""
     return max(1, int(seconds * (100 - planet.get("officer", {}).get(key, 0)) / 100))
@@ -130,7 +141,7 @@ def production(planet: dict, empire: dict) -> dict:
     fusion = eco.fusion_energy(fusion_level, research_level(empire, eco.ENERGY_TECH)) * fusion_pct
     fusion *= 1 + officer.get("fusion", 0) / 100
     produced = solar + fusion + satellites
-    used = sum(eco.mine_energy(m, level(planet, m)) * pct[m] for m in eco.MINES)
+    used = sum(eco.mine_energy(m, level(planet, m)) * pct[m] for m in eco.MINES) + radar_energy(planet)
     factor = min(1.0, produced / used) if used > 0 else 1.0
 
     from . import lordship  # lordship reads the rankings, which import this module
@@ -554,6 +565,8 @@ def client_view(empire: dict, now: float) -> dict:
         "temp_min": 110 - 12 * planet["planet_position"],
         # no projection: the client checks for 0, not for empty values
         "planet_icon": planet.get("planet_icon") or 0,
+        "is_radar_on": planet.get("radar_on", True),
+        "radar_energy": radar_energy(planet),
         "planet_icon_info": planet.get("planet_icon_info") or 0,
     })
     return view

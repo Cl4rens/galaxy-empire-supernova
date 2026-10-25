@@ -11,6 +11,7 @@ the mailbox.
 
 import json
 import logging
+import math
 import random
 import time
 
@@ -484,7 +485,7 @@ def _salvage(player_id: int, debris: dict, own_units: dict[int, int], enemy_lost
     """Alloy fragments (and dark energy, when Behemoths fought) for one side of a battle. The
     amounts also go into `gains` (alloy, dark_energy) for the battle report."""
     gains = {} if gains is None else gains
-    gains.update(alloy=0, dark_energy=0)
+    gains.update(alloy=0, dark_energy=0, galaxium=0)
 
     def apply(s: dict) -> str:
         notes = []
@@ -495,6 +496,10 @@ def _salvage(player_id: int, debris: dict, own_units: dict[int, int], enemy_lost
         components = items.add_components(s, enemy_lost)
         if components:
             notes.append(f"Intricate components: {components:,}")
+        gains["galaxium"] = items.galaxium_for(enemy_lost)
+        if gains["galaxium"]:
+            items.add(s, items.GALAXIUM, gains["galaxium"])
+            notes.append(f"Galaxium: {gains['galaxium']:,}")
         if own_units.get(flagships.BEHEMOTH):
             lost_points = sum(sum(eco.unit_cost(t)) * n for t, n in enemy_lost.items() if t in eco.UNITS) // 1000
             gains["dark_energy"] = flagships.gather_dark_energy(s, lost_points)
@@ -683,7 +688,9 @@ def _attack(row, target_owner: int, state: dict, planet: dict) -> str:
     if repaired:
         info["defender_recover_ratio"] = 0
     body = {"mission_type": ATTACK, "is_returning": False, "event_info": info, "notify_message": " ".join(notes),
-            "attack_result": dict(result["report"], loot=loot, booty=dict(loot, krypton=0)),
+            "attack_result": dict(result["report"], loot=loot,
+                                  booty=dict(loot, krypton=0, attacker_energy_particle=gains[row["owner_id"]]["galaxium"],
+                                             defender_energy_particle=defender_gains["galaxium"])),
             "defender_repair_sw": int(bool(repaired)), "device": _device_report(owner_state["empire"], state["empire"]),
             "defend_alloy_detection_num": defender_gains["alloy"],
             "defend_dark_energy_num": defender_gains["dark_energy"]}
@@ -765,7 +772,8 @@ def _attack_pirates(row) -> str:
         notes.append(salvage_note)
     body = {"mission_type": ATTACK_PIRATES, "is_returning": False, "event_info": info,
             "notify_message": ", ".join(notes),
-            "attack_result": dict(result["report"], loot=loot, booty=dict(loot, krypton=0)),
+            "attack_result": dict(result["report"], loot=loot,
+                                  booty=dict(loot, krypton=0, attacker_energy_particle=gains["galaxium"])),
             "device": _device_report(owner_state["empire"], None),
             "attack_alloy_detection_num": gains["alloy"], "attack_dark_energy_num": gains["dark_energy"]}
     mails.send(row["owner_id"], mails.REPORT, mails.SENDER_FLEET, attacker_name,
@@ -1019,11 +1027,67 @@ def _planet_label(planet_id: int | None, galaxy: int, system: int, position: int
     return name, f"{galaxy}:{system}:{position}"
 
 
-def incoming_attacks(player_id: int) -> list:
-    return db.connect().execute(
+# Radar Facility (wiki): the level that detects each ship type; everything bigger needs 14.
+RADAR_DETECTION = {1: 1, 13: 2, 11: 4, 9: 5, 2: 7, 12: 8, 10: 10, 3: 11, 4: 12, 5: 13}
+RADAR_TOP_LEVEL = 14
+
+
+def radar_detects(planet: dict, ships: dict[int, int]) -> bool:
+    """A switched-on radar center sees an attack when it can detect one of its ship types."""
+    lv = planet_rules.level(planet, eco.RADAR_CENTER)
+    if not lv or not planet.get("radar_on", True):
+        return False
+    return any(lv >= RADAR_DETECTION.get(t, RADAR_TOP_LEVEL) for t in ships)
+
+
+def incoming_attacks(player_id: int, empire: dict | None = None) -> list:
+    """Attacks on the player's planets that their radar centers see."""
+    rows = db.connect().execute(
         "SELECT f.* FROM fleet_events f JOIN planets p ON p.id = f.target_planet_id "
         "WHERE p.player_id = ? AND f.owner_id != ? AND f.mission = ? AND f.status = 'outbound' ORDER BY f.id",
         (player_id, player_id, ATTACK)).fetchall()
+    if not rows:
+        return []
+    empire = empire or db.load_state(player_id)["empire"]
+    return [r for r in rows if (p := planet_rules.find_planet(empire, r["target_planet_id"])) is not None
+            and radar_detects(p, _ships(r))]
+
+
+def accelerate_cost(row, now: float) -> tuple[int, int]:
+    """(light speed engines, credits) to bring a returning fleet home at once: one engine, or
+    1 credit per 5 minutes left (Supernova's numbers)."""
+    return 1, max(1, math.ceil((row["return_time"] - now) / 300))
+
+
+def returning_flight(player_id: int, event_id: int):
+    row = db.connect().execute("SELECT * FROM fleet_events WHERE id = ? AND owner_id = ?",
+                               (event_id, player_id)).fetchone()
+    if row is None or row["status"] != "returning":
+        raise FleetError("Only returning fleets can be accelerated")
+    return row
+
+
+def accelerate(player_id: int, state: dict, event_id: int, now: float) -> None:
+    """Land a returning fleet now, paying a light speed engine or credits."""
+    from . import items
+    row = returning_flight(player_id, event_id)
+    engines, credits = accelerate_cost(row, now)
+    if items.amount(state, items.LIGHT_SPEED_ENGINE) >= engines:
+        items._add(state, items.LIGHT_SPEED_ENGINE, -engines)
+    else:
+        items._pay(state, credits, items.CREDITS)
+    conn = db.connect()
+    with db.lock(), conn:
+        conn.execute("UPDATE fleet_events SET return_time = ? WHERE id = ?", (int(now), event_id))
+    landed = conn.execute("SELECT * FROM fleet_events WHERE id = ?", (event_id,)).fetchone()
+    planet = planet_rules.find_planet(state["empire"], landed["origin_planet_id"]) or state["empire"]["planets"][0]
+    for ftype, n in _ships(landed).items():
+        planet_rules.fleet(planet, ftype)["amount"] += n
+    cargo = json.loads(landed["cargo"])
+    for res in RESOURCES:
+        planet[res] += cargo[res]
+    with db.lock(), conn:
+        conn.execute("DELETE FROM fleet_events WHERE id = ?", (event_id,))
 
 
 def events_view(player_id: int, include_incoming: bool = True) -> list[dict]:

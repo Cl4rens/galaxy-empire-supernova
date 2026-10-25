@@ -168,7 +168,7 @@ def planets_info(empire: dict) -> list[dict]:
         "field_max": planet_rules.fields(p)[1],
         "planet_activity": 2,
         "radar_level": planet_rules.level(p, eco.RADAR_CENTER),
-        "is_radar_on": False,
+        "is_radar_on": p.get("radar_on", True),
         "moon_array": [_moon_info(p["moon"])] if p.get("moon") else [],
         "is_protected": 0,
         "protected_time": 0,

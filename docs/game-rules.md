@@ -568,3 +568,18 @@ Supernova's own; they start over every day (UTC) and each reward can be collecte
 | Explore | send an expedition | 2 ECM chips, 10 dark matter |
 | Salvage | send recyclers to a debris field | 15,000 metal, 15,000 crystal |
 | Supply | transport resources | 8,000 deuterium |
+
+## Radar, resource settings and fleets
+
+- **Radar facility** (wiki): an attack shows up in the defender's flight list only while the
+  attacked planet's radar is switched on and its level detects one of the attacking ship types:
+  light fighter 1, probe 2, colony ship 4, small cargo 5, heavy fighter 7, recycler 8, large
+  cargo 10, cruiser 11, battleship 12, battlecruiser 13, everything else 14. A switched-on radar
+  uses 10 energy per level (Supernova's number).
+- **Resource settings**: each mine and power plant runs at 0-100 % in steps of 10.
+- **Quick finish**: the last minute of a construction can be skipped for free.
+- **Returning fleets** can be brought home at once with a light speed engine (capsule, 10
+  credits) or 1 credit per 5 minutes left.
+- **Interceptors** are fused in the capsule from 150 galaxium each; from 1,000 owned on each
+  costs 1 dark matter or 2 credits more (wiki). Galaxium comes from battles: 1 per 20,000 metal
+  and crystal of enemy ships destroyed.

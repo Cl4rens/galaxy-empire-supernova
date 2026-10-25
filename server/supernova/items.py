@@ -29,6 +29,9 @@ FEATURED, RESOURCE, SPEEDUP, AFFAIR, OTHER = 0, 1, 2, 3, 4  # shop tabs; AFFAIR 
 SECONDS_PER_DARK_MATTER = 300  # finishing an order at once costs 1 dark matter per 5 minutes left
 MAX_ANNIHILATORS = 200  # wiki
 COMPONENT, REAPER_COMPONENTS = 5001, 3000  # wiki: a Reaper takes 3,000 intricate components
+GALAXIUM, LIGHT_SPEED_ENGINE = 5005, 2301
+INTERCEPTOR_GALAXIUM = 150  # wiki: an interceptor is fused from 150 galaxium ...
+FREE_INTERCEPTORS = 1000  # ... and from 1,000 owned on costs 1 dark matter or 2 credits more
 CURRENCY = {DARK_MATTER: "dark matter", CREDITS: "credits"}
 
 
@@ -111,6 +114,8 @@ CATALOG = [
     _speedup(2204, "1h", 3600, 70, CREDITS),
     _speedup(2205, "5h", 5 * 3600, 300, CREDITS),
     _speedup(2206, "24h", 24 * 3600, 1200, CREDITS),
+    Item(LIGHT_SPEED_ENGINE, SPEEDUP, "Light Speed Engine", "Brings a returning fleet home at once (from the flight "
+         "list).", "item_res_02.png", 10, pay_type=CREDITS),
     Item(3101, OTHER, "ECM chips x5", "Five core chips for ECM module upgrades.", "item_res_12.png", 20,
          ecm_chips=5),
     Item(3102, OTHER, "Alloy fragment box", f"{flagships.BOX_ALLOY} alloy fragments for the Pioneer Lab.",
@@ -137,6 +142,9 @@ CATALOG = [
          "Its armour is immense.", "item_res_15.png", 80, unit=26),
     Item(COMPONENT, OTHER, "Intricate component", f"Left behind by large warships destroyed in battle. "
          f"{REAPER_COMPONENTS:,} build one Reaper.", "box_activity.png", 0, sold=False),
+    # code 01401 makes the capsule open the interceptor fusion screen
+    Item(GALAXIUM, OTHER, "Galaxium", f"Collected from battles. {INTERCEPTOR_GALAXIUM} galaxium fuse into one "
+         "interceptor.", "item_res_10.png", 0, sold=False, code="01401"),
 ]
 CATALOG += _officers()
 from . import devices  # noqa: E402 (devices builds its items with Item)
@@ -194,7 +202,8 @@ def depot_view(state: dict, category: int) -> list[dict]:
 
 
 def owned_view(state: dict, i: Item) -> dict:
-    return dict(_view(i), amount=amount(state, i.id), can_be_use=i.category != SPEEDUP and i.device is None)
+    usable = i.category != SPEEDUP and i.device is None
+    return dict(_view(i), amount=amount(state, i.id), can_be_use=usable)
 
 
 def _pay(state: dict, price: int, pay_type: int = DARK_MATTER) -> None:
@@ -286,6 +295,31 @@ def add_components(state: dict, enemy_lost: dict[int, int]) -> int:
     return found
 
 
+def galaxium_for(enemy_lost: dict[int, int]) -> int:
+    """Galaxium from a battle: 1 per 20,000 metal and crystal the enemy's ships were worth."""
+    from . import economy as eco
+    return sum((eco.UNITS[t].metal + eco.UNITS[t].crystal) * n for t, n in enemy_lost.items()
+               if t in eco.UNITS and t in eco.SHIPS) // 20_000
+
+
+def fusion_cost(state: dict, n: int) -> dict:
+    """Extra dark matter / credits for fusing `n` more interceptors (wiki: free up to 1,000 owned)."""
+    owned = sum(planet_rules.fleet(p, 23)["amount"] for p in planet_rules.bodies(state["empire"]))
+    paid = max(0, owned + n - max(owned, FREE_INTERCEPTORS))
+    return {"dark_matter": paid, "gu": 2 * paid}
+
+
+def fuse_interceptors(state: dict, n: int, pay_type: int, planet: dict) -> None:
+    if n < 1:
+        raise ItemError("Invalid number")
+    if amount(state, GALAXIUM) < n * INTERCEPTOR_GALAXIUM:
+        raise ItemError(f"{n} interceptor(s) take {n * INTERCEPTOR_GALAXIUM:,} galaxium")
+    cost = fusion_cost(state, n)
+    _pay(state, cost["dark_matter"] if pay_type == DARK_MATTER else cost["gu"], pay_type)
+    _add(state, GALAXIUM, -n * INTERCEPTOR_GALAXIUM)
+    planet_rules.fleet(planet, 23)["amount"] += n
+
+
 def discard(state: dict, item_id: int) -> None:
     i = item(item_id)
     _add(state, i.id, -amount(state, i.id))
@@ -315,14 +349,19 @@ def buy_and_use(state: dict, item_id: int, planet: dict, now: float) -> str:
 
 # --- Speed-ups -----------------------------------------------------------------------------------
 
-BUILDING, SHIPYARD, RESEARCH = "building", "shipyard", "research"
+BUILDING, SHIPYARD, RESEARCH, PIONEER = "building", "shipyard", "research", "pioneer"
+QUICK_FINISH_SECONDS = 60  # the client offers a free finish for the last minute
 
 
-def _find(empire: dict, kind: str, event_id: int):
+def _find(state: dict, kind: str, event_id: int):
     """(event, planet) of a running order."""
+    empire = state["empire"]
     if kind == RESEARCH:
         event = next((e for e in empire["research_upgrading_events"] if e["event_id"] == event_id), None)
         return event, None
+    if kind == PIONEER:
+        event = flagships.data(state)["research_event"]
+        return (event if event and event["event_id"] == event_id else None), None
     key = "building_events" if kind == BUILDING else "fleet_building_events"
     for planet in planet_rules.bodies(empire):
         event = next((e for e in planet[key] if e["event_id"] == event_id), None)
@@ -331,9 +370,14 @@ def _find(empire: dict, kind: str, event_id: int):
     return None, None
 
 
-def _running(empire: dict, kind: str, event_id: int, now: float):
-    planet_rules.tick(empire, now)
-    event, planet = _find(empire, kind, event_id)
+def _finish_due(state: dict, now: float) -> None:
+    planet_rules.tick(state["empire"], now)
+    flagships.research_level(state, 0, now)  # finishes the pioneer research when it is due
+
+
+def _running(state: dict, kind: str, event_id: int, now: float):
+    _finish_due(state, now)
+    event, planet = _find(state, kind, event_id)
     if event is None:
         raise ItemError("This order is already finished")
     if kind == SHIPYARD and event["start_time"] > now:
@@ -346,41 +390,41 @@ def instant_price(left_seconds: float) -> int:
 
 
 def speedup_info(state: dict, kind: str, event_id: int, now: float) -> dict:
-    event, _ = _running(state["empire"], kind, event_id, now)
+    event, _ = _running(state, kind, event_id, now)
     left = max(0, int(event["finish_time"] - now))
     # this screen always draws a credit icon next to the price, so the price says what it is
     return {"items": [dict(owned_view(state, i), sale_price=f"{i.price} {'DM' if i.pay_type == DARK_MATTER else 'Cr'}")
-                      for i in CATALOG if i.category == SPEEDUP],
+                      for i in CATALOG if i.category == SPEEDUP and i.seconds],
             "left_time": left, "dark_matter_count": instant_price(left)}
 
 
-def finish_now(state: dict, kind: str, event_id: int, now: float) -> None:
-    """Finish an order without paying (the client's quick finish in the last minute)."""
-    empire = state["empire"]
-    event, planet = _running(empire, kind, event_id, now)
-    _shorten(empire, kind, event, planet, event["finish_time"] - now, now)
-
-
-def _shorten(empire: dict, kind: str, event: dict, planet: dict | None, seconds: float, now: float) -> None:
+def _shorten(state: dict, kind: str, event: dict, planet: dict | None, seconds: float, now: float) -> None:
     event["finish_time"] -= seconds
     if kind == SHIPYARD:
         event["start_time"] -= seconds
         planet_rules._reschedule_shipyard(planet, now)
-    planet_rules.tick(empire, now)
+    _finish_due(state, now)
+
+
+def finish_now(state: dict, kind: str, event_id: int, now: float) -> None:
+    """Finish an order without paying (the client's quick finish in the last minute)."""
+    event, planet = _running(state, kind, event_id, now)
+    if event["finish_time"] - now > QUICK_FINISH_SECONDS + 5:
+        raise ItemError("Only the last minute can be skipped for free")
+    _shorten(state, kind, event, planet, event["finish_time"] - now, now)
 
 
 def speed_up(state: dict, kind: str, event_id: int, item_id: int, buy_first: bool, now: float) -> None:
     """Shorten an order with a speed-up item (bought first if `buy_first`), or finish it with
     dark matter when `item_id` is 0."""
-    empire = state["empire"]
-    event, planet = _running(empire, kind, event_id, now)
+    event, planet = _running(state, kind, event_id, now)
     left = event["finish_time"] - now
     if item_id == 0:
         _pay(state, instant_price(left))
         seconds = left
     else:
         i = item(item_id)
-        if i.category != SPEEDUP:
+        if i.category != SPEEDUP or not i.seconds:
             raise ItemError("This is not a speed-up")
         if buy_first:
             _pay(state, i.price, i.pay_type)
@@ -389,4 +433,4 @@ def speed_up(state: dict, kind: str, event_id: int, item_id: int, buy_first: boo
         else:
             _add(state, i.id, -1)
         seconds = min(left, i.seconds)
-    _shorten(empire, kind, event, planet, seconds, now)
+    _shorten(state, kind, event, planet, seconds, now)

@@ -685,6 +685,20 @@ The client hides the daily tasks button (`GameUICityUIUp:SetTap4funButtonVisible
 Items now carry `pay_type` 1 (dark matter) or 2 (credits). `GET users/my_buffs_ext` lists the
 hired officers in `buff_list: [{buffer_name, end_time, buffer_desc, buff_type, img}]`.
 
+### Planet and fleet actions
+
+| Request | Answer |
+|---------|--------|
+| `POST planets/{id}/change_percent.json` `name (metal_mine_percent ... fusion_reactor_percent), percent (0-100, steps of 10)` | the planet |
+| `POST planets/{id}/toggle_radar.json` `toggle_on` | the planet, with `is_radar_on, radar_energy` |
+| `POST building_events/{id}/sprint` | free finish in the last minute: `{update: {buildings, fleets, researches}, empire, planet}` |
+| `GET fleet_hanging_events/{id}/acce_cost` | `{item_cost (light speed engines), credit_cost}` for a returning fleet |
+| `POST fleet_hanging_events/{id}/acce` | lands it now: `{update: {fleets}, empire (+ credits), planet}` |
+| `POST users/{id}/the_ghost_exchange_cost` `number` | `{item: galaxium item, cost: {dark_matter, gu}}` |
+| `POST users/{id}/use_game_item` `game_item_id=<galaxium>, number, pay_type` | fuses interceptors: `{energy_particle_amount, dark_matter, gu, interceptor}` |
+| `GET/POST flagship_researches/...` `speedup_info.json, buy_and_use_stone.json, speedup.json` | like the other speed-ups |
+| `GET planets/{id}/stop_auto_explore`, `POST acses/{id}/new_acs`, `GET users/{id}/pay_info`, `POST users/{id}/update_birthday`, `GET ranks/{key}/activity` | answered with neutral values |
+
 ### Errors
 
 For a status other than 200 the client shows the response body **as text** (or the `<title>` of

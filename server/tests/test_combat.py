@@ -3,6 +3,7 @@
 import random
 
 from supernova import combat, db, fleets, mails
+from supernova import economy as eco
 from supernova import planet as planet_rules
 
 from .test_fleets import new_player_with_cargo, position
@@ -46,6 +47,8 @@ def test_attack_mission():
     with db.player_state(defender) as state:
         planet_rules.fleet(state["empire"]["main_planet"], 15)["amount"] = 10  # rocket launchers
         planet_rules.fleet(state["empire"]["main_planet"], 1)["amount"] = 4  # light fighters
+        radar = planet_rules.building(state["empire"]["main_planet"], eco.RADAR_CENTER)
+        radar.update(building_level=10, building_position_index=9)  # sees large cargos (10), not cruisers (11)
     now = 2_000_000_000.0
     with db.player_state(attacker) as state:
         p = state["empire"]["main_planet"]
@@ -55,7 +58,12 @@ def test_attack_mission():
                                       "mission": str(fleets.ATTACK), "speed_ratio": "100"}, now)
 
     warning = fleets.events_view(defender)
-    assert len(warning) == 1 and warning[0]["mission"] == fleets.UNDER_ATTACK
+    assert len(warning) == 1 and warning[0]["mission"] == fleets.UNDER_ATTACK  # the large cargos give it away
+    with db.player_state(defender) as state:
+        state["empire"]["main_planet"]["radar_on"] = False
+    assert fleets.events_view(defender) == []
+    with db.player_state(defender) as state:
+        state["empire"]["main_planet"]["radar_on"] = True
 
     defender_metal = db.load_state(defender)["empire"]["main_planet"]["metal"]
     fleets.process_due(fleets.events_view(attacker)[0]["finish_time"])
