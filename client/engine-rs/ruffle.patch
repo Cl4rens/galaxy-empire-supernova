@@ -1,5 +1,5 @@
 diff --git a/core/src/avm1.rs b/core/src/avm1.rs
-index 857fe50d..8da47ab6 100644
+index 857fe50d..667a3045 100644
 --- a/core/src/avm1.rs
 +++ b/core/src/avm1.rs
 @@ -41,7 +41,7 @@ pub use property::Attribute;
@@ -7,12 +7,43 @@ index 857fe50d..8da47ab6 100644
  use ruffle_common::avm_string::AvmString;
  use ruffle_wstr::WStr;
 -pub use runtime::Avm1;
-+pub use runtime::{Avm1, CASE_INSENSITIVE};
++pub use runtime::{Avm1, GAMESWF};
  pub use value::Value;
  
  #[macro_export]
+diff --git a/core/src/avm1/globals/string.rs b/core/src/avm1/globals/string.rs
+index 7c2a45e2..580ee8bd 100644
+--- a/core/src/avm1/globals/string.rs
++++ b/core/src/avm1/globals/string.rs
+@@ -273,13 +273,19 @@ fn split<'gc>(
+                 )
+                 .into())
+         } else {
+-            Ok(ArrayBuilder::new(activation)
+-                .with(
+-                    this.split_dependent(activation.strings(), delimiter.as_wstr())
+-                        .take(limit)
+-                        .map(Value::from),
+-                )
+-                .into())
++            let mut pieces: Vec<Value<'gc>> = this
++                .split_dependent(activation.strings(), delimiter.as_wstr())
++                .take(limit)
++                .map(Value::from)
++                .collect();
++            // gameswf: "a,b,".split(",") is ["a", "b"]
++            if crate::avm1::GAMESWF.load(std::sync::atomic::Ordering::Relaxed)
++                && pieces.len() > 1
++                && this.as_wstr().ends_with(delimiter.as_wstr())
++            {
++                pieces.pop();
++            }
++            Ok(ArrayBuilder::new(activation).with(pieces).into())
+         }
+     } else {
+         Ok(ArrayBuilder::new(activation).with([this.into()]).into())
 diff --git a/core/src/avm1/runtime.rs b/core/src/avm1/runtime.rs
-index 073af1ef..85d4308b 100644
+index 073af1ef..b12add99 100644
 --- a/core/src/avm1/runtime.rs
 +++ b/core/src/avm1/runtime.rs
 @@ -387,7 +387,7 @@ impl<'gc> Avm1<'gc> {
@@ -20,19 +51,21 @@ index 073af1ef..85d4308b 100644
      #[inline(always)]
      pub fn is_case_sensitive(swf_version: u8) -> bool {
 -        swf_version >= 7
-+        swf_version >= 7 && !CASE_INSENSITIVE.load(std::sync::atomic::Ordering::Relaxed)
++        swf_version >= 7 && !GAMESWF.load(std::sync::atomic::Ordering::Relaxed)
      }
  
      /// Obtain a reference to the global scope.
-@@ -689,3 +689,6 @@ pub fn skip_actions(reader: &mut Reader<'_>, num_actions_to_skip: u8) {
+@@ -689,3 +689,8 @@ pub fn skip_actions(reader: &mut Reader<'_>, num_actions_to_skip: u8) {
          }
      }
  }
 +
-+/// Look names up without regard to case in every SWF version, as gameswf did (Supernova).
-+pub static CASE_INSENSITIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
++/// Behave like gameswf where movies made for it count on it (Supernova): names are looked up
++/// without regard to case in every SWF version, and `String.split` leaves out the empty piece
++/// after a trailing delimiter.
++pub static GAMESWF: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 diff --git a/core/src/external.rs b/core/src/external.rs
-index 071f1e73..3b599be4 100644
+index 071f1e73..9bbc4057 100644
 --- a/core/src/external.rs
 +++ b/core/src/external.rs
 @@ -424,3 +424,247 @@ impl<'gc> ExternalInterface<'gc> {
@@ -257,10 +290,10 @@ index 071f1e73..3b599be4 100644
 +    }
 +}
 +
-+/// Make AVM1 look up names without regard to case in every SWF version, as gameswf did; for
-+/// every player in the process.
-+pub fn set_avm1_case_insensitive(on: bool) {
-+    crate::avm1::CASE_INSENSITIVE.store(on, std::sync::atomic::Ordering::Relaxed);
++/// Make AVM1 behave like gameswf where movies made for it count on it (see `avm1::GAMESWF`);
++/// for every player in the process.
++pub fn set_gameswf_compat(on: bool) {
++    crate::avm1::GAMESWF.store(on, std::sync::atomic::Ordering::Relaxed);
 +}
 +
 +/// The paths of the text fields whose instance name contains `marker` (gameswf fitted the text

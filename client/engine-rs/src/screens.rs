@@ -175,9 +175,10 @@ fn from_external(value: ExternalValue) -> Arg {
 
 impl RuffleScreens {
     pub fn new() -> Result<Self> {
-        // the screens' ActionScript was written for gameswf, which ignored the case of names
-        // (`htmltext` for `htmlText`)
-        ruffle_core::external::set_avm1_case_insensitive(true);
+        // the screens' ActionScript was written for gameswf: it ignored the case of names
+        // (`htmltext` for `htmlText`) and left the empty piece after a trailing delimiter out of
+        // `split` (lists built from "ab")
+        ruffle_core::external::set_gameswf_compat(true);
         let instance = create_wgpu_instance(wgpu::Backends::all(), wgpu::BackendOptions::default(), None);
         let (adapter, device, queue) = futures::executor::block_on(request_adapter_and_device(
             wgpu::Backends::all(),
