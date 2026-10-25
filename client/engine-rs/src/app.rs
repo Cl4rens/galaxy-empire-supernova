@@ -11,6 +11,7 @@ use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, MouseButton, TouchPhase, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId};
 
 use crate::compositor::{Compositor, to_game};
@@ -115,6 +116,14 @@ impl ApplicationHandler for App {
                     TouchPhase::Ended | TouchPhase::Cancelled => Touch::Released,
                 };
                 self.touch(phase, touch.location.x, touch.location.y);
+            }
+            // Android's back button: the game has no use for it, so it leaves the game (to the
+            // app's setup screen)
+            WindowEvent::KeyboardInput { event, .. }
+                if event.state == ElementState::Pressed
+                    && matches!(event.logical_key, Key::Named(NamedKey::BrowserBack | NamedKey::GoBack)) =>
+            {
+                event_loop.exit();
             }
             WindowEvent::RedrawRequested => self.frame(),
             _ => {}

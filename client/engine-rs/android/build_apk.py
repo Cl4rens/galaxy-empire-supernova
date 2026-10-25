@@ -1,8 +1,9 @@
 """Build the Supernova Android app (an APK without anything from the game in it).
 
-Needs the Android SDK with build-tools, a platform and the NDK, cargo-ndk, and Java (for
-Ruffle's build and for signing). Without Gradle: cargo-ndk builds libsupernova.so per ABI,
-aapt2 makes the APK from AndroidManifest.xml, zipalign and apksigner finish it.
+Needs the Android SDK with build-tools, a platform and the NDK, cargo-ndk, and a JDK (for
+Ruffle's build, the setup screen and signing). Without Gradle: cargo-ndk builds
+libsupernova.so per ABI, javac and d8 make the setup screen's classes.dex, aapt2 makes the APK
+from AndroidManifest.xml, zipalign and apksigner finish it.
 
     python android/build_apk.py                      # arm64-v8a (phones) and x86_64 (emulators)
     python android/build_apk.py --abi x86_64         # one ABI only
@@ -58,6 +59,23 @@ def run(*args: str, env=None) -> None:
     subprocess.run(args, check=True, env=env)
 
 
+def java_to_dex(build_tools: Path, android_jar: Path) -> Path:
+    """The setup screen (java/) compiled to classes.dex."""
+    javac = shutil.which("javac") or sys.exit("javac (a JDK) not found")
+    classes = OUT / "classes"
+    dex_dir = OUT / "dex"
+    for folder in (classes, dex_dir):
+        shutil.rmtree(folder, ignore_errors=True)
+        folder.mkdir(parents=True)
+    sources = [str(p) for p in (HERE / "java").rglob("*.java")]
+    run(javac, "-source", "8", "-target", "8", "-Xlint:-options", "-encoding", "UTF-8",
+        "-bootclasspath", str(android_jar), "-d", str(classes), *sources)
+    class_files = [str(p) for p in classes.rglob("*.class")]
+    run(tool(build_tools, "d8"), "--release", "--min-api", MIN_SDK, "--lib", str(android_jar),
+        "--output", str(dex_dir), *class_files)
+    return dex_dir / "classes.dex"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--abi", action="append", choices=ABIS, help="ABI to build (repeatable)")
@@ -80,7 +98,9 @@ def main() -> None:
     unsigned = OUT / "unsigned.apk"
     run(tool(build_tools, "aapt2"), "link", "-o", str(unsigned), "--manifest", str(HERE / "AndroidManifest.xml"),
         "-I", str(platform / "android.jar"))
+    dex = java_to_dex(build_tools, platform / "android.jar")
     with zipfile.ZipFile(unsigned, "a", zipfile.ZIP_DEFLATED) as apk:
+        apk.write(dex, "classes.dex")
         for abi in abis:
             lib = libs / abi / "libsupernova.so"
             if not lib.exists():

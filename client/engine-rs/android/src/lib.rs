@@ -1,9 +1,13 @@
 //! Galaxy Empire on Android through the Supernova engine, as a NativeActivity.
 //!
-//! The app ships nothing from the game. It plays the player's own APK, which the player copies
-//! to the app's folder `Android/data/<app>/files/` (any `*.apk` there). A `server.txt` in the
-//! same folder holds the server address; without one the app uses the computer an emulator
-//! runs on. Errors go to logcat (tag "supernova") and to `error.txt` in that folder.
+//! The app ships nothing from the game. It plays the player's own APK, which the setup screen
+//! (java/.../SetupActivity.java) copies into the app's folder `Android/data/<app>/files/` (any
+//! `*.apk` there). A `server.txt` in the same folder holds the server address; without one the
+//! app uses the computer an emulator runs on. Errors go to logcat (tag "supernova") and to
+//! `error.txt` in that folder, which the setup screen shows.
+//!
+//! The game runs in a process of its own and ends it when it closes: winit's event loop can be
+//! made only once per process, and the next game starts in a new one.
 
 #![cfg(target_os = "android")]
 
@@ -73,7 +77,8 @@ fn android_main(app: AndroidApp) {
         .with_ansi(false)
         .without_time()
         .with_writer(Logcat::default)
-        .init();
+        .try_init()
+        .ok();
     let files = app
         .external_data_path()
         .or_else(|| app.internal_data_path())
@@ -89,4 +94,5 @@ fn android_main(app: AndroidApp) {
         tracing::error!("{e:#}");
         let _ = std::fs::write(files.join("error.txt"), format!("{e:#}\n"));
     }
+    std::process::exit(0);
 }

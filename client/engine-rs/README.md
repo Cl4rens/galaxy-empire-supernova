@@ -63,11 +63,19 @@ ActionScript.
 
 ## Android app
 
-`android/` makes the engine an Android app for 64-bit phones (arm64-v8a) and emulators (x86_64):
-a NativeActivity without Java code that runs `libsupernova.so` (`android/src/lib.rs`, with the
-same window code as the desktop, `src/app.rs`). Nothing from the game is in the app.
+`android/` makes the engine an Android app for 64-bit phones (arm64-v8a) and emulators (x86_64).
+Nothing from the game is in the app:
 
-Build (needs the Android SDK with build-tools, a platform and the NDK, plus
+- `SetupActivity` (`android/java/`) is the first screen. The player picks their own Galaxy
+  Empire 1.9.36 APK once (Android's file picker; the app copies it and checks it is the game)
+  and enters the server address (`192.168.1.20` is enough; `http://` and port 8000 are added).
+- Then the game starts right away on every launch: `android.app.NativeActivity` running
+  `libsupernova.so` (`android/src/lib.rs`, with the same window code as the desktop,
+  `src/app.rs`), in a process of its own.
+- The back button leaves the game for the setup screen, which also shows why the game stopped
+  if it could not start (`error.txt`; the log is in logcat under the tag `supernova`).
+
+Build (needs the Android SDK with build-tools 35+, a platform and the NDK, a JDK, and
 [cargo-ndk](https://github.com/bbqsrc/cargo-ndk); no Gradle):
 
 ```sh
@@ -76,22 +84,10 @@ cargo install cargo-ndk
 python android/build_apk.py          # target/android/supernova.apk
 ```
 
-Set it up on the phone:
-
-1. Install `supernova.apk` and start it once (it creates its folder and closes).
-2. Copy your own Galaxy Empire 1.9.36 APK into `Android/data/org.supernova.galaxyempire/files/`
-   (USB or a file manager; any name ending in `.apk`).
-3. Put a `server.txt` with the server address next to it, e.g. `http://192.168.1.20:8000`.
-   Without it the app uses `http://10.0.2.2:8000`, the computer an emulator runs on.
-4. Start the app.
-
-If it closes at start, `error.txt` in the same folder says why; the log is in logcat under the
-tag `supernova`.
-
-With adb:
+The files the app keeps are in `Android/data/org.supernova.galaxyempire/files/`
+(`galaxy-empire.apk`, `server.txt`), so with adb it can be set up without the screen:
 
 ```sh
 adb install -r target/android/supernova.apk
-adb push galaxy-empire-1-9-36.apk /sdcard/Android/data/org.supernova.galaxyempire/files/
-adb shell am start -n org.supernova.galaxyempire/android.app.NativeActivity
+adb push galaxy-empire-1-9-36.apk /sdcard/Android/data/org.supernova.galaxyempire/files/galaxy-empire.apk
 ```
