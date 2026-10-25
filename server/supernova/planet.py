@@ -87,11 +87,28 @@ PERCENT_FIELDS = ("metal_mine_percent", "crystal_mine_percent", "deuterium_mine_
                   "fusion_reactor_percent")
 
 
+# Radar Facility (wiki): the level that detects each ship type; everything bigger needs 14.
+RADAR_DETECTION = {1: 1, 13: 2, 11: 4, 9: 5, 2: 7, 12: 8, 10: 10, 3: 11, 4: 12, 5: 13}
+RADAR_TOP_LEVEL = 14
+
+
+def radar_fleets(planet: dict) -> list[str]:
+    """Names of the ship types the radar center detects (the radar screen lists them)."""
+    lv = level(planet, eco.RADAR_CENTER)
+    names = [eco.UNITS[t].name for t, need in sorted(RADAR_DETECTION.items(), key=lambda x: x[1]) if lv >= need]
+    if lv >= RADAR_TOP_LEVEL:
+        names.append("All other ships")
+    return names
+
+
+RADAR_ENERGY_PER_LEVEL = 10
+
+
 def radar_energy(planet: dict) -> int:
     """Energy a switched-on radar center needs (Supernova: 10 per level; the wiki only says it
     costs energy)."""
     lv = level(planet, eco.RADAR_CENTER)
-    return 10 * lv if lv and planet.get("radar_on", True) else 0
+    return RADAR_ENERGY_PER_LEVEL * lv if lv and planet.get("radar_on", True) else 0
 
 
 def _faster(planet: dict, key: str, seconds: int) -> int:
@@ -509,7 +526,8 @@ def building_view(planet: dict, b: dict) -> dict:
         "up_crystal_require": up[1],
         "up_deuterium_require": up[2],
         "up_time": _faster(planet, "build", eco.build_seconds(up[0], up[1], robotics, nanite)),
-        "up_extra_energy": round(eco.mine_energy(btype, lv + 1) - eco.mine_energy(btype, lv))
+        "up_extra_energy": RADAR_ENERGY_PER_LEVEL if btype == eco.RADAR_CENTER
+        else round(eco.mine_energy(btype, lv + 1) - eco.mine_energy(btype, lv))
         if btype in eco.MINES else 0,
         "tech_tree": _tech_tree(rule),
     })
@@ -574,6 +592,7 @@ def client_view(empire: dict, now: float) -> dict:
         "produce_percent": min(100, round(100 * rates["energy_max"] / rates["energy_used"]))
         if rates["energy_used"] else 100,
         "radar_energy": radar_energy(planet),
+        "radar_fleets": radar_fleets(planet),
         "planet_icon_info": planet.get("planet_icon_info") or 0,
     })
     return view

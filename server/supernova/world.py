@@ -1498,7 +1498,8 @@ def building_sprint(event_id: int, player_id: int = Depends(current_player)):
 @router.get("/fleet_hanging_events/{event_id}/acce_cost")
 def accelerate_cost(event_id: int, player_id: int = Depends(current_player)):
     def act():
-        engines, credits = fleets.accelerate_cost(fleets.returning_flight(player_id, event_id), time.time())
+        engines, credits = fleets.accelerate_cost(fleets.returning_flight(player_id, event_id), time.time(),
+                                                  db.load_state(player_id))
         return {"item_cost": engines, "credit_cost": credits}
     return item_call(act)
 

@@ -388,12 +388,11 @@ def current_view(ev: dict | None, pid: int, now: float) -> dict:
         next_start = current_end if _round(ev, now) + 1 < ev["rounds"] else -1
     else:
         current_end, next_start = end_time(ev), -1
-    m = alliances.membership(pid)
-    area = (m["alliance_id"] - 1) % 6 + 1 if m else 1
     view = {"status": st, "current": {"id": ev["id"], "end_time": current_end, "invite_cost": INVITE_PRICE,
                                      "add_courage_cost": COURAGE_PRICE},
             "next": {"start_time": next_start} if next_start >= 0 else {},
-            "maps": {"colors": [1] * 6, "current": area}, "self_info": self_info(ev, pid, now)}
+            # area 1: the client writes newly chosen leaders into area 1 (GameUIGalaxyChallengeWD)
+            "maps": {"colors": [1] * 6, "current": 1}, "self_info": self_info(ev, pid, now)}
     return view
 
 
@@ -811,7 +810,7 @@ def exchange(ev: dict | None, state: dict, ftype: int, n: int, now: float) -> st
 
 def congratulate_items(state: dict, now: float) -> list[dict]:
     bought = state.get("gc_bought", {})
-    return [{"id": i, "code": code, "name": name, "desc": desc, "price": price, "img": "icons/item_res_05.png",
+    return [{"id": i, "code": code, "name": name, "desc": desc, "price": price, "img": "icons/hiEnergy_alloy_box.png",
              "gacha_type": 1 if i == 9001 else 2, "item_type": 1,
              "user_cool_time": max(0, int(bought.get(code, 0) + cool - now))}
             for i, code, name, desc, price, cool, _ in CONGRATULATE_ITEMS]

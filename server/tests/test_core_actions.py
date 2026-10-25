@@ -64,10 +64,12 @@ def test_accelerate_returning_fleet():
     assert c.get(f"/world/1/fleet_hanging_events/{flight['event_id']}/acce_cost").status_code == 400  # outbound
     fleets.process_due(flight["finish_time"])
     cost = decrypt_json(c.get(f"/world/1/fleet_hanging_events/{flight['event_id']}/acce_cost"))
-    assert cost["item_cost"] == 1 and cost["credit_cost"] >= 1
+    assert cost["item_cost"] == 0 and cost["credit_cost"] >= 1
     assert "credits" in c.post(f"/world/1/fleet_hanging_events/{flight['event_id']}/acce").text
     with db.player_state(uid) as s:
         items.add(s, items.LIGHT_SPEED_ENGINE, 1)
+    assert decrypt_json(c.get(f"/world/1/fleet_hanging_events/{flight['event_id']}/acce_cost")) == {
+        "item_cost": 1, "credit_cost": 0}
     done = decrypt_json(c.post(f"/world/1/fleet_hanging_events/{flight['event_id']}/acce"))
     assert fleets.events_view(uid) == [] and done["empire"]["credits"] == 0
     assert planet_rules.fleet(db.load_state(uid)["empire"]["main_planet"], 9)["amount"] == 5
@@ -93,3 +95,10 @@ def test_interceptor_fusion():
 def test_battles_give_galaxium():
     assert items.galaxium_for({4: 10}) == 30  # 10 battleships of 60,000 metal and crystal each
     assert items.galaxium_for({15: 100}) == 0  # defense gives none
+
+
+def test_radar_lists_detected_ship_types():
+    planet = {"buildings": [{"building_type": eco.RADAR_CENTER, "building_level": 5}]}
+    assert planet_rules.radar_fleets(planet) == ["Light Fighter", "Espionage Probe", "Colony Ship", "Small Cargo"]
+    planet["buildings"][0]["building_level"] = 14
+    assert planet_rules.radar_fleets(planet)[-1] == "All other ships"

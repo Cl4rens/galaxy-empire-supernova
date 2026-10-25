@@ -1027,9 +1027,7 @@ def _planet_label(planet_id: int | None, galaxy: int, system: int, position: int
     return name, f"{galaxy}:{system}:{position}"
 
 
-# Radar Facility (wiki): the level that detects each ship type; everything bigger needs 14.
-RADAR_DETECTION = {1: 1, 13: 2, 11: 4, 9: 5, 2: 7, 12: 8, 10: 10, 3: 11, 4: 12, 5: 13}
-RADAR_TOP_LEVEL = 14
+RADAR_DETECTION, RADAR_TOP_LEVEL = planet_rules.RADAR_DETECTION, planet_rules.RADAR_TOP_LEVEL
 
 
 def radar_detects(planet: dict, ships: dict[int, int]) -> bool:
@@ -1053,10 +1051,14 @@ def incoming_attacks(player_id: int, empire: dict | None = None) -> list:
             and radar_detects(p, _ships(r))]
 
 
-def accelerate_cost(row, now: float) -> tuple[int, int]:
-    """(light speed engines, credits) to bring a returning fleet home at once: one engine, or
-    1 credit per 5 minutes left (Supernova's numbers)."""
-    return 1, max(1, math.ceil((row["return_time"] - now) / 300))
+def accelerate_cost(row, now: float, state: dict | None = None) -> tuple[int, int]:
+    """(light speed engines, credits) it takes to bring a returning fleet home at once: one
+    engine from the capsule, else 1 credit per 5 minutes left (Supernova's numbers). The client
+    shows both numbers as the price, so the one that is not used is 0."""
+    from . import items
+    if state is not None and items.amount(state, items.LIGHT_SPEED_ENGINE) >= 1:
+        return 1, 0
+    return 0, max(1, math.ceil((row["return_time"] - now) / 300))
 
 
 def returning_flight(player_id: int, event_id: int):
@@ -1071,8 +1073,8 @@ def accelerate(player_id: int, state: dict, event_id: int, now: float) -> None:
     """Land a returning fleet now, paying a light speed engine or credits."""
     from . import items
     row = returning_flight(player_id, event_id)
-    engines, credits = accelerate_cost(row, now)
-    if items.amount(state, items.LIGHT_SPEED_ENGINE) >= engines:
+    engines, credits = accelerate_cost(row, now, state)
+    if engines:
         items._add(state, items.LIGHT_SPEED_ENGINE, -engines)
     else:
         items._pay(state, credits, items.CREDITS)
