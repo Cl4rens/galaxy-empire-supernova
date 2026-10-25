@@ -80,7 +80,7 @@ city, fleet screens and buttons work. Still open: sound, a few placeholder texts
 ## Stage 3: an Android app (runs)
 
 [`engine-rs/android`](engine-rs/README.md#android-app) builds the engine as an Android app for
-arm64 phones and x86_64 emulators. The player copies their own APK into the app's folder; the
-app reads the game files from it at run time and ships nothing from the game. Tested on
-Android 13 (BlueStacks, x86_64): login, news, city, tutorial dialogs, going to the background
-and back.
+arm64 phones and x86_64 emulators, with nothing from the game in it. `tools/patch_apk.py --64bit`
+adds the game files from the player's own APK, so the player installs one APK. Tested on
+Android 13 (BlueStacks, x86_64): login over the LAN, news, city, tutorial dialogs, going to the
+background and back.

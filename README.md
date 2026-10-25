@@ -174,8 +174,25 @@ patches the client code so it runs on current Android versions without crashing 
 permissions; see [`docs/android.md`](docs/android.md). The result is
 `build/galaxy-empire-supernova.apk`.
 
-**Device requirement:** the game engine exists only for 32-bit ARM. Phones without 32-bit
-support (e.g. Google Pixel 7 and newer) cannot run it; PCs can use an emulator like BlueStacks.
+**Device requirement:** the original game engine exists only for 32-bit ARM. Phones without
+32-bit support (e.g. Google Pixel 7 and newer) cannot run it; for them build the 64-bit app
+below. PCs can use an emulator like BlueStacks.
+
+#### The 64-bit app (phones without 32-bit support)
+
+Supernova's own engine ([`client/engine-rs`](client/engine-rs/README.md)) plays the game's
+scripts and screens on 64-bit phones. The patcher puts the game files from your APK into the
+engine app; the result is one APK to install, with nothing to set up on the phone:
+
+```sh
+python tools/patch_apk.py apk/galaxy-empire-1-9-36.apk --64bit --server <host>:<port>
+```
+
+The result is `build/galaxy-empire-supernova-64bit.apk` (app name "Supernova"; it can be
+installed next to the 32-bit game). It needs the engine app at
+`client/engine-rs/target/android/supernova.apk` (build it as described there, or pass
+`--engine-app`). The app opens straight into the game; the back button leads to a screen where
+the server address can be changed.
 
 ### 5. Install and play
 

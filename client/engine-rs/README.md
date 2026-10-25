@@ -64,30 +64,22 @@ ActionScript.
 ## Android app
 
 `android/` makes the engine an Android app for 64-bit phones (arm64-v8a) and emulators (x86_64).
-Nothing from the game is in the app:
+As built here it holds nothing from the game; `tools/patch_apk.py --64bit` (see the main README)
+adds the game files from the player's own APK on their computer, and that is the app to install.
 
-- `SetupActivity` (`android/java/`) is the first screen. The player picks their own Galaxy
-  Empire 1.9.36 APK once (Android's file picker; the app copies it and checks it is the game)
-  and enters the server address (`192.168.1.20` is enough; `http://` and port 8000 are added).
-- Then the game starts right away on every launch: `android.app.NativeActivity` running
-  `libsupernova.so` (`android/src/lib.rs`, with the same window code as the desktop,
-  `src/app.rs`), in a process of its own.
-- The back button leaves the game for the setup screen, which also shows why the game stopped
-  if it could not start (`error.txt`; the log is in logcat under the tag `supernova`).
+- `SetupActivity` (`android/java/`) is the launcher. It starts the game right away; back from
+  the game leads to it, to change the server address or to see why the game stopped
+  (`error.txt`; the log is in logcat under the tag `supernova`).
+- The game is `android.app.NativeActivity` running `libsupernova.so` (`android/src/lib.rs`, with
+  the same window code as the desktop, `src/app.rs`), in a process of its own. It reads the game
+  files from the app's own APK (`assets/tap4fun.zip`, `assets/supernova/client.key`) and the
+  server from `assets/supernova/server.txt`, unless one was entered in the app.
 
-Build (needs the Android SDK with build-tools 35+, a platform and the NDK, a JDK, and
-[cargo-ndk](https://github.com/bbqsrc/cargo-ndk); no Gradle):
+Build the engine app (needs the Android SDK with build-tools 35+, a platform and the NDK, a
+JDK, and [cargo-ndk](https://github.com/bbqsrc/cargo-ndk); no Gradle):
 
 ```sh
 rustup target add aarch64-linux-android x86_64-linux-android
 cargo install cargo-ndk
 python android/build_apk.py          # target/android/supernova.apk
-```
-
-The files the app keeps are in `Android/data/org.supernova.galaxyempire/files/`
-(`galaxy-empire.apk`, `server.txt`), so with adb it can be set up without the screen:
-
-```sh
-adb install -r target/android/supernova.apk
-adb push galaxy-empire-1-9-36.apk /sdcard/Android/data/org.supernova.galaxyempire/files/galaxy-empire.apk
 ```

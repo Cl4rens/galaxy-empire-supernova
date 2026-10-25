@@ -3,7 +3,6 @@ package org.supernova.galaxyempire;
 import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Color;
-import android.net.Uri;
 import android.os.Bundle;
 import android.text.InputType;
 import android.view.Gravity;
@@ -14,23 +13,26 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.zip.ZipFile;
 
 /**
- * The app's first screen: the player picks their own Galaxy Empire APK (the app ships nothing
- * from the game) and enters the server address. Both go to the folder the engine reads
- * (android/src/lib.rs): galaxy-empire.apk and server.txt. Once both are there, the app starts
- * the game right away; back from the game leads here again.
+ * The app's first screen. tools/patch_apk.py --64bit put the game files from the player's own
+ * APK and the server address into this app; then this screen starts the game right away. Back
+ * from the game leads here, to change the server address or to see why the game stopped.
+ *
+ * The engine (android/src/lib.rs) reads its settings from the app's folder: apk_path.txt (this
+ * app's own APK, with the game files), server.txt (an address entered here) and error.txt.
  */
 public class SetupActivity extends Activity {
-    private static final int PICK_APK = 1;
-    private static final String APK = "galaxy-empire.apk";
+    private static final String GAME_ASSET = "tap4fun.zip";
+    private static final String BAKED_SERVER_ASSET = "supernova/server.txt";
+    private static final String APK_PATH = "apk_path.txt";
     private static final String SERVER = "server.txt";
     private static final String ERROR = "error.txt";
     private static final String DEFAULT_PORT = "8000";
@@ -39,15 +41,19 @@ public class SetupActivity extends Activity {
     private TextView error;
     private EditText server;
     private Button play;
-    private Button pick;
-    private boolean copying;
+    private boolean patched;
+    private String bakedServer;
 
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
+        patched = hasAsset(GAME_ASSET);
+        bakedServer = asset(BAKED_SERVER_ASSET);
+        write(APK_PATH, getApplicationInfo().sourceDir);
         setContentView(layout());
-        server.setText(read(SERVER));
-        if (state == null && ready() && !file(ERROR).exists()) {
+        String own = read(SERVER);
+        server.setText(own.isEmpty() ? bakedServer : own);
+        if (state == null && patched && !file(ERROR).exists()) {
             startGame();
         }
     }
@@ -55,7 +61,8 @@ public class SetupActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        refresh();
+        String problem = read(ERROR);
+        error.setText(problem.isEmpty() ? "" : "The game stopped: " + problem);
     }
 
     private View layout() {
@@ -68,21 +75,10 @@ public class SetupActivity extends Activity {
         TextView title = text("Galaxy Empire · Supernova", 24);
         title.setTextColor(Color.WHITE);
         column.addView(title);
-        column.addView(text("This app plays your own copy of Galaxy Empire 1.9.36. "
-                + "Choose the game's APK file once; it stays in the app.", 15));
-
-        pick = button("Choose Galaxy Empire APK");
-        pick.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-                intent.addCategory(Intent.CATEGORY_OPENABLE);
-                intent.setType("*/*");
-                startActivityForResult(intent, PICK_APK);
-            }
-        });
-        column.addView(pick);
-        status = text("", 15);
+        status = text(patched
+                ? "Ready to play. Change the server address here if it moved."
+                : "This app has no game files yet. Make it on your computer from your own "
+                + "Galaxy Empire APK: python tools/patch_apk.py <your apk> --64bit --server <address>", 15);
         column.addView(status);
 
         column.addView(text("Server address", 15));
@@ -95,11 +91,18 @@ public class SetupActivity extends Activity {
         column.addView(server);
 
         play = button("Play");
+        play.setEnabled(patched);
         play.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                write(SERVER, normalize(server.getText().toString()));
+                String address = normalize(server.getText().toString());
+                if (address.isEmpty() || address.equals(normalize(bakedServer))) {
+                    file(SERVER).delete();
+                } else {
+                    write(SERVER, address);
+                }
                 file(ERROR).delete();
+                error.setText("");
                 startGame();
             }
         });
@@ -115,88 +118,8 @@ public class SetupActivity extends Activity {
         return scroll;
     }
 
-    private void refresh() {
-        File apk = file(APK);
-        if (copying) {
-            status.setText("Copying the game file…");
-        } else if (apk.exists()) {
-            status.setText("Game file ready (" + apk.length() / (1024 * 1024) + " MB).");
-        } else {
-            status.setText("No game file chosen yet.");
-        }
-        pick.setEnabled(!copying);
-        play.setEnabled(!copying && apk.exists());
-        String problem = read(ERROR);
-        error.setText(problem.isEmpty() ? "" : "The game stopped: " + problem);
-    }
-
-    @Override
-    protected void onActivityResult(int request, int result, Intent data) {
-        if (request != PICK_APK || result != RESULT_OK || data == null || data.getData() == null) {
-            return;
-        }
-        final Uri uri = data.getData();
-        copying = true;
-        refresh();
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                final String problem = copy(uri);
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        copying = false;
-                        refresh();
-                        if (problem != null) {
-                            error.setText(problem);
-                        }
-                    }
-                });
-            }
-        }).start();
-    }
-
-    /** Copies the chosen file into the app and checks that it is the game; null when it is. */
-    private String copy(Uri uri) {
-        File partial = file(APK + ".part");
-        try (InputStream in = getContentResolver().openInputStream(uri);
-             OutputStream out = new FileOutputStream(partial)) {
-            byte[] buffer = new byte[1 << 16];
-            for (int n; (n = in.read(buffer)) > 0; ) {
-                out.write(buffer, 0, n);
-            }
-        } catch (Exception e) {
-            partial.delete();
-            return "Could not read the file: " + e.getMessage();
-        }
-        try (ZipFile zip = new ZipFile(partial)) {
-            if (zip.getEntry("assets/tap4fun.zip") == null || zip.getEntry("lib/armeabi-v7a/libgalaxyempire.so") == null) {
-                partial.delete();
-                return "That is not the Galaxy Empire APK.";
-            }
-        } catch (Exception e) {
-            partial.delete();
-            return "That is not an APK file.";
-        }
-        File[] old = folder().listFiles();
-        if (old != null) {
-            for (File f : old) {
-                if (f.getName().toLowerCase().endsWith(".apk")) {
-                    f.delete();
-                }
-            }
-        }
-        file(ERROR).delete();
-        return partial.renameTo(file(APK)) ? null : "Could not store the file.";
-    }
-
     private void startGame() {
-        Intent intent = new Intent(this, android.app.NativeActivity.class);
-        startActivity(intent);
-    }
-
-    private boolean ready() {
-        return file(APK).exists() && !read(SERVER).isEmpty();
+        startActivity(new Intent(this, android.app.NativeActivity.class));
     }
 
     /** "192.168.1.20" -> "http://192.168.1.20:8000" */
@@ -216,6 +139,27 @@ public class SetupActivity extends Activity {
             s = s + ":" + DEFAULT_PORT;
         }
         return s;
+    }
+
+    private boolean hasAsset(String name) {
+        try (InputStream in = getAssets().open(name)) {
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private String asset(String name) {
+        try (InputStream in = getAssets().open(name)) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buffer = new byte[4096];
+            for (int n; (n = in.read(buffer)) > 0; ) {
+                out.write(buffer, 0, n);
+            }
+            return new String(out.toByteArray(), StandardCharsets.UTF_8).trim();
+        } catch (Exception e) {
+            return "";
+        }
     }
 
     private File folder() {
@@ -249,7 +193,9 @@ public class SetupActivity extends Activity {
         try (OutputStream out = new FileOutputStream(file(name))) {
             out.write(text.getBytes(StandardCharsets.UTF_8));
         } catch (Exception e) {
-            error.setText("Could not save " + name + ": " + e.getMessage());
+            if (error != null) {
+                error.setText("Could not save " + name + ": " + e.getMessage());
+            }
         }
     }
 

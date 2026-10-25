@@ -18,13 +18,19 @@ pub fn md5_hex(data: &[u8]) -> String {
     Md5::digest(data).iter().map(|b| format!("{b:02x}")).collect()
 }
 
+/// Where tools/patch_apk.py --64bit puts the key in the app it builds (which leaves out the
+/// 32-bit library, or Android would install the app as 32-bit)
+const PATCHED_KEY_MEMBER: &str = "assets/supernova/client.key";
+
 /// The response key from the APK's native library.
 pub fn client_key(apk: &std::path::Path) -> Result<[u8; 32]> {
-    use std::io::Read;
-    let mut zip = zip::ZipArchive::new(std::fs::File::open(apk)?)?;
-    let mut lib = Vec::new();
-    zip.by_name(KEY_MEMBER)?.read_to_end(&mut lib)?;
-    let key: [u8; 32] = lib.get(KEY_OFFSET..KEY_OFFSET + 32).ok_or_else(|| anyhow!("library too short"))?.try_into()?;
+    let key: [u8; 32] = match crate::assets::apk_member(apk, PATCHED_KEY_MEMBER) {
+        Some(key) => key.as_slice().try_into().map_err(|_| anyhow!("{PATCHED_KEY_MEMBER} is not 32 bytes"))?,
+        None => {
+            let lib = crate::assets::apk_member(apk, KEY_MEMBER).ok_or_else(|| anyhow!("no {KEY_MEMBER} in the APK"))?;
+            lib.get(KEY_OFFSET..KEY_OFFSET + 32).ok_or_else(|| anyhow!("library too short"))?.try_into()?
+        }
+    };
     use sha2::{Digest, Sha256};
     let digest: String = Sha256::digest(key).iter().map(|b| format!("{b:02x}")).collect();
     if digest != KEY_SHA256 {

@@ -9,6 +9,9 @@ Steps:
   5. rebuild the APK and sign it with a debug key (uber-apk-signer, needs Java)
 
 Usage: python tools/patch_apk.py apk/galaxy-empire-1-9-36.apk --server 192.168.0.10:8000
+
+With --64bit it builds the app for 64-bit-only phones instead: the Supernova engine app
+(client/engine-rs) with the game files from your APK (see engine64.py).
 """
 
 import argparse
@@ -25,6 +28,7 @@ from pathlib import Path
 
 import client_tweaks
 import compat
+import engine64
 import lua51
 import pak
 
@@ -71,7 +75,8 @@ def patch_auto_update(chunk: bytes, gateway: bytes) -> bytes:
     return lua51.dump(header, main)
 
 
-def patch_game_data(game_zip: bytes, gateway: bytes) -> bytes:
+def patch_game_data(game_zip: bytes, gateway: bytes | None) -> bytes:
+    """The game files with the script changes; the gateway too unless it is None."""
     src = zipfile.ZipFile(io.BytesIO(game_zip))
     out = io.BytesIO()
     with zipfile.ZipFile(out, "w") as dst:
@@ -81,7 +86,8 @@ def patch_game_data(game_zip: bytes, gateway: bytes) -> bytes:
                 archive = pak.read(data)
                 # Entry 0 is AutoUpdateInit.lua, the first script the engine runs.
                 init = archive.entries[0]
-                init.data = patch_auto_update(init.data, gateway)
+                if gateway is not None:
+                    init.data = patch_auto_update(init.data, gateway)
                 for entry in archive.entries[1:]:
                     entry.data = client_tweaks.apply(entry.data)
                 data = pak.write(archive)
@@ -141,11 +147,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("apk", type=Path, help="your original Galaxy Empire APK")
     parser.add_argument("--server", required=True, help="host[:port] of the Supernova gateway")
-    parser.add_argument("--out", type=Path, default=Path("build/galaxy-empire-supernova.apk"))
+    parser.add_argument("--out", type=Path,
+                        help="default build/galaxy-empire-supernova.apk (-64bit.apk with --64bit)")
     parser.add_argument("--java", help="path to the java executable")
     parser.add_argument("--force", action="store_true", help="patch even if the APK version is unknown")
     parser.add_argument("--no-compat", action="store_true",
                         help="keep the original client code (it crashes on Android 6+ without granted permissions)")
+    parser.add_argument("--64bit", dest="engine64", action="store_true",
+                        help="build the app for 64-bit-only phones (Supernova engine) instead")
+    parser.add_argument("--engine-app", type=Path, default=engine64.DEFAULT_ENGINE_APP,
+                        help="the Supernova engine app for --64bit (default: %(default)s)")
     args = parser.parse_args()
 
     digest = sha256(args.apk)
@@ -157,9 +168,20 @@ def main() -> None:
     else:
         sys.exit(f"Unknown APK (SHA-256 {digest}). See apk/README.md for supported versions.")
 
+    args.out = args.out or Path("build/galaxy-empire-supernova" + ("-64bit" if args.engine64 else "") + ".apk")
     args.out.parent.mkdir(parents=True, exist_ok=True)
     unsigned = args.out.with_name(args.out.stem + "-unsigned.apk")
     java = find_java(args.java)
+    if args.engine64:
+        if not args.engine_app.exists():
+            sys.exit(f"{args.engine_app} not found: build it (client/engine-rs/README.md) or pass --engine-app")
+        print(f"Building the 64-bit app from {args.engine_app}, server {engine64.server_url(args.server)}")
+        game_data = patch_game_data(zipfile.ZipFile(args.apk).read("assets/tap4fun.zip"), None)
+        engine64.build(args.apk, args.engine_app, args.server, game_data, unsigned)
+        sign(java, unsigned, args.out)
+        unsigned.unlink()
+        print(f"Done: {args.out}")
+        return
     dex = None if args.no_compat else compat.patched_dex(java, args.apk, TOOLS_DIR)
     print(f"Patching gateway -> http://{args.server}/")
     rebuild_apk(args.apk, unsigned, args.server.encode(), dex)

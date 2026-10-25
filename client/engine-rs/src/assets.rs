@@ -55,6 +55,15 @@ pub fn chunk_source(chunk: &[u8]) -> Option<String> {
     Some(String::from_utf8_lossy(name).trim_end_matches('\0').to_string())
 }
 
+/// One file of an APK (a zip), if it is there.
+pub fn apk_member(apk: &Path, name: &str) -> Option<Vec<u8>> {
+    let mut zip = zip::ZipArchive::new(std::fs::File::open(apk).ok()?).ok()?;
+    let mut entry = zip.by_name(name).ok()?;
+    let mut data = Vec::with_capacity(entry.size() as usize);
+    entry.read_to_end(&mut data).ok()?;
+    Some(data)
+}
+
 pub struct Assets {
     scripts: HashMap<String, Vec<u8>>, // "GameUtils" -> chunk
     files: HashMap<String, Vec<u8>>,   // "data2/Login.tfs" -> contents

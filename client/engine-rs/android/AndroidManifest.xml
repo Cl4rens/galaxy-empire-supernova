@@ -1,12 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Supernova: Galaxy Empire on 64-bit Android through the Supernova engine.
-     SetupActivity (java/) takes the player's own game APK and the server address; the game
+<!-- Supernova: Galaxy Empire on 64-bit Android through the Supernova engine. Built without
+     anything from the game; tools/patch_apk.py (64-bit mode) adds the player's own game files.
+     SetupActivity (java/) starts the game and lets the player change the server; the game
      itself is android.app.NativeActivity running libsupernova.so (android/src/lib.rs), in a
      process of its own because winit's event loop can be made only once per process. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="org.supernova.galaxyempire"
-    android:versionCode="2"
-    android:versionName="0.2.0">
+    android:versionCode="3"
+    android:versionName="0.3.0">
 
     <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="34" />
 

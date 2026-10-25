@@ -1,9 +1,11 @@
 //! Galaxy Empire on Android through the Supernova engine, as a NativeActivity.
 //!
-//! The app ships nothing from the game. It plays the player's own APK, which the setup screen
-//! (java/.../SetupActivity.java) copies into the app's folder `Android/data/<app>/files/` (any
-//! `*.apk` there). A `server.txt` in the same folder holds the server address; without one the
-//! app uses the computer an emulator runs on. Errors go to logcat (tag "supernova") and to
+//! The app as built here ships nothing from the game: tools/patch_apk.py --64bit adds the game
+//! files from the player's own APK to it on their computer. The game reads them from the app's
+//! own APK, whose path the setup screen (java/.../SetupActivity.java) writes to `apk_path.txt`
+//! in the app's folder `Android/data/<app>/files/`. The server address is the one the player
+//! entered there (`server.txt`), else the one the patcher put in (`assets/supernova/server.txt`),
+//! else the computer an emulator runs on. Errors go to logcat (tag "supernova") and to
 //! `error.txt` in that folder, which the setup screen shows.
 //!
 //! The game runs in a process of its own and ends it when it closes: winit's event loop can be
@@ -53,21 +55,23 @@ impl Drop for Logcat {
     }
 }
 
-fn find_apk(files: &Path) -> Result<PathBuf> {
-    std::fs::read_dir(files)?
-        .filter_map(|e| e.ok().map(|e| e.path()))
-        .find(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case("apk")))
-        .ok_or_else(|| anyhow!("no Galaxy Empire APK in {}", files.display()))
+fn read(path: &Path) -> Option<String> {
+    std::fs::read_to_string(path).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
 }
 
 fn config(app: &AndroidApp, files: &Path) -> Result<Config> {
-    let server = std::fs::read_to_string(files.join("server.txt"))
-        .ok()
-        .map(|s| s.trim().trim_end_matches('/').to_string())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| DEFAULT_SERVER.to_string());
+    let apk = PathBuf::from(read(&files.join("apk_path.txt")).ok_or_else(|| anyhow!("the app's own APK is unknown"))?);
+    let baked = supernova_engine::assets::apk_member(&apk, "assets/supernova/server.txt")
+        .map(|s| String::from_utf8_lossy(&s).trim().to_string())
+        .filter(|s| !s.is_empty());
+    let server = read(&files.join("server.txt")).or(baked).unwrap_or_else(|| DEFAULT_SERVER.to_string());
     let internal = app.internal_data_path().ok_or_else(|| anyhow!("no app data folder"))?;
-    Ok(Config { apk: find_apk(files)?, server, save_dir: internal.join("save"), language: "en".into() })
+    Ok(Config {
+        apk,
+        server: server.trim_end_matches('/').to_string(),
+        save_dir: internal.join("save"),
+        language: "en".into(),
+    })
 }
 
 #[unsafe(no_mangle)]
