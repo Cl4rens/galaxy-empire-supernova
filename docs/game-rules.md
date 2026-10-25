@@ -139,13 +139,13 @@ immediately.
 | 10 | Large Cargo | 6,000 | 6,000 | 0 | Shipyard 4, Combustion Drive 6 |
 | 11 | Colony Ship | 10,000 | 20,000 | 10,000 | Shipyard 4, Impulse Drive 3 |
 | 12 | Recycler | 10,000 | 6,000 | 2,000 | Shipyard 4, Combustion Drive 6, Shielding 2 |
-| 13 | Espionage Probe | 0 | 1,000 | 0 | Shipyard 3, Combustion Drive 3, Espionage 2 |
+| 13 | Espionage Probe | 6,000 | 4,000 | 0 | Shipyard 3, Combustion Drive 3, Espionage 2 |
 | 14 | Solar Satellite | 0 | 2,000 | 500 | Shipyard 1 |
 | 15 | Rocket Launcher | 2,000 | 0 | 0 | Shipyard 1 |
 | 16 | Light Laser | 1,500 | 500 | 0 | Shipyard 2, Energy 1, Laser 3 |
 | 17 | Heavy Laser | 6,000 | 2,000 | 0 | Shipyard 4, Energy 3, Laser 6 |
 | 18 | Gauss Cannon | 20,000 | 15,000 | 2,000 | Shipyard 6, Energy 6, Weapons 3, Shielding 1 |
-| 19 | Ion Cannon | 5,000 | 3,000 | 0 | Shipyard 4, Ion 4 |
+| 19 | Ion Cannon | 2,000 | 6,000 | 0 | Shipyard 4, Ion 4 |
 | 20 | Plasma Cannon | 50,000 | 50,000 | 30,000 | Shipyard 8, Plasma 7 |
 | 21 | Small Shield Dome | 10,000 | 10,000 | 0 | Shipyard 1, Shielding 2 |
 | 22 | Large Shield Dome | 50,000 | 50,000 | 0 | Shipyard 6, Shielding 6 |
@@ -212,11 +212,13 @@ hyperspace drive at Hyperspace Drive 8.
 | Bomber | 4,000 | 500 | 1,000 | Impulse |
 | Destroyer | 5,000 | 2,000 | 1,000 | Hyperspace |
 | Deathstar | 100 | 1,000,000 | 1 | Hyperspace |
-| Small Cargo | 5,000 | 5,000 | 10 | Combustion |
+| Small Cargo | 5,000 | 5,000 | 20 | Combustion |
 | Large Cargo | 7,500 | 25,000 | 50 | Combustion |
 | Colony Ship | 2,500 | 7,500 | 1,000 | Impulse |
-| Recycler | 2,000 | 20,000 | 300 | Combustion |
+| Recycler | 7,500 | 20,000 | 300 | Combustion |
 | Espionage Probe | 100,000,000 | 5 | 1 | Combustion |
+| Interceptor | 5,000 | 2,000 | 1,200 | Hyperspace |
+| Iron Behemoth | 5,000 | 4,000 | 3,200 | Hyperspace |
 
 ## Combat
 
@@ -229,7 +231,11 @@ Battles follow OGame (`server/supernova/combat.py`):
 - Rapid fire: some units fire again at certain targets (e.g. cruisers at light fighters 6,
   battlecruisers at battleships 7, deathstars at almost everything).
 - Weapons, Shielding and Armour Technology each add 10 % per level.
-- Hull = (metal + crystal) / 10 of the unit's cost.
+- Hull = (metal + crystal) / 10 of the unit's cost, except where the Galaxy Empire wiki says
+  otherwise (espionage probe, interceptor, Iron Behemoth).
+- Rapid fire of the interceptor and the Iron Behemoth follows the wiki (both against
+  destroyers 10, the Behemoth also against interceptors 10); ion cannons fire 5 times at
+  Behemoths.
 - If the attacker wins, it takes up to half of each resource, limited by the cargo space of
   its surviving ships.
 - 70 % of destroyed defense units are repaired after the battle.
@@ -261,6 +267,8 @@ Battles follow OGame (`server/supernova/combat.py`):
 | Plasma Cannon | 3,000 | 300 | 10,000 |
 | Small Shield Dome | 1 | 2,000 | 2,000 |
 | Large Shield Dome | 1 | 10,000 | 10,000 |
+| Interceptor | 7,000 | 1,500 | 160,000 |
+| Iron Behemoth | 5,500 | 4,000 | 350,000 |
 
 ## Pirates and expeditions
 
@@ -403,7 +411,7 @@ Following the client's help texts, with Supernova's numbers:
 
 - The Pioneer Lab is built on a moon; an empire can have only one.
 - An Iron Behemoth costs 250 alloy fragments and 50 × (number owned + 1) dark matter; it takes
-  4 h × (1 + owned / 2) / speed. Weapons 2,000, shields 500, hull 30,000.
+  4 h × (1 + owned / 2) / speed. Weapons 5,500, shields 4,000, hull 350,000 (wiki values).
 - Alloy fragments: 1 per 20,000 debris of every battle a player fights (+2 % per level of
   Alloy Detection Tech), or 250 in a box for dark matter (20, then +10 per box that day).
 - Dark energy: only from battles fought with Behemoths, 1 per 10 points the enemy lost.

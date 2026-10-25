@@ -1,7 +1,8 @@
 """Game rules: building costs, build times, production, energy and storage.
 
 The original server's numbers are unknown. Galaxy Empire is closely modelled on OGame (same
-buildings, ships and research), so these are the classic OGame formulas. Buildings that OGame
+buildings, ships and research), so these are the classic OGame formulas. Ship values follow the
+Galaxy Empire wiki (galaxyempire.fandom.com) where it differs from OGame. Buildings that OGame
 does not have (radar center, krypton lab, pioneer lab, ...) got made-up values.
 """
 
@@ -192,14 +193,14 @@ UNITS: dict[int, BuildingRule] = {
     10: BuildingRule("Large Cargo", 6000, 6000, 0, 1, {SHIPYARD: 4}, {COMBUSTION_DRIVE: 6}),
     11: BuildingRule("Colony Ship", 10000, 20000, 10000, 1, {SHIPYARD: 4}, {IMPULSE_DRIVE: 3}),
     12: BuildingRule("Recycler", 10000, 6000, 2000, 1, {SHIPYARD: 4}, {COMBUSTION_DRIVE: 6, SHIELDING_TECH: 2}),
-    13: BuildingRule("Espionage Probe", 0, 1000, 0, 1, {SHIPYARD: 3}, {COMBUSTION_DRIVE: 3, ESPIONAGE_TECH: 2}),
+    13: BuildingRule("Espionage Probe", 6000, 4000, 0, 1, {SHIPYARD: 3}, {COMBUSTION_DRIVE: 3, ESPIONAGE_TECH: 2}),
     14: BuildingRule("Solar Satellite", 0, 2000, 500, 1, {SHIPYARD: 1}, {}),
     15: BuildingRule("Rocket Launcher", 2000, 0, 0, 1, {SHIPYARD: 1}, {}),
     16: BuildingRule("Light Laser", 1500, 500, 0, 1, {SHIPYARD: 2}, {ENERGY_TECH: 1, LASER_TECH: 3}),
     17: BuildingRule("Heavy Laser", 6000, 2000, 0, 1, {SHIPYARD: 4}, {ENERGY_TECH: 3, LASER_TECH: 6}),
     18: BuildingRule("Gauss Cannon", 20000, 15000, 2000, 1, {SHIPYARD: 6},
                      {ENERGY_TECH: 6, WEAPONS_TECH: 3, SHIELDING_TECH: 1}),
-    19: BuildingRule("Ion Cannon", 5000, 3000, 0, 1, {SHIPYARD: 4}, {ION_TECH: 4}),
+    19: BuildingRule("Ion Cannon", 2000, 6000, 0, 1, {SHIPYARD: 4}, {ION_TECH: 4}),
     20: BuildingRule("Plasma Cannon", 50000, 50000, 30000, 1, {SHIPYARD: 8}, {PLASMA_TECH: 7}),
     21: BuildingRule("Small Shield Dome", 10000, 10000, 0, 1, {SHIPYARD: 1}, {SHIELDING_TECH: 2}),
     22: BuildingRule("Large Shield Dome", 50000, 50000, 0, 1, {SHIPYARD: 6}, {SHIELDING_TECH: 6}),
@@ -231,7 +232,7 @@ class ShipStats:
     drive: int  # research type of the drive
 
 
-# OGame values. Defense units and solar satellites cannot fly.
+# OGame values, corrected by the Galaxy Empire wiki. Defense units and solar satellites cannot fly.
 SHIPS: dict[int, ShipStats] = {
     1: ShipStats(12500, 50, 20, COMBUSTION_DRIVE),
     2: ShipStats(10000, 100, 75, IMPULSE_DRIVE),
@@ -241,13 +242,13 @@ SHIPS: dict[int, ShipStats] = {
     6: ShipStats(4000, 500, 1000, IMPULSE_DRIVE),
     7: ShipStats(5000, 2000, 1000, HYPERSPACE_DRIVE),
     8: ShipStats(100, 1000000, 1, HYPERSPACE_DRIVE),
-    9: ShipStats(5000, 5000, 10, COMBUSTION_DRIVE),
+    9: ShipStats(5000, 5000, 20, COMBUSTION_DRIVE),
     10: ShipStats(7500, 25000, 50, COMBUSTION_DRIVE),
     11: ShipStats(2500, 7500, 1000, IMPULSE_DRIVE),
-    12: ShipStats(2000, 20000, 300, COMBUSTION_DRIVE),
+    12: ShipStats(7500, 20000, 300, COMBUSTION_DRIVE),
     13: ShipStats(100000000, 5, 1, COMBUSTION_DRIVE),
-    23: ShipStats(12500, 50, 20, COMBUSTION_DRIVE),  # interceptor: krypton shop, like a light fighter
-    24: ShipStats(5000, 2000, 1000, HYPERSPACE_DRIVE),  # behemoth: unknown, like a destroyer
+    23: ShipStats(5000, 2000, 1200, HYPERSPACE_DRIVE),  # interceptor
+    24: ShipStats(5000, 4000, 3200, HYPERSPACE_DRIVE),  # Iron Behemoth
 }
 
 # Drive upgrades: (ship, research, level) -> (new drive, new speed)

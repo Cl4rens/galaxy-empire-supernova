@@ -27,18 +27,21 @@ class CombatStats:
     hull: int  # structural integrity (metal + crystal) / 10
 
 
+HULL = {13: 100, 23: 160_000, 24: 350_000}  # where the wiki's armour is not (metal + crystal) / 10
+
+
 def _hull(utype: int) -> int:
-    rule = eco.UNITS.get(utype)
-    if rule:
-        return (rule.metal + rule.crystal) // 10
-    return {23: 400, 24: 30000}.get(utype, 400)  # interceptor: like a light fighter; behemoth: a giant
+    if utype in HULL:
+        return HULL[utype]
+    rule = eco.UNITS[utype]
+    return (rule.metal + rule.crystal) // 10
 
 
 STATS: dict[int, CombatStats] = {t: CombatStats(w, s, _hull(t)) for t, (w, s) in {
     1: (50, 10), 2: (150, 25), 3: (400, 50), 4: (1000, 200), 5: (700, 400), 6: (1000, 500),
     7: (2000, 500), 8: (200000, 50000), 9: (5, 10), 10: (5, 25), 11: (50, 100), 12: (1, 10),
     13: (0, 0), 14: (1, 1), 15: (80, 20), 16: (100, 25), 17: (250, 100), 18: (1100, 200),
-    19: (150, 500), 20: (3000, 300), 21: (1, 2000), 22: (1, 10000), 23: (50, 10), 24: (2000, 500),
+    19: (150, 500), 20: (3000, 300), 21: (1, 2000), 22: (1, 10000), 23: (7000, 1500), 24: (5500, 4000),
 }.items()}
 
 # shooter -> {target: rapid fire value}
@@ -53,6 +56,9 @@ RAPID_FIRE: dict[int, dict[int, int]] = {
     8: {1: 200, 2: 100, 3: 33, 4: 30, 5: 15, 6: 25, 7: 5, 9: 250, 10: 250, 11: 250, 12: 250,
         13: 1250, 14: 1250, 15: 200, 16: 200, 17: 100, 18: 50, 19: 100},
     9: {13: 5, 14: 5}, 10: {13: 5, 14: 5}, 11: {13: 5, 14: 5}, 12: {13: 5, 14: 5},
+    19: {24: 5},
+    23: {7: 10, 13: 5, 14: 5, 15: 10},
+    24: {5: 5, 7: 10, 13: 10, 17: 5, 18: 5, 23: 10},
 }
 
 

@@ -100,4 +100,4 @@ def test_pioneer_research():
 
 
 def test_behemoth_is_a_giant():
-    assert combat.STATS[flagships.BEHEMOTH].hull == 30000
+    assert combat.STATS[flagships.BEHEMOTH].hull == 350_000
