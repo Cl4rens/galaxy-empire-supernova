@@ -122,8 +122,11 @@ immediately.
   nothing can be ordered while one of them is being upgraded.
 - **Shield domes** exist only once per planet.
 - Every **solar satellite** produces 25 energy (OGame: depends on the planet temperature).
-- Interceptors (23) come from the krypton shop, and behemoths (24) cannot be built; both are
-  listed but not buildable here.
+- Interceptors (23) come from the krypton shop and Iron Behemoths (24) from the Pioneer Lab.
+- The Proton Cannon (27, defense) is built in the shipyard (shipyard 15, nanite factory 2).
+- Devourer Interceptors (25), Titanenergetic Frigates (26) and Annihilator construction
+  permits (28) are shop items; Reapers (29) are built from 3,000 intricate components, which
+  every battle gives for large enemy ships destroyed (hull / 5,000 each, from battlecruisers up).
 
 | Type | Unit | Metal | Crystal | Deuterium | Requires |
 |-----:|------|------:|--------:|----------:|----------|
@@ -485,3 +488,25 @@ The original game sold dark matter for real money. Supernova hands it out instea
 - Level n -> n + 1 of a device type uses n + 1 devices and needs 100,000 x (n + 1) points;
   at most level 10. Each level gives +3 % armour, shields or attack, or +2 % speed, for that
   ship type only. Defense gets no thrusters.
+
+## Advanced ships
+
+Values from the Galaxy Empire wiki; the Reaper's are Supernova's own.
+
+| Unit | Weapon | Shield | Hull | Speed | Cargo | Fuel | Special |
+|------|-------:|-------:|-----:|------:|------:|-----:|---------|
+| Devourer Interceptor (25) | 6,500 | 1,500 | 150,000 | 4,000 | 3,000 | 2,200 | shots pass through shields |
+| Titanenergetic Frigate (26) | 5,000 | 3,000 | 450,000 | 4,000 | 4,000 | 2,500 | |
+| Proton Cannon (27) | 5,000 | 5,000 | 120,000 | – | – | – | a fifth of the damage against units below 10,000 hull |
+| Annihilator (28) | – | 1 | 1 | 9,000 | 1 | 1,000 | explodes before the battle |
+| Reaper (29) | 8,000 | 3,000 | 400,000 | 5,000 | 3,000 | 2,000 | aims at the biggest ships, immune to Annihilators |
+
+- **Annihilators** of the attacker explode one after the other before the battle, as long as the
+  defender has at least two of: interceptors, Iron Behemoths, Devourer Interceptors,
+  Titanenergetic Frigates. Each explosion does 500,000 damage (with weapons technology), shared
+  equally by the defender's unit types; Titanenergetic Frigates take 5x, Devourers and
+  interceptors 4x, Behemoths 3x. Each type loses damage / hull units, at least one. Defenders'
+  Annihilators never explode, and a commander can have at most 200.
+- Rapid fire (wiki): Devourer against light fighters 20, large cargo 10, interceptors and
+  Behemoths 5; Frigate against large cargo 15, light fighters 10, destroyers, Devourers and
+  Behemoths 5; Proton Cannon against interceptors, Devourers and Frigates 12.

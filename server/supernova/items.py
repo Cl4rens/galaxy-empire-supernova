@@ -15,6 +15,8 @@ from . import planet as planet_rules
 DARK_MATTER, CREDITS = 1, 2  # pay_type
 FEATURED, RESOURCE, SPEEDUP, AFFAIR, OTHER = 0, 1, 2, 3, 4  # shop tabs
 SECONDS_PER_DARK_MATTER = 300  # finishing an order at once costs 1 dark matter per 5 minutes left
+MAX_ANNIHILATORS = 200  # wiki
+COMPONENT, REAPER_COMPONENTS = 5001, 3000  # wiki: a Reaper takes 3,000 intricate components
 
 
 class ItemError(planet_rules.GameError):
@@ -37,6 +39,8 @@ class Item:
     featured: bool = False
     code: str = ""
     device: tuple[int, int] | None = None  # (device type, grade), see devices.py
+    unit: int = 0  # a ship this item turns into
+    sold: bool = True
 
 
 def _res(item_id, name, amount, index, icon, price, featured=False, code=""):
@@ -70,6 +74,15 @@ CATALOG = [
          "item_res_07.png", 15, alloy=flagships.BOX_ALLOY),
     Item(3103, AFFAIR, "Krypton stones x500", "500 krypton stones for the Krypton Lab.", "item_res_13.png", 15,
          krypton_stones=500),
+    Item(5002, OTHER, "Annihilator construction permit",
+         f"Builds one Annihilator on the planet you are on. A commander can have at most {MAX_ANNIHILATORS}.",
+         "ship_destruction_star.png", 25, unit=28),
+    Item(5003, OTHER, "Devourer Interceptor", "One Devourer Interceptor for the planet you are on. "
+         "Its shots pass through shields.", "item_res_14.png", 50, unit=25),
+    Item(5004, OTHER, "Titanenergetic Frigate", "One Titanenergetic Frigate for the planet you are on. "
+         "Its armour is immense.", "item_res_12.png", 80, unit=26),
+    Item(COMPONENT, OTHER, "Intricate component", f"Left behind by large warships destroyed in battle. "
+         f"{REAPER_COMPONENTS:,} build one Reaper.", "item_res_15.png", 0, sold=False),
 ]
 from . import devices  # noqa: E402 (devices builds its items with Item)
 
@@ -91,7 +104,8 @@ def _view(i: Item) -> dict:
 
 
 def shop(category: int) -> list[dict]:
-    return [_view(i) for i in CATALOG if i.category == category or (category == FEATURED and i.featured)]
+    return [_view(i) for i in CATALOG
+            if i.sold and (i.category == category or (category == FEATURED and i.featured))]
 
 
 # --- Depot ---------------------------------------------------------------------------------------
@@ -132,8 +146,8 @@ def _pay(state: dict, price: int) -> None:
 
 def buy(state: dict, item_id: int, n: int) -> dict:
     i = item(item_id)
-    if not 1 <= n <= 999:
-        raise ItemError("Invalid number")
+    if not 1 <= n <= 999 or not i.sold:
+        raise ItemError("Invalid number" if i.sold else "This item is not for sale")
     _pay(state, i.price * n)
     _add(state, i.id, n)
     empire = state["empire"]
@@ -149,7 +163,15 @@ def use(state: dict, item_id: int, n: int, planet: dict) -> str:
         raise ItemError("Install devices in the Modification screen")
     if not 1 <= n <= amount(state, i.id):
         raise ItemError("You do not have that many")
+    if i.id == COMPONENT:
+        return _build_reapers(state, n, planet)
+    if i.unit == 28:
+        owned = sum(planet_rules.fleet(p, 28)["amount"] for p in planet_rules.bodies(state["empire"]))
+        if owned + n > MAX_ANNIHILATORS:
+            raise ItemError(f"A commander can have at most {MAX_ANNIHILATORS} Annihilators")
     _add(state, i.id, -n)
+    if i.unit:
+        planet_rules.fleet(planet, i.unit)["amount"] += n
     for res, value in zip(planet_rules.RESOURCES, i.resources):
         planet[res] += value * n
     if i.ecm_chips:
@@ -159,6 +181,25 @@ def use(state: dict, item_id: int, n: int, planet: dict) -> str:
     if i.krypton_stones:
         kryptons.add_stones(state, i.krypton_stones * n)
     return f"Used {i.name} x{n}."
+
+
+def _build_reapers(state: dict, n: int, planet: dict) -> str:
+    reapers = n // REAPER_COMPONENTS
+    if not reapers:
+        raise ItemError(f"A Reaper takes {REAPER_COMPONENTS:,} intricate components")
+    _add(state, COMPONENT, -reapers * REAPER_COMPONENTS)
+    planet_rules.fleet(planet, 29)["amount"] += reapers
+    return f"{reapers} Reaper(s) built from {reapers * REAPER_COMPONENTS:,} intricate components."
+
+
+def add_components(state: dict, enemy_lost: dict[int, int]) -> int:
+    """Intricate components from large enemy ships destroyed in a battle: hull / 5,000 each."""
+    from . import combat
+    found = sum(max(1, combat.STATS[t].hull // 5000) * n for t, n in enemy_lost.items()
+                if t in combat.STATS and combat.STATS[t].hull >= 7000 and t in planet_rules.eco.SHIPS)
+    if found:
+        _add(state, COMPONENT, found)
+    return found
 
 
 def discard(state: dict, item_id: int) -> None:

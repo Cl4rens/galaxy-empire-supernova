@@ -16,7 +16,7 @@ import time
 
 from . import combat, config, db, ranking
 from . import economy as eco
-from . import devices, ecm, flagships, kryptons, lordship, mails, npc, protection, quests, repairs
+from . import devices, ecm, flagships, items, kryptons, lordship, mails, npc, protection, quests, repairs
 from . import planet as planet_rules
 from . import universe
 
@@ -482,6 +482,9 @@ def _salvage(player_id: int, debris: dict, own_units: dict[int, int], enemy_lost
         alloy = flagships.salvage(s, debris)
         if alloy:
             notes.append(f"Alloy fragments: {alloy:,}")
+        components = items.add_components(s, enemy_lost)
+        if components:
+            notes.append(f"Intricate components: {components:,}")
         if own_units.get(flagships.BEHEMOTH):
             lost_points = sum(sum(eco.unit_cost(t)) * n for t, n in enemy_lost.items() if t in eco.UNITS) // 1000
             notes.append(f"Dark energy: {flagships.gather_dark_energy(s, lost_points):,}")

@@ -23,7 +23,7 @@ def test_view_buy_and_install(monkeypatch):
     assert attack["lv"] == 0 and attack["devices"] == 1 and attack["item_id"] == devices.item_id(3, 1)
 
     shop = decrypt_json(c.get("/world/1/game_items?category=4"))["items"]
-    assert {i["id"] for i in shop} == {i.id for i in devices.catalog()}
+    assert {i["id"] for i in shop} >= {i.id for i in devices.catalog()}
     assert c.post("/world/1/users/use_device", content=f"fleet_type=7&id={attack['item_id']}").status_code == 400
     decrypt_json(c.post(f"/world/1/users/{uid}/buy_game_item", content=f"game_item_id={attack['item_id']}&number=3"))
     assert c.post(f"/world/1/users/{uid}/use_game_item",
@@ -41,7 +41,7 @@ def test_view_buy_and_install(monkeypatch):
     assert c.post("/world/1/users/use_device", content=f"fleet_type=24&id={attack['item_id']}").status_code == 400
     assert c.post("/world/1/users/use_device",
                   content=f"fleet_type=20&id={devices.item_id(4, 2)}").status_code == 400
-    assert c.get("/world/1/users/fleet_devices?fleet_type=26").status_code == 400
+    assert c.get("/world/1/users/fleet_devices?fleet_type=30").status_code == 400
 
 
 def test_score_limit_and_speed(monkeypatch):

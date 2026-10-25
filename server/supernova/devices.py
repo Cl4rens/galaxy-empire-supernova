@@ -19,9 +19,9 @@ PERCENT = {ARMOUR: 3, SHIELD: 3, ATTACK: 3, SPEED: 2}  # bonus per level
 PRICE = {1: 10, 2: 30}  # dark matter per device of grade 1 / 2
 MAX_LEVEL = 10
 UNLOCK_SCORE = 100_000  # the client opens the screen from here on
-# ship types the client offers, and the device grade they take; 25-29 do not exist here
-SHIP_GRADES = {5: 1, 6: 1, 7: 1, 20: 2, 23: 2, 24: 2}
-DEFENSE = {20}  # defense does not move, so it gets no thrusters
+# ship types the client offers, and the device grade they take
+SHIP_GRADES = {5: 1, 6: 1, 7: 1, 20: 2, 23: 2, 24: 2, 25: 2, 26: 2, 27: 2, 28: 2, 29: 2}
+DEFENSE = {20, 27}  # defense does not move, so it gets no thrusters
 
 
 class DeviceError(planet_rules.GameError):
@@ -38,7 +38,7 @@ def catalog() -> list["items.Item"]:
     return [items.Item(item_id(t, g), items.OTHER, f"{grades[g]} {NAMES[t]}",
                        f"Device for ship modification: +{PERCENT[t]} % per level. "
                        + ("For battlecruisers, bombers and destroyers." if g == 1
-                          else "For plasma cannons, interceptors and Iron Behemoths."),
+                          else "For plasma and proton cannons and the advanced ships."),
                        ICONS[t], PRICE[g], device=(t, g))
             for t in NAMES for g in PRICE]
 

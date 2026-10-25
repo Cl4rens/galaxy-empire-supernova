@@ -37,6 +37,14 @@ def fleet(planet: dict, ftype: int) -> dict:
     return next(f for f in planet["fleets"] if f["fleet_type"] == ftype)
 
 
+def add_missing_fleets(planet: dict) -> None:
+    """Planets created before a unit type existed get an entry for it."""
+    have = {f["fleet_type"] for f in planet["fleets"]}
+    for ftype in [*eco.UNITS, *eco.SPECIAL_UNITS]:
+        if ftype not in have:
+            planet["fleets"].append({"fleet_id": planet["planet_id"] * 100 + ftype, "fleet_type": ftype, "amount": 0})
+
+
 def is_moon(planet: dict) -> bool:
     return planet.get("planet_type") == PLANET_TYPE_MOON
 
@@ -193,6 +201,7 @@ def tick(empire: dict, now: float | None = None) -> None:
     now = time.time() if now is None else now
     _dark_matter_income(empire, now)
     for planet in bodies(empire):
+        add_missing_fleets(planet)
         _tick_planet(empire, planet, now)
         planet["transmit_recharge_event"] = [e for e in planet.get("transmit_recharge_event", [])
                                              if e["finish_time"] > now]

@@ -27,7 +27,14 @@ class CombatStats:
     hull: int  # structural integrity (metal + crystal) / 10
 
 
-HULL = {13: 100, 23: 160_000, 24: 350_000}  # where the wiki's armour is not (metal + crystal) / 10
+# where the wiki's armour is not (metal + crystal) / 10; the Reaper's values are Supernova's own
+HULL = {13: 100, 23: 160_000, 24: 350_000, 25: 150_000, 26: 450_000, 27: 120_000, 28: 1, 29: 400_000}
+
+DEVOURER, PROTON_CANNON, ANNIHILATOR, REAPER = 25, 27, 28, 29
+LARGE_HULL = 10_000  # proton cannons do a fifth of their damage to units below this hull
+ANNIHILATOR_DAMAGE = 500_000  # per explosion, shared by the enemy's unit types
+ANNIHILATOR_MULTIPLIER = {26: 5, 25: 4, 23: 4, 24: 3}  # wiki: bonus damage against these
+ANNIHILATOR_TRIGGERS = (23, 24, 25, 26)  # explosions go on while the enemy has two of these
 
 
 def _hull(utype: int) -> int:
@@ -42,6 +49,7 @@ STATS: dict[int, CombatStats] = {t: CombatStats(w, s, _hull(t)) for t, (w, s) in
     7: (2000, 500), 8: (200000, 50000), 9: (5, 10), 10: (5, 25), 11: (50, 100), 12: (1, 10),
     13: (0, 0), 14: (1, 1), 15: (80, 20), 16: (100, 25), 17: (250, 100), 18: (1100, 200),
     19: (150, 500), 20: (3000, 300), 21: (1, 2000), 22: (1, 10000), 23: (7000, 1500), 24: (5500, 4000),
+    25: (6500, 1500), 26: (5000, 3000), 27: (5000, 5000), 28: (0, 1), 29: (8000, 3000),
 }.items()}
 
 # shooter -> {target: rapid fire value}
@@ -59,6 +67,10 @@ RAPID_FIRE: dict[int, dict[int, int]] = {
     19: {24: 5},
     23: {7: 10, 13: 5, 14: 5, 15: 10},
     24: {5: 5, 7: 10, 13: 10, 17: 5, 18: 5, 23: 10},
+    25: {1: 20, 10: 10, 23: 5, 24: 5},
+    26: {1: 10, 7: 5, 10: 15, 24: 5, 25: 5},
+    27: {23: 12, 25: 12, 26: 12},
+    29: {7: 10, 24: 5, 25: 5, 26: 5},
 }
 
 
@@ -112,17 +124,32 @@ def _fire(shooters: list, side: Side, targets: list, target_side: Side, rng: ran
     shots = damage = absorbed = 0
     if not targets:
         return 0, 0, 0
+    largest = None  # Reapers go for the biggest ships first
     for utype, _, _ in shooters:
         weapon = side.weapon_of(utype)
+        if weapon <= 0:
+            continue
         rapid = RAPID_FIRE.get(utype, {})
         while True:
-            target = targets[rng.randrange(len(targets))]
+            if utype == REAPER:
+                if largest is None:
+                    top = max(STATS[t[0]].hull for t in targets)
+                    largest = [t for t in targets if STATS[t[0]].hull == top]
+                target = largest[rng.randrange(len(largest))]
+            else:
+                target = targets[rng.randrange(len(targets))]
             shots += 1
             ttype, hull, shield = target
             max_shield = target_side.shield_of(ttype)
-            if hull > 0 and weapon >= 0.01 * max_shield:
-                hit = weapon
-                if shield >= hit:
+            hit = weapon
+            if utype == PROTON_CANNON and STATS[ttype].hull < LARGE_HULL:
+                hit = weapon / 5
+            pierce = utype == DEVOURER  # its shots pass through shields
+            if hull > 0 and (pierce or hit >= 0.01 * max_shield):
+                if pierce:
+                    target[1] -= hit
+                    damage += int(hit)
+                elif shield >= hit:
                     target[2] -= hit
                     absorbed += int(hit)
                 else:
@@ -153,10 +180,35 @@ def _fleet_list(units: dict[int, int]) -> list[dict]:
     return [{"fleet_type": t, "amount": n} for t, n in sorted(units.items()) if n]
 
 
+def annihilate(attacker: Side, defender: Side) -> tuple[dict[int, int], dict[int, int], int]:
+    """The attacker's Annihilators explode before the battle, one after the other, as long as the
+    defender has at least two kinds of advanced ships (interceptors, Behemoths, Devourers,
+    Titanenergetic Frigates). Each explosion hits every enemy unit type except Reapers; the more
+    types, the less damage each takes. Defenders' Annihilators never explode.
+    Returns (attacker units left, defender units left, explosions)."""
+    att, dfn = dict(attacker.units), dict(defender.units)
+    explosions = 0
+    while att.get(ANNIHILATOR, 0) > 0 and sum(1 for t in ANNIHILATOR_TRIGGERS if dfn.get(t)) >= 2:
+        types = [t for t, n in dfn.items() if n > 0 and t != REAPER]
+        share = ANNIHILATOR_DAMAGE * attacker.weapon_factor() / len(types)
+        for t in types:
+            killed = max(1, int(share * ANNIHILATOR_MULTIPLIER.get(t, 1) // defender.hull_of(t)))
+            dfn[t] = max(0, dfn[t] - killed)
+        att[ANNIHILATOR] -= 1
+        explosions += 1
+    return ({t: n for t, n in att.items() if n > 0}, {t: n for t, n in dfn.items() if n > 0}, explosions)
+
+
 def fight(attacker: Side, defender: Side, rng: random.Random | None = None) -> dict:
     """Run a battle. Returns rounds, survivors, winner ("attacker", "defender" or "draw")."""
     rng = rng or random.Random()
-    att, dfn = _expand(attacker), _expand(defender)
+    att_units, dfn_units, explosions = annihilate(attacker, defender)
+    att = _expand(Side(attacker.name, att_units, attacker.weapons, attacker.shielding, attacker.armour,
+                       attacker.attack_percent, attacker.shield_percent, attacker.armour_percent,
+                       attacker.unit_percent))
+    dfn = _expand(Side(defender.name, dfn_units, defender.weapons, defender.shielding, defender.armour,
+                       defender.attack_percent, defender.shield_percent, defender.armour_percent,
+                       defender.unit_percent))
     rounds = []
     for _ in range(MAX_ROUNDS):
         if not att or not dfn:
@@ -183,7 +235,8 @@ def fight(attacker: Side, defender: Side, rng: random.Random | None = None) -> d
         winner = "draw"
     else:
         winner = "draw"
-    return {"rounds": rounds, "attacker_left": _survivors(att), "defender_left": _survivors(dfn), "winner": winner}
+    return {"rounds": rounds, "attacker_left": _survivors(att), "defender_left": _survivors(dfn), "winner": winner,
+            "explosions": explosions}
 
 
 def losses(before: dict[int, int], after: dict[int, int]) -> dict[int, int]:
