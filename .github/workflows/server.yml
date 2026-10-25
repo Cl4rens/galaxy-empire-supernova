@@ -2,9 +2,9 @@ name: Server
 
 on:
   push:
-    paths: ["server/**", "tools/**", "docker-compose.yml", ".github/workflows/server.yml"]
+    paths: ["server/**", "tools/**", "client/**", "docker-compose.yml", ".github/workflows/server.yml"]
   pull_request:
-    paths: ["server/**", "tools/**", "docker-compose.yml", ".github/workflows/server.yml"]
+    paths: ["server/**", "tools/**", "client/**", "docker-compose.yml", ".github/workflows/server.yml"]
 
 jobs:
   test:
@@ -29,6 +29,19 @@ jobs:
           python-version: "3.12"
       - run: pip install pytest
       - run: python -m pytest -q tools/tests
+
+  client:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pytest
+      - run: python -m pytest -q tests
 
   docker:
     runs-on: ubuntu-latest

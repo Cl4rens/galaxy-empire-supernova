@@ -42,3 +42,7 @@ desktop.ini
 
 # Server data (database)
 server/data/
+
+# Client engine storage (saved game data of the engine)
+client-save/
+client/client-save/

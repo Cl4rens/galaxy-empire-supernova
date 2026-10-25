@@ -230,8 +230,10 @@ the game keeps the scripts it unpacked on its first start and would not see the 
 - [x] Growth packages; chests with alliance members instead of Facebook
 - [x] Operation: backups, events on a schedule, bans, statistics, health check
 - [x] Runs on Android 6-16 without crashes or permission dialogs
-- [ ] Support for 64-bit-only devices: needs an open client engine that runs the original Lua
-      scripts and Flash UI from the player's APK (idea, not started)
+- [x] Own client engine, stage 1: the original Lua scripts run on 64-bit and play against the
+      server, without tap4fun's native code ([`client/`](client/README.md))
+- [ ] Own client engine, stage 2: drawing the Flash screens (Ruffle), stage 3: Android app for
+      64-bit-only phones
 - [ ] Game logic: buildings, research, fleets, combat, alliances
 
 ## What we know so far
@@ -251,6 +253,7 @@ apk/      your original APK goes here (git-ignored)
 docs/     research notes: file formats, protocol, game data
 tools/    pak/Lua tools and the APK patcher
 server/   the reimplemented game server (Python, FastAPI)
+client/   our own client engine for 64-bit-only phones (stage 1: headless)
 work/     local scratch space for extracted game files (git-ignored)
 ```
 
