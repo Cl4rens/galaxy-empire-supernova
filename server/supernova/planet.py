@@ -566,6 +566,13 @@ def client_view(empire: dict, now: float) -> dict:
         # no projection: the client checks for 0, not for empty values
         "planet_icon": planet.get("planet_icon") or 0,
         "is_radar_on": planet.get("radar_on", True),
+        # resource settings: energy each mine uses (negative), satellites' energy, the share of
+        # the needed energy that is there
+        **{f"{res}_energy": -round(eco.mine_energy(m, level(planet, m)) * planet[f"{res}_mine_percent"] / 100)
+           for res, m in zip(RESOURCES, eco.MINES)},
+        "solar_satellite_energy": round(rates["satellite_energy"]),
+        "produce_percent": min(100, round(100 * rates["energy_max"] / rates["energy_used"]))
+        if rates["energy_used"] else 100,
         "radar_energy": radar_energy(planet),
         "planet_icon_info": planet.get("planet_icon_info") or 0,
     })
