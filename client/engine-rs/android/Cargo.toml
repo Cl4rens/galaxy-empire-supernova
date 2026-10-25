@@ -1,0 +1,18 @@
+[package]
+name = "supernova-android"
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-only"
+description = "Supernova's client engine as an Android app (NativeActivity)"
+publish = false
+
+[lib]
+name = "supernova"
+crate-type = ["cdylib"]
+
+[dependencies]
+supernova-engine = { path = ".." }
+anyhow = "1.0"
+tracing = "0.1.43"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+winit = { version = "0.30.13", features = ["android-native-activity"] }

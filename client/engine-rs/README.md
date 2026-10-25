@@ -60,3 +60,38 @@ filled from the ETC1 textures, and text fields draw with the game's `data2/Arial
 writes the converted screens as SWF files, and `RUST_LOG=supernova_engine=debug` shows the
 requests and ActionScript calls. `avm1-dump <screen.swf> [text]` prints a screen's
 ActionScript.
+
+## Android app
+
+`android/` makes the engine an Android app for 64-bit phones (arm64-v8a) and emulators (x86_64):
+a NativeActivity without Java code that runs `libsupernova.so` (`android/src/lib.rs`, with the
+same window code as the desktop, `src/app.rs`). Nothing from the game is in the app.
+
+Build (needs the Android SDK with build-tools, a platform and the NDK, plus
+[cargo-ndk](https://github.com/bbqsrc/cargo-ndk); no Gradle):
+
+```sh
+rustup target add aarch64-linux-android x86_64-linux-android
+cargo install cargo-ndk
+python android/build_apk.py          # target/android/supernova.apk
+```
+
+Set it up on the phone:
+
+1. Install `supernova.apk` and start it once (it creates its folder and closes).
+2. Copy your own Galaxy Empire 1.9.36 APK into `Android/data/org.supernova.galaxyempire/files/`
+   (USB or a file manager; any name ending in `.apk`).
+3. Put a `server.txt` with the server address next to it, e.g. `http://192.168.1.20:8000`.
+   Without it the app uses `http://10.0.2.2:8000`, the computer an emulator runs on.
+4. Start the app.
+
+If it closes at start, `error.txt` in the same folder says why; the log is in logcat under the
+tag `supernova`.
+
+With adb:
+
+```sh
+adb install -r target/android/supernova.apk
+adb push galaxy-empire-1-9-36.apk /sdcard/Android/data/org.supernova.galaxyempire/files/
+adb shell am start -n org.supernova.galaxyempire/android.app.NativeActivity
+```

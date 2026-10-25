@@ -7,3 +7,4 @@ pub mod engine;
 pub mod convert;
 pub mod screens;
 pub mod compositor;
+pub mod app;

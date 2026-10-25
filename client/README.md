@@ -77,8 +77,10 @@ player, connected like gameswf did it (`InvokeASCallback`, `fscommand`, `Replace
 native `btn...` buttons, text with `data2/Arial.ttf`). In a window it logs in and plays: news,
 city, fleet screens and buttons work. Still open: sound, a few placeholder texts.
 
-## Stage 3: an Android app
+## Stage 3: an Android app (runs)
 
-Ruffle already runs on Android ([ruffle-android](https://github.com/ruffle-rs/ruffle-android)),
-built for arm64. The Supernova app will be that kind of app: it asks for the player's APK once,
-reads the game files from it, and runs the Rust engine. Nothing from the game is shipped.
+[`engine-rs/android`](engine-rs/README.md#android-app) builds the engine as an Android app for
+arm64 phones and x86_64 emulators. The player copies their own APK into the app's folder; the
+app reads the game files from it at run time and ships nothing from the game. Tested on
+Android 13 (BlueStacks, x86_64): login, news, city, tutorial dialogs, going to the background
+and back.
