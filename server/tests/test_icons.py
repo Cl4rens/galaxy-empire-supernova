@@ -8,7 +8,7 @@ from supernova.app import app
 
 from . import test_server  # noqa: F401 (sets a client key, without which the world answers 503)
 
-PNG = icons.PNG + b"picture"
+PNG = bytes([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) + b"picture"  # served as it is
 
 
 @pytest.fixture
@@ -45,16 +45,39 @@ def test_server_serves_fetched_pictures_only(icon_dir):
     assert client.get("/world/1/icons/..%2Fsupernova.db").status_code == 404
 
 
+def _image(size, color, fmt):
+    import io
+
+    from PIL import Image
+    out = io.BytesIO()
+    Image.new("RGBA", size, color).save(out, fmt)
+    return out.getvalue()
+
+
 def test_import_takes_the_pictures_saved_from_the_wiki(icon_dir, tmp_path_factory, monkeypatch):
-    monkeypatch.setattr(icons, "WIKI_FILES", {"a.png": "A_lv2@2x.png", "b.png": "A_lv2@2x.png", "c.png": "C.png",
-                                              "d.png": "D.png"})
+    from PIL import Image
+    monkeypatch.setattr(icons, "WIKI_FILES", {
+        "a.png": "A_lv2@2x.png", "b.png": "A_lv2@2x.png", "c.png": "C.png", "d.png": "D.png",
+        "e.png": icons.Source("E_store-1.png"),
+        "f.png": icons.Source("F.png", crop=(10, 10, 60, 60), cover=(0, 0, 20, 20))})
     saved = tmp_path_factory.mktemp("saved")
-    (saved / "A lv2@2x.png").write_bytes(PNG)  # a browser may save the name with spaces
+    (saved / "A lv2@2x.png").write_bytes(_image((108, 108), "red", "PNG"))  # a browser may use spaces
     (saved / "C.png").write_bytes(b"<html>not a picture</html>")
-    assert icons.missing() == ["A_lv2@2x.png", "C.png", "D.png"]
+    (saved / "E_store-1.webp").write_bytes(_image((160, 144), "blue", "WEBP"))  # browsers save WebP
+    f = Image.new("RGBA", (100, 80), "green")
+    f.paste((255, 255, 255, 255), (10, 10, 25, 25))  # a badge in the corner of the cut
+    import io
+    out = io.BytesIO()
+    f.save(out, "PNG")
+    (saved / "F.png").write_bytes(out.getvalue())
+    assert icons.missing() == ["A_lv2@2x.png", "C.png", "D.png", "E_store-1.png", "F.png"]
     imported, problems = icons.import_folder(saved)
-    assert imported == ["a.png", "b.png"]
-    assert (icon_dir / "a.png").read_bytes() == PNG and (icon_dir / "b.png").read_bytes() == PNG
-    assert any(p.startswith("C.png: not a PNG") for p in problems)
+    assert imported == ["a.png", "b.png", "e.png", "f.png"]
+    for name in imported:
+        assert Image.open(icon_dir / name).size == (icons.SIZE, icons.SIZE)
+    assert Image.open(icon_dir / "e.png").convert("RGB").getpixel((54, 54)) == (0, 0, 255)
+    corner = Image.open(icon_dir / "f.png").convert("RGB").getpixel((10, 10))
+    assert corner[1] > 100 and corner[0] < 200  # the badge is painted over with the green around
+    assert any(p.startswith("C.png:") for p in problems)
     assert any(p.startswith("D.png: not in") for p in problems)
     assert icons.missing() == ["C.png", "D.png"]

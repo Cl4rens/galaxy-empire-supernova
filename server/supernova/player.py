@@ -10,7 +10,7 @@ import time
 from . import economy as eco
 from . import checkin, config, fleets, fortresses, gifts, growth, mails, ranking
 from . import planet as planet_rules
-from . import universe
+from . import universe, vip
 
 # Planet lots 1-3 are reserved for the mines; free building lots are 4-15.
 MINE_POSITIONS = {eco.METAL_MINE: 1, eco.CRYSTAL_MINE: 2, eco.DEUTERIUM_MINE: 3}
@@ -179,7 +179,7 @@ def planets_info(empire: dict) -> list[dict]:
 
 
 HIDDEN_EMPIRE_FIELDS = ("main_planet", "planets", "current_planet_id", "dark_matter_income", "fleet_devices",
-                        "officers")
+                        "officers", "vip")
 PRIVATE_STATE = ("empire", "next_event_id", "quests", "bookmarks", "checkin", "kryptons", "flagships", "ecm",
                  "fortress", "items", "daily", "growth_claimed", "gc_bought", "arena_points", "invited_by",
                  "chest")
@@ -189,7 +189,7 @@ def empire_view(state: dict, now: float) -> dict:
     """The empire object as the client expects it."""
     empire = state["empire"]
     view = {k: v for k, v in empire.items() if k not in HIDDEN_EMPIRE_FIELDS}
-    view["vip_info"] = {"vip_level": 0, "vip_left": 0}  # there is no VIP system
+    view["vip_info"] = vip.summary_view(state, now)
     view.update(score=ranking.points(state)["score"], rank=ranking.rank_of(state["user_id"]),
                 gift_id=gifts.pending_id(state["user_id"]))
     return dict(view, main_planet=planet_rules.client_view(empire, now), **planet_rules.researches_view(empire),
@@ -201,7 +201,7 @@ def empire_summary(state: dict) -> dict:
     """Empire fields without the planet, for responses that send the planet separately."""
     empire = state["empire"]
     summary = {k: v for k, v in empire.items() if k not in HIDDEN_EMPIRE_FIELDS}
-    summary["vip_info"] = {"vip_level": 0, "vip_left": 0}  # there is no VIP system
+    summary["vip_info"] = vip.summary_view(state, time.time())
     summary["planets_info"] = planets_info(empire)
     summary.update(planet_rules.researches_view(empire))
     summary["fleet_hanging_events"] = fleets.events_view(empire["user_id"])
@@ -214,6 +214,7 @@ def empire_summary(state: dict) -> dict:
 def login_response(state: dict, now: float) -> dict:
     response = {k: v for k, v in state.items() if k not in PRIVATE_STATE}
     response["empire"] = empire_view(state, now)
+    response["vip_info"] = vip.info_view(state, now)
     response["checkin_days"] = checkin.unclaimed(state)
     response["grows"] = growth.summary(state)
     response["empire"]["new_message_count"] = mails.unread_count(state["user_id"])

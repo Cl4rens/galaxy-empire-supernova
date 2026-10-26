@@ -223,12 +223,12 @@ def _deliver_fleets(planet: dict, now: float) -> None:
     """Hand over every ship/defense unit of the shipyard queue finished by `now`."""
     for order in list(planet["fleet_building_events"]):
         if order["start_time"] > now:
-            break
+            continue  # later orders may run side by side with this one (VIP)
         done = min(order["total_count"], int((now - order["start_time"]) // order["unit_seconds"]))
         fleet(planet, order["fleet_type"])["amount"] += done - order["delivered"]
         order["delivered"] = done
         if done < order["total_count"]:
-            break
+            continue
         planet["fleet_building_events"].remove(order)
 
 
@@ -236,8 +236,11 @@ def tick(empire: dict, now: float | None = None) -> None:
     """Bring every planet up to `now`: production, constructions, research and shipyard."""
     now = time.time() if now is None else now
     _dark_matter_income(empire, now)
-    from . import officers  # officers is small, but keeps this module free of shop rules
+    from . import officers, vip  # small, but keep this module free of shop rules
     boost = officers.boosts(empire, now)
+    for key, benefit in (("build", "build"), ("research", "research"), ("mines", "production"),
+                         ("ships", "shipyard")):
+        boost[key] = boost.get(key, 0) + vip.benefit(empire, benefit, now)
     for planet in bodies(empire):
         add_missing_fleets(planet)
         planet["officer"] = boost
@@ -249,7 +252,9 @@ def tick(empire: dict, now: float | None = None) -> None:
 def _dark_matter_income(empire: dict, now: float) -> None:
     """config.DARK_MATTER_PER_DAY, paid out in whole units as time passes."""
     income = empire.setdefault("dark_matter_income", {"time": now, "fraction": 0.0})
-    earned = income["fraction"] + config.DARK_MATTER_PER_DAY * max(0.0, now - income["time"]) / 86400
+    from . import vip
+    per_day = config.DARK_MATTER_PER_DAY * (1 + vip.benefit(empire, "dark_matter", now) / 100)
+    earned = income["fraction"] + per_day * max(0.0, now - income["time"]) / 86400
     income["time"] = now
     whole = int(earned)
     income["fraction"] = earned - whole
@@ -311,8 +316,11 @@ def start_building_event(empire: dict, state: dict, building_id: int, event_type
     """Start upgrading or tearing down a building. Returns the changed building."""
     planet = empire["main_planet"]
     tick(empire, now)
-    if planet["building_events"]:
+    from . import vip
+    if len(planet["building_events"]) >= 1 + vip.benefit(empire, "build_queue", now):
         raise GameError("Another building is already under construction")
+    if any(e["building_id"] == building_id for e in planet["building_events"]):
+        raise GameError("This building is already under construction")
     if empire["research_upgrading_events"] and building_id == building(planet, eco.RESEARCH_LAB)["building_id"]:
         raise GameError("The research lab cannot be upgraded while research is running")
     if planet["fleet_building_events"] and building_id in (building(planet, shipyard_type(planet))["building_id"],
@@ -395,8 +403,12 @@ def start_research(empire: dict, state: dict, research_id: int, now: float) -> d
     research = next((r for r in empire["researches"] if r["research_id"] == research_id), None)
     if research is None or research["research_type"] not in eco.RESEARCHES:
         raise GameError("Unknown research")
-    if empire["research_upgrading_events"]:
+    from . import vip
+    if len(empire["research_upgrading_events"]) >= 1 + vip.benefit(empire, "research_queue", now):
         raise GameError("Another research is already running")
+    if any(e.get("research_id") == research_id or e.get("research_type") == research["research_type"]
+           for e in empire["research_upgrading_events"]):
+        raise GameError("This research is already running")
     lab = building(planet, eco.RESEARCH_LAB)
     if any(e["building_id"] == lab["building_id"] for e in planet["building_events"]):
         raise GameError("The research lab is being upgraded")
@@ -479,7 +491,13 @@ def start_fleet_order(empire: dict, state: dict, fleet_id: int, count: int, now:
     seconds = eco.unit_seconds(ftype, level(planet, shipyard_type(planet)), level(planet, eco.NANITE_FACTORY))
     if ftype not in eco.SHIPS:
         seconds = _faster(planet, "defense", seconds)
-    queue_end = max((o["finish_time"] for o in planet["fleet_building_events"]), default=now)
+    else:
+        seconds = _faster(planet, "ships", seconds)
+    # orders run one after another; a VIP ship building queue runs that many more side by side
+    from . import vip
+    lines = 1 + vip.benefit(empire, "shipyard_queue", now)
+    ends = sorted(o["finish_time"] for o in planet["fleet_building_events"])
+    queue_end = ends[-lines] if len(ends) >= lines else now
     start = int(max(now, queue_end))
     planet["fleet_building_events"].append({
         "event_id": _next_event_id(state),
@@ -655,7 +673,7 @@ def fleet_view(planet: dict, f: dict) -> dict:
             "metal_require": rule.metal,
             "crystal_require": rule.crystal,
             "deuterium_require": rule.deuterium,
-            "up_time": _faster(planet, "defense" if ftype not in eco.SHIPS else "",
+            "up_time": _faster(planet, "defense" if ftype not in eco.SHIPS else "ships",
                                eco.unit_seconds(ftype, level(planet, shipyard_type(planet)),
                                                 level(planet, eco.NANITE_FACTORY))),
             "tech_tree": _tech_tree(rule),

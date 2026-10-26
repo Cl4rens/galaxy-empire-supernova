@@ -17,7 +17,7 @@ from . import devices, ecm, flagships, fortresses, items, kryptons, lordship, no
 from . import daily, icons, officers, repairs
 from . import galaxy_challenge as gc
 from . import arena
-from . import chests, growth, promotions
+from . import chests, growth, promotions, vip
 from . import economy as eco
 from . import planet as planet_rules
 from . import universe
@@ -122,6 +122,7 @@ def enter_world(player_id: int) -> Response:
             planet_rules.switch_planet(state["empire"], parent["planet_id"])
         planet_rules.tick(state["empire"], now)
         checkin.visit(state, now)
+        vip.daily_login(state, now)
         content = player.login_response(state, now)
     return logged_in(player_id, content)
 
@@ -377,8 +378,22 @@ async def change_password(user_id: int, request: Request, player_id: int = Depen
 
 @router.post("/users/{user_id}/vip_info")
 def vip_info(user_id: int, player_id: int = Depends(current_player)):
-    """There is no VIP system; the task detail screen asks anyway."""
-    return encrypted_json({"vip_info": {"vip_level": 0, "vip_left": 0}})
+    now = time.time()
+    with db.player_state(player_id) as state:
+        vip.daily_login(state, now)  # a game left running over midnight
+        return encrypted_json({"vip_info": vip.info_view(state, now)})
+
+
+@router.post("/users/{user_id}/vip_effect")
+def vip_effect(user_id: int, player_id: int = Depends(current_player)):
+    return encrypted_json(vip.effect_view())
+
+
+@router.post("/game_items/vip_item")
+async def vip_items(world_id: int, request: Request, player_id: int = Depends(current_player)):
+    """The VIP store: points items (type add_score) or activation items (add_time)."""
+    kind = (await form(request)).get("type", "add_score")
+    return encrypted_json({"items": items.vip_shop(items.VIP_POINTS if kind == "add_score" else items.VIP_TIME)})
 
 
 @router.get("/users/{user_id}/game_items_shortcuts")

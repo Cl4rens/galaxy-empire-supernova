@@ -30,12 +30,15 @@ def unit_seconds(planet: dict, ftype: int) -> int:
     return max(1, eco.build_seconds(rule.metal, rule.crystal, robotics, nanite) // 2)
 
 
-def add_damaged(planet: dict, lost_ships: dict[int, int]) -> dict[int, int]:
-    """After a defense: keep part of the lost ships as damaged. Returns what was kept."""
+def add_damaged(planet: dict, lost_ships: dict[int, int], empire: dict | None = None) -> dict[int, int]:
+    """After a defense: keep part of the lost ships as damaged (more with VIP battle loss
+    recovery). Returns what was kept."""
+    from . import vip
     d = dock(planet)
     if not d["switch"]:
         return {}
-    kept = {t: int(n * REPAIR_SHARE) for t, n in lost_ships.items() if t in eco.SHIPS and int(n * REPAIR_SHARE)}
+    share = REPAIR_SHARE + (vip.benefit(empire, "battle_recovery") / 100 if empire else 0)
+    kept = {t: int(n * share) for t, n in lost_ships.items() if t in eco.SHIPS and int(n * share)}
     for t, n in kept.items():
         d["damaged"][str(t)] = d["damaged"].get(str(t), 0) + n
     return kept

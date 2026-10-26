@@ -42,6 +42,8 @@ desktop.ini
 
 # Server data (database)
 server/data/
+# pictures saved from the wiki for import-icons (game art)
+server/imported icons/
 
 # Client engine storage (saved game data of the engine)
 client-save/

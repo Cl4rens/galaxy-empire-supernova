@@ -673,7 +673,9 @@ category 4.
 |---------|--------|
 | `GET daily_tasks` | `{list: [{id, tag, title, desc, status (0 running, 1 done), process, require_number, rewards_desc, rewards_info: [{img, number}]}]}`; collected tasks are left out |
 | `POST daily_tasks/receive_reward` `id` | `{info, empire, planet}` |
-| `POST users/{id}/vip_info` | `{vip_info: {vip_level: 0, vip_left: 0}}` (asked by the task detail screen) |
+| `POST users/{id}/vip_info` | `{vip_info: {vip_level, vip_left (seconds of benefits), vip_score, vip_curr_lvl_score, vip_next_lvl_score, tomorrow_score, vip_detail}}` (supernova/vip.py) |
+| `POST users/{id}/vip_effect` | `{effect: [[level, {need_score}, [{name, value}]]]}`, one entry per level |
+| `POST game_items/vip_item` `type` (`add_score` / `add_time`) | `{items: [...]}` like the item shop; points items count when bought (`buy_game_item`), activation items go to the capsule (tab "Other") |
 
 The client hides the daily tasks button (`GameUICityUIUp:SetTap4funButtonVisible` passes
 `false`); the patcher flips that one value (`tools/client_tweaks.py`).
@@ -764,7 +766,7 @@ in `GameUITop:hanglde_updateExchangeItem`. The patcher fixes that check (client_
 | `POST promotions/apply_newbie_invite_code` `code` | a string (the client shows it) |
 | `GET in_app_purchases/{store}` | `{purchase: []}`; `GET in_app_purchases/{store}/packages`: `{packages: []}`. Supernova sells nothing for money; the menu stays empty (it then shows 0 dark matter / credits, because it only reads them when the store answers). |
 
-`gift_bags` and `game_items/vip_item` are never opened by the 1.9.36 client.
+`gift_bags` is never opened by the 1.9.36 client.
 
 ### Growth packages and chests
 

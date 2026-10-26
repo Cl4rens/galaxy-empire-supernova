@@ -10,34 +10,46 @@ pictures.
 """
 
 import hashlib
+import io
 import re
-import shutil
+from dataclasses import dataclass
 from pathlib import Path
 
 from . import config
 
 WIKI_FILE_PAGE = "https://galaxyempire.fandom.com/wiki/File:"
-PNG = b"\x89PNG\r\n\x1a\n"
+SIZE = 108  # the game's item pictures
 NAME = re.compile(r"[A-Za-z0-9_.-]+\.png")
 # the client keeps a downloaded picture under its name for good, so a picture's name carries a
 # mark of its content: "officer_geologist_1-3fa2b1c0.png"
 VERSIONED = re.compile(r"(?P<stem>[A-Za-z0-9_.-]+)-[0-9a-f]{8}\.png")
 
-# the name items use -> the wiki's file (the game's own pictures, 108x108 PNG)
+@dataclass(frozen=True)
+class Source:
+    """A wiki file and how it becomes an item picture: cut to `crop` (left, top, right, bottom;
+    else the middle square), with the ellipse `cover` (in the cut picture's pixels) painted over
+    from its surroundings."""
+    wiki: str
+    crop: tuple[int, int, int, int] | None = None
+    cover: tuple[int, int, int, int] | None = None
+
+
+# the name items use -> the wiki's file (the game's own pictures, 108x108)
 WIKI_FILES = {
-    "officer_commander_1.png": "Commander_lv2@2x.png",  # the wiki has no level 1 picture of some
+    # the level 1 officers are only pictured in the store's screenshots (without a frame)
+    "officer_commander_1.png": Source("Commander_store-1.png"),
     "officer_commander_2.png": "Commander_lv2@2x.png",
     "officer_commander_3.png": "Commander_lv3@2x.png",
-    "officer_engineer_1.png": "Engineer_lv2@2x.png",
+    "officer_engineer_1.png": Source("Engineer_store-1.png"),
     "officer_engineer_2.png": "Engineer_lv2@2x.png",
     "officer_engineer_3.png": "Engineer_lv3@2x.png",
-    "officer_technocrat_1.png": "Technocrat_lv2@2x.png",
+    "officer_technocrat_1.png": Source("Technocrat_store-1.png"),
     "officer_technocrat_2.png": "Technocrat_lv2@2x.png",
     "officer_technocrat_3.png": "Technocrat_lv3@2x.png",
-    "officer_geologist_1.png": "Geologist@2x.png",
+    "officer_geologist_1.png": Source("Geologist_store-1.png"),
     "officer_geologist_2.png": "Geologist_lv2@2x.png",
     "officer_geologist_3.png": "Geologist_lv3@2x.png",
-    "officer_admiral_1.png": "Admiral_lv2@2x.png",
+    "officer_admiral_1.png": Source("Admiral_store-1.png"),
     "officer_admiral_2.png": "Admiral_lv2@2x.png",
     "officer_admiral_3.png": "Admiral_lv3@2x.png",
     "officer_guider_1.png": "Navigator@2x.png",  # the guider's pictures are named navigator
@@ -48,7 +60,20 @@ WIKI_FILES = {
     "container_gas.png": "Items_gas@2x.png",
     "terraformer.png": "Terraformation@2x.png",
     "ecm_chip.png": "Electronic_warfare_chip.png",
+    # VIP points items (vip.py): the wiki's level badges, which show the points
+    "vip_points_1.png": Source("VIP_100.png"),
+    "vip_points_2.png": Source("VIP_2.png"),
+    "vip_points_3.png": Source("VIP_3.png"),
+    "vip_points_4.png": Source("VIP_4.png"),
+    "vip_points_5.png": Source("VIP_5.png"),
+    "vip_points_6.png": Source("VIP_6.png"),
+    # the wiki only has a screenshot of the store entry: its picture, without the "i" badge
+    "gamma_detector.png": Source("Gamma_Detector_(Large).png", crop=(14, 27, 117, 118), cover=(68, -2, 107, 36)),
 }
+
+
+def _source(entry: "str | Source") -> Source:
+    return entry if isinstance(entry, Source) else Source(entry)
 
 
 def icon_dir() -> Path:
@@ -85,28 +110,52 @@ def pick(name: str, fallback: str) -> str:
 
 def missing() -> list[str]:
     """The wiki files still needed, each once."""
-    return sorted({wiki for name, wiki in WIKI_FILES.items() if not path(name)})
+    return sorted({_source(wiki).wiki for name, wiki in WIKI_FILES.items() if not path(name)})
 
 
 def _saved(folder: Path, wiki: str) -> Path | None:
-    """The file a browser saved for a wiki file (with "_" or " ", in any case)."""
-    wanted = {wiki.lower(), wiki.replace("_", " ").lower()}
+    """The file a browser saved for a wiki file (with "_" or " ", in any case, as PNG or as the
+    WebP the wiki serves to browsers)."""
+    stem = wiki.rsplit(".", 1)[0]
+    wanted = {f"{s}.{ext}".lower() for s in (stem, stem.replace("_", " ")) for ext in ("png", "webp")}
     return next((f for f in folder.iterdir() if f.is_file() and f.name.lower() in wanted), None)
 
 
+def picture(data: bytes, source: Source) -> bytes:
+    """A saved wiki file as an item picture: SIZE x SIZE, PNG."""
+    from PIL import Image, ImageDraw, ImageFilter  # only importing pictures needs Pillow
+
+    image = Image.open(io.BytesIO(data)).convert("RGBA")
+    w, h = image.size
+    side = min(w, h)
+    image = image.crop(source.crop or ((w - side) // 2, (h - side) // 2, (w + side) // 2, (h + side) // 2))
+    if source.cover:
+        mask = Image.new("L", image.size, 0)
+        ImageDraw.Draw(mask).ellipse(source.cover, fill=255)
+        for _ in range(120):  # from the edge inwards
+            image.paste(image.filter(ImageFilter.GaussianBlur(2)), mask=mask)
+    if image.size != (SIZE, SIZE):
+        image = image.resize((SIZE, SIZE), Image.LANCZOS)
+    out = io.BytesIO()
+    image.save(out, "PNG")
+    return out.getvalue()
+
+
 def import_folder(folder: Path) -> tuple[list[str], list[str]]:
-    """Take the pictures saved from the wiki in `folder`; returns (imported, not found or not PNG)."""
+    """Take the pictures saved from the wiki in `folder`; returns (imported, missing or unreadable)."""
     icon_dir().mkdir(parents=True, exist_ok=True)
     imported, problems = [], []
-    for name, wiki in sorted(WIKI_FILES.items()):
-        saved = _saved(folder, wiki)
+    for name, entry in sorted(WIKI_FILES.items()):
+        source = _source(entry)
+        saved = _saved(folder, source.wiki)
         if saved is None:
             if not path(name):
-                problems.append(f"{wiki}: not in {folder}")
+                problems.append(f"{source.wiki}: not in {folder}")
             continue
-        if not saved.read_bytes().startswith(PNG):
-            problems.append(f"{saved.name}: not a PNG (save the original file from the wiki page)")
+        try:
+            (icon_dir() / name).write_bytes(picture(saved.read_bytes(), source))
+        except OSError as e:
+            problems.append(f"{saved.name}: {e}")
             continue
-        shutil.copyfile(saved, icon_dir() / name)
         imported.append(name)
     return imported, sorted(set(problems))

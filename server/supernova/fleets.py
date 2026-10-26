@@ -16,6 +16,7 @@ import random
 import time
 
 from . import combat, config, db, ranking
+from . import vip
 from . import economy as eco
 from . import daily, devices, ecm, flagships, items, officers, kryptons, lordship, mails, npc, protection, quests, repairs
 from . import planet as planet_rules
@@ -62,7 +63,12 @@ def _research_levels(empire: dict) -> dict[int, int]:
 def ship_speed(empire: dict, ftype: int) -> int:
     """Speed with drive research and thrusters (ship modification)."""
     base = eco.ship_speed(ftype, _research_levels(empire))
-    return int(base * (1 + devices.bonus(empire, ftype, devices.SPEED) / 100))
+    return int(base * (1 + (devices.bonus(empire, ftype, devices.SPEED) + vip.benefit(empire, "flight_speed")) / 100))
+
+
+def secure_explorations(empire: dict, now: float | None = None) -> int:
+    """Expeditions a day: npc.EXPEDITIONS_PER_DAY, more with VIP (gamma detectors add beyond)."""
+    return npc.EXPEDITIONS_PER_DAY + vip.benefit(empire, "secure_explorations", now)
 
 
 def _position(p: dict) -> tuple[int, int, int]:
@@ -197,8 +203,10 @@ def send(player_id: int, state: dict, params: dict, now: float) -> None:
     if mission == COLONY and len(empire["planets"]) >= max_planets(empire):
         raise FleetError("Research more Astrophysics to rule more planets")
     if mission == EXPEDITION:
-        if npc.expeditions_today(player_id, now) >= npc.EXPEDITIONS_PER_DAY:
-            raise FleetError("No more expeditions possible today")
+        if npc.expeditions_today(player_id, now) >= secure_explorations(empire, now):
+            if empire.get("secure_explorations", 0) <= 0:
+                raise FleetError("No more secure explorations today; a Gamma Detector gives more")
+            empire["secure_explorations"] -= 1  # a gamma detector's
         npc.record_expedition(player_id, now)
 
     limit = flagships.behemoth_limit(state)
@@ -473,9 +481,12 @@ def _side(name: str, empire: dict, units: dict[int, int], planet: dict | None = 
     return combat.Side(name, units, planet_rules.research_level(empire, eco.WEAPONS_TECH),
                        planet_rules.research_level(empire, eco.SHIELDING_TECH),
                        planet_rules.research_level(empire, eco.ARMOUR_TECH),
-                       kryptons.bonus(planet, "attack") + behemoth_bonus + ecm_bonus + lord.get("increase_attack", 0),
-                       kryptons.bonus(planet, "shield") + ecm_bonus + lord.get("increase_shield", 0),
-                       kryptons.bonus(planet, "armour") + ecm_bonus + lord.get("increase_armour", 0),
+                       kryptons.bonus(planet, "attack") + behemoth_bonus + ecm_bonus + lord.get("increase_attack", 0)
+                       + vip.benefit(empire, "attack"),
+                       kryptons.bonus(planet, "shield") + ecm_bonus + lord.get("increase_shield", 0)
+                       + vip.benefit(empire, "shield"),
+                       kryptons.bonus(planet, "armour") + ecm_bonus + lord.get("increase_armour", 0)
+                       + vip.benefit(empire, "armour"),
                        devices.unit_bonuses(empire), planet_rules.research_level(empire, eco.MISSILE_TECH),
                        officers.defense_save(empire))
 
@@ -665,7 +676,7 @@ def _attack(row, target_owner: int, state: dict, planet: dict) -> str:
     for f in planet["fleets"]:
         if f["fleet_type"] in defend_units:
             f["amount"] = result["defender_left"].get(f["fleet_type"], 0) + result["rebuilt"].get(f["fleet_type"], 0)
-    repaired = repairs.add_damaged(planet, result["defend_lost"])
+    repaired = repairs.add_damaged(planet, result["defend_lost"], state["empire"] if state else None)
     loot = {res: 0 for res in RESOURCES}
     if result["winner"] == "attacker":
         loot = combat.plunder(planet, eco.cargo_capacity(result["attacker_left"]))
@@ -818,6 +829,7 @@ def _expedition(row) -> str:
         expedition_result["fleets"] = [{"fleet_type": t, "amount": n} for t, n in outcome["fleets"].items()]
     elif situation == npc.DARK_MATTER:
         with db.player_state(owner) as state:
+            outcome["dark_matter"] = vip.apply_dark_matter(state["empire"], outcome["dark_matter"])
             state["empire"]["dark_matter_count"] += outcome["dark_matter"]
         expedition_result["dark_matter"] = outcome["dark_matter"]
     elif situation == npc.PIRATES:
@@ -847,7 +859,8 @@ def _expedition(row) -> str:
     mails.send(owner, mails.EXPLORE, mails.SENDER_FLEET, _username(owner), "Expedition report",
                {"mission_type": EXPEDITION, "is_returning": False, "event_info": info,
                 "notify_message": outcome["message"], "expedition_result": expedition_result,
-                "explore_data": {"curr": npc.expeditions_today(owner, now), "max": npc.EXPEDITIONS_PER_DAY}},
+                "explore_data": {"curr": npc.expeditions_today(owner, now),
+                                 "max": secure_explorations(db.load_state(owner)["empire"], now)}},
                now)
     return _fly_home(row, ships, cargo)
 

@@ -152,7 +152,7 @@ python -m supernova.admin events                           # state of both event
 python -m supernova.admin stats                            # players, activity, last backup
 python -m supernova.admin backup                           # write a backup now
 python -m supernova.admin icons-list                       # original item pictures still missing, with their wiki pages
-python -m supernova.admin import-icons <folder>            # take the pictures saved from those pages
+python -m supernova.admin import-icons <folder>            # take the pictures saved from those pages (PNG or WebP)
 python -m supernova.admin ban <username> "<reason>"
 python -m supernova.admin unban <username>
 ```

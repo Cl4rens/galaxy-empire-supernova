@@ -76,3 +76,17 @@ def test_replaced_screens_run_supernova_source():
     assert main.constants[3] == b"@supernova/GameUIFacebookChests.lua"
     ops = [struct.unpack_from("<I", main.code, i)[0] & 0x3F for i in range(0, len(main.code), 4)]
     assert ops == [5, 5, 1, 1, 28, 28, 28, 30]  # GETGLOBAL x2, LOADK x2, CALL x3, RETURN
+
+
+def test_vip_screens_end_at_level_6():
+    main = lua51.Function(b"@./GameUIVIPMain.lua", 0, 0, 0, 0, 2, 2, ins(30, 0, 1), [b"UpdateInterval", 8.0, 1000.0], [
+        lua51.Function(None, 1, 2, 0, 1, 0, 2, ins(30, 0, 1), [b"VIP INFO 22222", 3.0, 10.0]),
+        lua51.Function(None, 3, 4, 0, 2, 0, 2, ins(30, 0, 1), [b"VIP_View", 1.0, 8.0])])
+    view = lua51.Function(b"@./GameUIVIPView.lua", 0, 0, 0, 0, 2, 2, ins(30, 0, 1), [], [
+        lua51.Function(None, 1, 2, 0, 1, 0, 2, ins(30, 0, 1), [b"MoveIn", 1.0, 8.0])])
+    _, patched_main = lua51.load(client_tweaks.apply(lua51.dump(HEADER, main)))
+    _, patched_view = lua51.load(client_tweaks.apply(lua51.dump(HEADER, view)))
+    assert patched_main.constants[1] == 6.0 and patched_main.constants[2] == 1000.0
+    assert patched_main.protos[0].constants[2] == 7.0  # list entries 3-7: levels 2-6
+    assert patched_main.protos[1].constants[2] == 6.0
+    assert patched_view.protos[0].constants[2] == 6.0

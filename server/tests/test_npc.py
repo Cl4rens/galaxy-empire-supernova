@@ -73,5 +73,5 @@ def test_expedition_mission_and_daily_limit():
 
     for _ in range(npc.EXPEDITIONS_PER_DAY - 1):
         npc.record_expedition(pid, NOW)
-    with pytest.raises(planet_rules.GameError, match="expeditions"):
+    with pytest.raises(planet_rules.GameError, match="secure explorations"):
         send(pid, {9: 1}, (galaxy, system, 16), fleets.EXPEDITION)

@@ -96,8 +96,34 @@ def arena_shop_icons(fn: lua51.Function) -> bool:
     return False
 
 
+VIP_MAX_LEVEL = 6  # Supernova's VIP has 6 levels (server/supernova/vip.py), the client 8
+
+
+def _number(marker: bytes, old: float, new: float):
+    """A tweak that changes the number constant `old` to `new` in the function that also has
+    the string constant `marker`."""
+    def tweak(fn: lua51.Function) -> bool:
+        if marker not in fn.constants or old not in fn.constants:
+            return False
+        fn.constants[fn.constants.index(old)] = new
+        return True
+    tweak.__name__ = f"{marker.decode()}: {old:g} -> {new:g}"
+    return tweak
+
+
+# The VIP screens show levels 1 to 8; Supernova has 6: the highest level (the main chunk's
+# MAX_vip_level), the main list (entries 3 to 10: levels 2 to 9, with spacers), the level a list
+# entry opens, and the pages of the level view.
+VIP_MAIN = [
+    _number(b"UpdateInterval", 8.0, float(VIP_MAX_LEVEL)),
+    _number(b"VIP INFO 22222", 10.0, float(VIP_MAX_LEVEL + 1)),
+    _number(b"VIP_View", 8.0, float(VIP_MAX_LEVEL)),
+]
+VIP_VIEW = [_number(b"MoveIn", 8.0, float(VIP_MAX_LEVEL))]
+
 # source file -> tweaks for its functions
-TWEAKS = {"GameUICityUIUp.lua": [show_daily_tasks], "GameUITop.lua": [arena_shop_icons]}
+TWEAKS = {"GameUICityUIUp.lua": [show_daily_tasks], "GameUITop.lua": [arena_shop_icons],
+          "GameUIVIPMain.lua": VIP_MAIN, "GameUIVIPView.lua": VIP_VIEW}
 
 
 def replacement(chunk: bytes) -> Path | None:

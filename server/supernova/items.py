@@ -27,6 +27,8 @@ from . import planet as planet_rules
 
 DARK_MATTER, CREDITS = 1, 2  # pay_type
 FEATURED, RESOURCE, SPEEDUP, AFFAIR, OTHER = 0, 1, 2, 3, 4  # shop tabs; AFFAIR is "Officer"
+VIP_POINTS, VIP_TIME = 10, 11  # the VIP store's tabs (vip.py), not in the item shop
+GAMMA_DETECTOR_S, GAMMA_DETECTOR_L = 3301, 3302
 SECONDS_PER_DARK_MATTER = 300  # finishing an order at once costs 1 dark matter per 5 minutes left
 MAX_ANNIHILATORS = 200  # wiki
 COMPONENT, REAPER_COMPONENTS = 5001, 3000  # wiki: a Reaper takes 3,000 intricate components
@@ -65,6 +67,9 @@ class Item:
     pack: tuple[tuple[int, int], ...] = ()  # gift pack: (item id, number) put into the capsule
     units: tuple[tuple[int, int], ...] = ()  # gift pack: (ship type, number) for the planet
     picture: str = ""  # the original picture, if the server has it (icons.py)
+    vip_points: int = 0  # VIP points, added when bought
+    vip_days: int = 0  # days of VIP benefits, added when bought
+    explorations: int = 0  # gamma detector: secure explorations beyond the day's
 
     def image(self) -> str:
         """What the client shows for the item ("icons/..."), the original picture if the server has it."""
@@ -161,6 +166,29 @@ CATALOG = [
     Item(4002, OTHER, "Fleet Pack", "Two Devourer Interceptors and a Titanenergetic Frigate.", "icon_superGift_01.png", 199,
          pay_type=CREDITS, units=((25, 2), (26, 1)), featured=True),
 ]
+# The VIP store (vip.py): points items with the wiki's level badges, and activation items.
+# Points cost about a dark matter per 10 points, less in bigger packs.
+CATALOG += [
+    Item(7000 + n, VIP_POINTS, f"{points:,} VIP points", f"Adds {points:,} VIP points at once.", "item_res_05.png",
+         price, vip_points=points, picture=f"vip_points_{n}.png")
+    for n, (points, price) in enumerate([(100, 10), (500, 45), (1500, 120), (5000, 350), (15000, 900),
+                                         (50000, 2500)], 1)
+]
+CATALOG += [
+    Item(7100 + n, VIP_TIME, f"VIP activation ({days} {'day' if days == 1 else 'days'})",
+         f"VIP benefits of your level for {days} {'day' if days == 1 else 'days'} more.", "item_res_09.png", price,
+         vip_days=days)
+    for n, (days, price) in enumerate([(1, 10), (7, 60), (30, 200)], 1)
+]
+# wiki (store screenshot): Gamma Detector (Small) 49 dark matter for 10 secure explorations,
+# (Large) 398 credits for 20
+CATALOG += [
+    Item(GAMMA_DETECTOR_S, OTHER, "Gamma Detector (Small)", "Safely conducts 10 exploration missions beyond the "
+         "day's secure explorations.", "item_res_13.png", 49, explorations=10, picture="gamma_detector.png"),
+    Item(GAMMA_DETECTOR_L, OTHER, "Gamma Detector (Large)", "Safely conducts 20 exploration missions beyond the "
+         "day's secure explorations.", "item_res_13.png", 398, pay_type=CREDITS, explorations=20,
+         picture="gamma_detector.png"),
+]
 CATALOG += _officers()
 from . import devices  # noqa: E402 (devices builds its items with Item)
 
@@ -197,6 +225,10 @@ def _view(i: Item) -> dict:
             "is_featured": i.featured, "is_gift": bool(i.pack or i.units), "step_gacha": 0}
 
 
+def vip_shop(category: int) -> list[dict]:
+    return [_view(i) for i in CATALOG if i.category == category and i.sold]
+
+
 def shop(category: int) -> list[dict]:
     return [_view(i) for i in CATALOG
             if i.sold and (i.category == category or (category == FEATURED and i.featured))]
@@ -228,8 +260,10 @@ def add(state: dict, item_id: int, n: int) -> None:
 
 
 def depot_view(state: dict, category: int) -> list[dict]:
+    def tab(i: Item) -> int:
+        return OTHER if i.category == VIP_TIME else i.category  # VIP activation items: "Other"
     return [owned_view(state, i) for i in CATALOG
-            if amount(state, i.id) and (i.category == category or (category == FEATURED and i.featured))]
+            if amount(state, i.id) and (tab(i) == category or (category == FEATURED and i.featured))]
 
 
 def owned_view(state: dict, i: Item) -> dict:
@@ -250,10 +284,16 @@ def buy(state: dict, item_id: int, n: int) -> dict:
     if not 1 <= n <= 999 or not i.sold:
         raise ItemError("Invalid number" if i.sold else "This item is not for sale")
     _pay(state, i.price * n, i.pay_type)
-    _add(state, i.id, n)
     empire = state["empire"]
+    if i.vip_points:  # "Buy&Use": VIP points count at once; activation items go to the capsule
+        from . import vip
+        vip.add_points(state, i.vip_points * n)
+        info = f"{i.name} x{n}: VIP{vip.level(vip.data(state)['score'])}, {vip.data(state)['score']:,} points."
+    else:
+        _add(state, i.id, n)
+        info = f"{i.name} x{n} is in your capsule."
     return {"darkmatter": empire["dark_matter_count"], "credits": empire.get("gu_count", 0),
-            "info": f"{i.name} x{n} is in your capsule.", "id": i.id, "item_type": 1}
+            "info": info, "id": i.id, "item_type": 1}
 
 
 def use(state: dict, item_id: int, n: int, planet: dict, now: float | None = None,
@@ -291,6 +331,14 @@ def use(state: dict, item_id: int, n: int, planet: dict, now: float | None = Non
         flagships.data(state)["alloy"] += i.alloy * n
     if i.krypton_stones:
         kryptons.add_stones(state, i.krypton_stones * n)
+    if i.vip_days:
+        from . import vip
+        vip.activate(state, i.vip_days * n, time.time() if now is None else now)
+        info = f"Used {i.name} x{n}: VIP benefits for {vip.info_view(state, time.time() if now is None else now)['vip_left'] // 3600} more hours."
+    if i.explorations:
+        state["empire"]["secure_explorations"] = state["empire"].get("secure_explorations", 0) + i.explorations * n
+        info = (f"Used {i.name} x{n}: {state['empire']['secure_explorations']} secure explorations beyond the "
+                "day's are ready.")
     for pack_item, number in i.pack:
         _add(state, pack_item, number * n)
     for unit, number in i.units:
