@@ -44,8 +44,21 @@ def test_ecm_over_api_and_combat_bonus():
     assert side.attack_percent >= 10 and side.shield_percent >= 10
 
 
+def alone_in_a_system(pid):
+    """Move the player's home to a system nobody else lives in (the lord is the strongest
+    player of a system, and other tests' players may share it)."""
+    conn = db.connect()
+    taken = {r[0] for r in conn.execute("SELECT DISTINCT system FROM planets WHERE galaxy = 1")}
+    system = next(s for s in range(universe.SYSTEMS_PER_GALAXY, 0, -1) if s not in taken)
+    with db.lock(), conn:
+        conn.execute("UPDATE planets SET system = ? WHERE player_id = ?", (system, pid))
+    with db.player_state(pid) as s:
+        s["empire"]["main_planet"]["system_position"] = system
+
+
 def test_system_lord():
     strong = new_player_with_cargo(0)
+    alone_in_a_system(strong)
     with db.player_state(strong) as s:
         planet_rules.fleet(s["empire"]["main_planet"], 4)["amount"] = 100  # 6,000 points
     lordship.refresh(force=True)
