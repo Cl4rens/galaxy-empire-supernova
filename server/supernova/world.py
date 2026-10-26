@@ -5,6 +5,7 @@ all following requests.
 """
 
 import json
+import re
 import logging
 import time
 from urllib.parse import parse_qs
@@ -156,9 +157,26 @@ async def rename(world_id: int, request: Request, player_id: int = Depends(curre
     return PlainTextResponse("Your name has been changed.")
 
 
+MAIL_UNBOUND, MAIL_BOUND = 0, 2  # the client's binding states (1: waiting for the confirmation mail)
+EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
+
+
 @router.post("/users/{user_id}/email_bind_status")
 def email_status(user_id: int, player_id: int = Depends(current_player)):
-    return encrypted_json({"mail_status": 0})  # e-mail binding is not offered
+    email = db.load_state(player_id).get("email", "")
+    return encrypted_json({"mail_status": MAIL_BOUND if email else MAIL_UNBOUND, "email": email})
+
+
+@router.post("/users/{user_id}/send_mail_for_authenticate")
+async def bind_email(world_id: int, user_id: int, request: Request, player_id: int = Depends(current_player)):
+    """The server sends no mail: the address counts as confirmed at once (the operator sees it,
+    e.g. to help with a lost password)."""
+    email = (await form(request)).get("email", "").strip()
+    if not EMAIL.fullmatch(email) or len(email) > 254:
+        return error("This is not an e-mail address")
+    with db.player_state(player_id) as state:
+        state["email"] = email
+    return encrypted_json({"mail_status": MAIL_BOUND, "email": email})
 
 
 # --- Player state -------------------------------------------------------------------------

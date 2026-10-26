@@ -105,3 +105,13 @@ def test_player_mail():
     assert (mail["from"], mail["subject"], mail["body"], mail["message_type"]) == (a["username"], "Hello", "Peace?", 3)
     confirmed = decrypt_json(bob.post("/world/1/messages/get_new.json", content=f"checklist={mail['id']}"))
     assert confirmed == {"new_message_count": 0, "mails": []}
+
+
+def test_email_binding():
+    c = TestClient(app, headers={"openudid": "mail-user"})
+    uid = decrypt_json(c.post("/world/1/trials.json", content="username="))["user_id"]
+    assert decrypt_json(c.post(f"/world/1/users/{uid}/email_bind_status"))["mail_status"] == 0
+    assert c.post(f"/world/1/users/{uid}/send_mail_for_authenticate", content="email=nope").status_code == 400
+    bound = decrypt_json(c.post(f"/world/1/users/{uid}/send_mail_for_authenticate", content="email=a%40b.de"))
+    assert bound == {"mail_status": 2, "email": "a@b.de"}
+    assert decrypt_json(c.post(f"/world/1/users/{uid}/email_bind_status")) == bound

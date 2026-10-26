@@ -180,7 +180,7 @@ def planets_info(empire: dict) -> list[dict]:
 
 HIDDEN_EMPIRE_FIELDS = ("main_planet", "planets", "current_planet_id", "dark_matter_income", "fleet_devices",
                         "officers", "vip")
-PRIVATE_STATE = ("empire", "next_event_id", "quests", "bookmarks", "checkin", "kryptons", "flagships", "ecm",
+PRIVATE_STATE = ("empire", "email", "next_event_id", "quests", "bookmarks", "checkin", "kryptons", "flagships", "ecm",
                  "fortress", "items", "daily", "growth_claimed", "gc_bought", "arena_points", "invited_by",
                  "chest")
 

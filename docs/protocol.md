@@ -93,7 +93,9 @@ Guest login: `POST <world>/trials.json` with body `username=<name>`.
 - Change password: `POST users/<id>.json` with `_method=put`, `username`, `old_password`,
   `new_password`, `new_password_confirmation` (ENC2). Rename: `POST users/reset_username` with
   `username`, `password`. Both show the answer text in a message box.
-- `POST users/<id>/email_bind_status` → `{mail_status: 0}` (0 unbound, 1 waiting, 2 bound).
+- `POST users/<id>/email_bind_status` → `{mail_status, email}` (0 unbound, 1 waiting, 2 bound).
+- `POST users/<id>/send_mail_for_authenticate` `email` → `{mail_status: 2, email}`: the server sends no
+  mail, the address counts as bound at once (kept in the state for the operator).
 
 Supernova binds guest accounts to the device that created them (`openUDID`); registered
 accounts need their password and work on any device. Passwords are stored as scrypt hashes.
