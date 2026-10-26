@@ -83,6 +83,28 @@ index 073af1ef..ca02f252 100644
 +/// after a trailing delimiter, text fields do not clip their text, and `htmlText` reads back
 +/// what was set.
 +pub static GAMESWF: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+diff --git a/core/src/avm1/value.rs b/core/src/avm1/value.rs
+index 33250025..75951352 100644
+--- a/core/src/avm1/value.rs
++++ b/core/src/avm1/value.rs
+@@ -321,8 +321,15 @@ impl<'gc> Value<'gc> {
+                     // Strings do not have toString() called on them.
+                     string
+                 } else if let Some(object) = object.as_display_object_no_super() {
+-                    // StageObjects are special-cased to return their path.
+-                    AvmString::new(activation.gc(), object.path())
++                    // gameswf gave a text field's text (the galaxy map sends a tile's label
++                    // that way); Supernova
++                    match object.as_edit_text() {
++                        Some(field) if crate::avm1::GAMESWF.load(std::sync::atomic::Ordering::Relaxed) => {
++                            AvmString::new(activation.gc(), field.text())
++                        }
++                        // StageObjects are special-cased to return their path.
++                        _ => AvmString::new(activation.gc(), object.path()),
++                    }
+                 } else {
+                     match object.call_method(
+                         istr!("toString"),
 diff --git a/core/src/display_object/edit_text.rs b/core/src/display_object/edit_text.rs
 index 422efa6c..7fdc6288 100644
 --- a/core/src/display_object/edit_text.rs

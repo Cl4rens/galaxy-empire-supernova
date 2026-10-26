@@ -46,6 +46,10 @@ function ext.getSysTime() return native.now() end
 -- the game's screen coordinates: native text boxes are placed in them (GameTextEdit)
 ext.SCREEN_WIDTH = 640
 ext.SCREEN_HEIGHT = 960
+-- the screen's shape picks the layout (GameUtils:GetStageSize, the *_16x9 / *_4x3 screens)
+function ext.is3x2() return true end
+function ext.is4x3() return false end
+function ext.is16x9() return false end
 function ext.QueryAppConfig(key) return nil end
 function ext._QueryAppConfig(key) return nil end
 function ext.GetAndroidDeviceTotalMem() return 4096 end

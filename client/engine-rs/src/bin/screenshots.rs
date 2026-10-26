@@ -66,6 +66,21 @@ fn main() -> Result<()> {
             shot(&mut engine, &out, &format!("5-tap{}", n + 1))?;
             continue;
         }
+        // "drag:x1,y1,x2,y2" moves a finger from one point to the other
+        if let Some(points) = tap.strip_prefix("drag:") {
+            let p: Vec<f64> = points.split(',').map(|v| v.trim().parse()).collect::<Result<_, _>>()?;
+            let [x1, y1, x2, y2] = p[..] else { bail!("drag needs four numbers") };
+            engine.touch(Touch::Pressed, x1, y1)?;
+            for step in 1..=10 {
+                let t = step as f64 / 10.0;
+                engine.run(0.03, |_| false)?;
+                engine.touch(Touch::Moved, x1 + (x2 - x1) * t, y1 + (y2 - y1) * t)?;
+            }
+            engine.touch(Touch::Released, x2, y2)?;
+            engine.run(2.0, |_| false)?;
+            shot(&mut engine, &out, &format!("5-tap{}", n + 1))?;
+            continue;
+        }
         let (x, y) = tap.split_once(',').unwrap_or_default();
         let (x, y) = (x.trim().parse()?, y.trim().parse()?);
         engine.touch(Touch::Pressed, x, y)?;
