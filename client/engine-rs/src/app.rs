@@ -126,7 +126,7 @@ impl ApplicationHandler for App {
         let first = self.window.is_none() && self.compositor.is_none();
         let attributes = Window::default_attributes()
             .with_title("Galaxy Empire · Supernova")
-            .with_inner_size(LogicalSize::new(480.0, 720.0));
+            .with_inner_size(LogicalSize::new(450.0, 800.0));
         let window = Arc::new(event_loop.create_window(attributes).expect("a window"));
         let descriptors = self.screens().descriptors();
         let surface = descriptors.wgpu_instance.create_surface(window.clone()).expect("a window surface");

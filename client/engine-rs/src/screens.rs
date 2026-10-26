@@ -35,8 +35,10 @@ use crate::assets::Assets;
 use crate::convert::{Converter, FONT};
 use crate::engine::{Arg, Call, Screens, Texts};
 
+/// The game's screen in its 16:9 layout (the screens' `_16x9` files)
 pub const WIDTH: u32 = 640;
-pub const HEIGHT: u32 = 960;
+pub const HEIGHT: u32 = 1136;
+const LAYOUT_SUFFIX: &str = "_16x9";
 
 type Commands = Arc<Mutex<Vec<(String, String, String)>>>;
 /// (object, command, argument): hands a Flash command to the scripts
@@ -399,6 +401,13 @@ impl RuffleScreens {
 
     /// Make the player of a screen; its first frame runs in the returned job.
     fn load(&mut self, assets: &Assets, texts: &Texts, object: &str, path: &str) -> Result<Call> {
+        // the screen's 16:9 layout where it has one, as gameswf picked it on a phone
+        let tall = path.strip_suffix(".tfs").map(|base| format!("{base}{LAYOUT_SUFFIX}.tfs"));
+        let path = match tall {
+            Some(tall) if assets.file(tall.trim_start_matches("./")).is_some() => tall,
+            _ => path.to_string(),
+        };
+        let path = path.as_str();
         let swf = self.converter.screen(assets, texts, path)?;
         tracing::debug!("{object}: load {path}");
         if let Some(dir) = std::env::var_os("SUPERNOVA_DUMP_SCREENS") {
