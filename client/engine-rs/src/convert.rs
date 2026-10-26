@@ -208,7 +208,9 @@ fn text_width(font: &ttf_parser::Face, text: &str, size: f64) -> f64 {
 fn fitting_size(font: &ttf_parser::Face, text: &str, size: f64, width: f64) -> Option<f64> {
     let room = width - 4.0;
     let needed = text_width(font, text, size);
-    (needed > room && needed > 0.0).then(|| (size * (room / needed).max(MIN_TEXT_SCALE)).floor())
+    // a field that even half the size does not fit is only an anchor: its text was meant to stick
+    // out (the city's building labels), as with gameswf
+    (needed > room && needed > 0.0 && room / needed >= MIN_TEXT_SCALE).then(|| (size * room / needed).floor())
 }
 
 /// Where a DefineEditText keeps what the converter changes.

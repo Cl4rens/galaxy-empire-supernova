@@ -766,10 +766,23 @@ index d5942ad8..10213ecc 100644
 +    out
 +}
 diff --git a/core/src/player.rs b/core/src/player.rs
-index c3756621..b34e0fcc 100644
+index c3756621..63b6b9c2 100644
 --- a/core/src/player.rs
 +++ b/core/src/player.rs
-@@ -2535,6 +2535,97 @@ impl Player {
+@@ -2447,7 +2447,11 @@ impl Player {
+         self.mutate_with_update_context(|context| {
+             Self::update_drag(context);
+         });
+-        self.update_mouse_state(EnumSet::empty(), false, &mut false);
++        // gameswf screens are only touched: what is under the finger is found when it touches
++        // or moves, not after every update (a hit test of the whole stage); Supernova
++        if !crate::avm1::GAMESWF.load(std::sync::atomic::Ordering::Relaxed) {
++            self.update_mouse_state(EnumSet::empty(), false, &mut false);
++        }
+ 
+         // GC
+         self.gc_arena.borrow_mut().collect_debt();
+@@ -2535,6 +2539,97 @@ impl Player {
          })
      }
  
