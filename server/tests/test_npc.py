@@ -79,8 +79,9 @@ def test_expedition_mission_and_daily_limit():
     assert mail["message_type"] == mails.EXPLORE
     assert mail["body"]["explore_data"] == {"curr": 1, "max": 8}  # wiki: 8 safe runs at Astrophysics 1
     assert "situation" in mail["body"]["expedition_result"]
-    with pytest.raises(planet_rules.GameError, match="1 expedition fleet"):  # still flying home
-        send(pid, {9: 1}, (galaxy, system, 16), fleets.EXPEDITION)
+    if fleets.events_view(pid):  # still flying home (unless a black hole took it)
+        with pytest.raises(planet_rules.GameError, match="1 expedition fleet"):
+            send(pid, {9: 1}, (galaxy, system, 16), fleets.EXPEDITION)
     fleets.process_due(NOW + 10**7)
 
     for _ in range(8 - 1):
