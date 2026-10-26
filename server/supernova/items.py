@@ -305,6 +305,18 @@ def vip_shop(category: int) -> list[dict]:
     return [_view(i) for i in CATALOG if i.category == category and i.sold]
 
 
+PROMO_BACKGROUND = "NAN_promo_default.png"  # the banner picture the client has
+NO_COUNTDOWN = -100  # the banner shows no time left
+
+
+def banner() -> list[dict]:
+    """The store's top banner (game_items/item_packages): the gift packs, the first one first.
+    Tapping one shows its contents, buying it buys the pack."""
+    packs = [i for i in CATALOG if i.sold and (i.pack or i.units)]
+    return [dict(_view(i), count_down=NO_COUNTDOWN, package_priority=len(packs) - n,
+                 package_background=PROMO_BACKGROUND) for n, i in enumerate(packs)]
+
+
 def shop(category: int) -> list[dict]:
     return [_view(i) for i in CATALOG
             if i.sold and (i.category == category or (category == FEATURED and i.featured))]

@@ -1617,7 +1617,8 @@ async def item_shop(world_id: int, request: Request, player_id: int = Depends(cu
 
 @router.get("/game_items/item_packages")
 def item_packages(player_id: int = Depends(current_player)):
-    return encrypted_json({"item_packages": []})
+    """The store's top banner: the gift packs."""
+    return encrypted_json({"item_packages": items.banner()})
 
 
 @router.post("/users/{user_id}/buy_game_item")

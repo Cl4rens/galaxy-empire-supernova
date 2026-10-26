@@ -93,3 +93,11 @@ def test_speed_up_shipyard_delivers_ships():
     decrypt_json(c.post(f"/world/1/fleet_building_events/{event_id}/speedup.json", content="game_item_id=0"))
     planet = db.load_state(uid)["empire"]["main_planet"]
     assert planet["fleet_building_events"] == [] and planet_rules.fleet(planet, 15)["amount"] == 20
+
+
+def test_store_banner_shows_the_gift_packs():
+    banner = items.banner()
+    assert banner and all(b["is_gift"] for b in banner)
+    assert {b["id"] for b in banner} >= {4001, 4002}
+    assert banner[0]["package_priority"] > banner[-1]["package_priority"]
+    assert all(b["package_background"] == items.PROMO_BACKGROUND and b["count_down"] < 0 for b in banner)
