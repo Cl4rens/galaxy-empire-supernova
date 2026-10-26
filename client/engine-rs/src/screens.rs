@@ -96,6 +96,7 @@ trait Movie {
     fn gray(&mut self, target: &str, gray: bool) -> bool;
     fn replace_bitmap(&mut self, name: &str, pixels: Box<dyn FnOnce(u32, u32) -> Vec<u8>>) -> bool;
     fn fit_text(&mut self, fit: &Fit) -> Option<(f64, String)>;
+    fn cut_text(&mut self, target: &str, multi_line: bool, last_text: Option<&str>) -> Option<String>;
     fn text_field_paths(&mut self, marker: &str) -> Vec<String>;
     fn find_button(&mut self, x: f64, y: f64) -> Option<String>;
 }
@@ -115,6 +116,9 @@ impl Movie for Player {
     }
     fn fit_text(&mut self, fit: &Fit) -> Option<(f64, String)> {
         self.fit_avm1_text(&fit.target, fit.min_scale, fit.base_size, fit.text.as_deref())
+    }
+    fn cut_text(&mut self, target: &str, multi_line: bool, last_text: Option<&str>) -> Option<String> {
+        self.truncate_avm1_text(target, multi_line, last_text)
     }
     fn text_field_paths(&mut self, marker: &str) -> Vec<String> {
         Player::text_field_paths(self, marker)
@@ -141,6 +145,9 @@ impl Movie for UpdateContext<'_> {
     }
     fn fit_text(&mut self, fit: &Fit) -> Option<(f64, String)> {
         external::fit_avm1_text(self, &fit.target, fit.min_scale, fit.base_size, fit.text.as_deref())
+    }
+    fn cut_text(&mut self, target: &str, multi_line: bool, last_text: Option<&str>) -> Option<String> {
+        external::truncate_avm1_text(self, target, multi_line, last_text)
     }
     fn text_field_paths(&mut self, marker: &str) -> Vec<String> {
         external::text_field_paths(self, marker)
@@ -275,29 +282,43 @@ struct Fit {
     min_scale: f64,
     base_size: Option<f64>,
     text: Option<String>,
-    /// found by its name (`SINGLE_LINE_MARK`), not asked for by SetLineMax
-    by_name: bool,
+    /// found by its name (`SINGLE_LINE_MARK`, `MULTI_LINE_MARK`), not asked for by SetLineMax:
+    /// its text is cut with "..." (on one line or several), not made smaller
+    by_name: Option<bool>,
 }
 
-/// Text fields named with this keep their text on one line, smaller if need be (gameswf did it)
+/// Text fields named with these show what fits of their text, ending with "...", on one line
+/// or as many as the field has (gameswf did it)
 const SINGLE_LINE_MARK: &str = "_SLHM";
-const SINGLE_LINE_MIN_SCALE: f64 = 0.5;
+const MULTI_LINE_MARK: &str = "_MLHM";
 
-/// Keep the fitted text of the fields, find new single-line fields and fit what changed.
+/// Keep the fitted text of the fields, find new marked fields and fit what changed.
 fn fit_texts(movie: &mut dyn Movie, extras: &RefCell<Extras>) {
     // the fitting runs ActionScript, which may call the scripts and they this object: no borrow
     let mut fits = std::mem::take(&mut extras.borrow_mut().fits);
-    let named: HashSet<String> = movie.text_field_paths(SINGLE_LINE_MARK).into_iter().collect();
-    fits.retain(|f| !f.by_name || named.contains(&f.target));
-    for target in named {
+    let mut named: HashMap<String, bool> = HashMap::new();
+    for (mark, multi_line) in [(SINGLE_LINE_MARK, false), (MULTI_LINE_MARK, true)] {
+        named.extend(movie.text_field_paths(mark).into_iter().map(|target| (target, multi_line)));
+    }
+    fits.retain(|f| f.by_name.is_none() || named.contains_key(&f.target));
+    for (target, multi_line) in named {
         if !fits.iter().any(|f| f.target == target) {
-            fits.push(Fit { target, min_scale: SINGLE_LINE_MIN_SCALE, base_size: None, text: None, by_name: true });
+            fits.push(Fit { target, min_scale: 1.0, base_size: None, text: None, by_name: Some(multi_line) });
         }
     }
     for fit in fits.iter_mut() {
-        if let Some((base, text)) = movie.fit_text(fit) {
-            fit.base_size = Some(base);
-            fit.text = Some(text);
+        match fit.by_name {
+            Some(multi_line) => {
+                if let Some(text) = movie.cut_text(&fit.target, multi_line, fit.text.as_deref()) {
+                    fit.text = Some(text);
+                }
+            }
+            None => {
+                if let Some((base, text)) = movie.fit_text(fit) {
+                    fit.base_size = Some(base);
+                    fit.text = Some(text);
+                }
+            }
         }
     }
     let mut extras = extras.borrow_mut();
@@ -579,7 +600,7 @@ impl Screens for RuffleScreens {
                     min_scale: args.get(2).map(Arg::text).and_then(|s| s.parse().ok()).unwrap_or(0.6),
                     base_size: None,
                     text: None,
-                    by_name: false,
+                    by_name: None,
                 };
                 let fits = &mut extras.borrow_mut().fits;
                 fits.retain(|f| f.target != fit.target);

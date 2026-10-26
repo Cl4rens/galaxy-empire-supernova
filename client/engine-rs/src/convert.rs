@@ -20,11 +20,12 @@ const DEFINE_SPRITE: u16 = 39;
 const PLACE_OBJECT3: u16 = 70;
 /// Text fields with an instance name like this get the game's text of that key (gameswf did it)
 const TEXT_KEY_PREFIX: &str = "LC_";
-/// Layout marks in such names, not part of the key: single line / multiple lines, centred
-/// ("LC_MENU_SLHM_TAB_OFFICER" shows "LC_MENU_TAB_OFFICER")
+/// Layout marks in such names, not part of the key: single line / multiple lines, cut with "..."
+/// where the text leaves the field, at run time ("LC_MENU_SLHM_TAB_OFFICER" shows
+/// "LC_MENU_TAB_OFFICER")
 const TEXT_LAYOUT_MARKS: [&str; 2] = ["SLHM_", "MLHM_"];
 
-/// Single-line fields shrink their text to fit, down to this much of its size.
+/// Other single-line fields shrink their text to fit, down to this much of its size.
 const MIN_TEXT_SCALE: f64 = 0.5;
 
 /// The game's text for a text field named `name`.
@@ -293,10 +294,11 @@ fn gameswf_text(data: &[u8]) -> Option<Vec<u8>> {
 }
 
 /// A DefineEditText with `text` as its initial text; with `font`, a smaller font size where the
-/// text would not fit on one line and the field has only one (or is named single-line).
-fn with_initial_text(data: &[u8], text: &str, font: Option<&ttf_parser::Face>, single_line: bool) -> Option<Vec<u8>> {
+/// text would not fit on one line and the field has only one (and is not `marked` with a layout
+/// mark: those are cut at run time).
+fn with_initial_text(data: &[u8], text: &str, font: Option<&ttf_parser::Face>, marked: bool) -> Option<Vec<u8>> {
     let field = text_field(data)?;
-    let fit = font.filter(|_| single_line || !field.multiline);
+    let fit = font.filter(|_| !marked && !field.multiline);
     if field.html {
         let mut html = replace_html_text(&field.text, text);
         if let Some(font) = fit {
@@ -320,7 +322,7 @@ fn with_initial_text(data: &[u8], text: &str, font: Option<&ttf_parser::Face>, s
 
 /// The SWF (uncompressed) with every placeholder picture filled by `picture(name)`, every text
 /// field set to the device font, and the text fields named after a game text (`LC_...`) filled
-/// by `text(key)`; single-line ones (`SLHM`) shrink the text to fit, measured with `font`.
+/// by `text(key)`; single-line ones shrink the text to fit, measured with `font`.
 pub fn fill_bitmaps(
     swf: &[u8],
     mut picture: impl FnMut(&str) -> Option<Vec<u8>>,
@@ -379,9 +381,9 @@ pub fn fill_bitmaps(
                 field = plain;
             }
             let key = instances.get(&u16_at(&body, range.start)).filter(|n| n.starts_with(TEXT_KEY_PREFIX));
-            let single_line = key.is_some_and(|k| k.contains(TEXT_LAYOUT_MARKS[0]));
+            let marked = key.is_some_and(|k| TEXT_LAYOUT_MARKS.iter().any(|m| k.contains(m)));
             if let Some(localized) =
-                key.and_then(|k| field_text(k, &text)).and_then(|t| with_initial_text(&field, &t, font.as_ref(), single_line))
+                key.and_then(|k| field_text(k, &text)).and_then(|t| with_initial_text(&field, &t, font.as_ref(), marked))
             {
                 field = localized;
             }

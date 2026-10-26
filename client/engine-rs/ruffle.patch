@@ -84,7 +84,7 @@ index 073af1ef..ca02f252 100644
 +/// what was set.
 +pub static GAMESWF: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 diff --git a/core/src/display_object/edit_text.rs b/core/src/display_object/edit_text.rs
-index 422efa6c..e057252f 100644
+index 422efa6c..7fdc6288 100644
 --- a/core/src/display_object/edit_text.rs
 +++ b/core/src/display_object/edit_text.rs
 @@ -234,8 +234,11 @@ impl EditTextData<'_> {
@@ -108,7 +108,37 @@ index 422efa6c..e057252f 100644
          }
  
          self.relayout(context);
-@@ -1220,8 +1224,10 @@ impl<'gc> EditText<'gc> {
+@@ -591,6 +595,14 @@ impl<'gc> EditText<'gc> {
+         self.relayout(context);
+     }
+ 
++    /// Keep the text on one line also in gameswf mode (for text fitted to the field); Supernova
++    pub fn set_gameswf_single_line(self, context: &mut UpdateContext<'gc>) {
++        if !self.contains_flag(EditTextFlag::GAMESWF_SINGLE_LINE) {
++            self.set_flag(EditTextFlag::GAMESWF_SINGLE_LINE, true);
++            self.relayout(context);
++        }
++    }
++
+     pub fn autosize(self) -> AutoSizeMode {
+         self.0.autosize.get()
+     }
+@@ -868,7 +880,13 @@ impl<'gc> EditText<'gc> {
+     /// text-span representation.
+     pub fn relayout(self, context: &mut dyn LayoutContext<'gc>) {
+         let autosize = self.0.autosize.get();
+-        let is_word_wrap = self.0.flags.get().contains(EditTextFlag::WORD_WRAP);
++        let flags = self.0.flags.get();
++        // gameswf wrapped the words of every field at its width, also without word wrap (a
++        // screen counts lines by textHeight); fields the engine fits on one line stay so; Supernova
++        let gameswf_wrap = crate::avm1::GAMESWF.load(std::sync::atomic::Ordering::Relaxed)
++            && autosize == AutoSizeMode::None
++            && !flags.contains(EditTextFlag::GAMESWF_SINGLE_LINE);
++        let is_word_wrap = flags.contains(EditTextFlag::WORD_WRAP) || gameswf_wrap;
+         let movie = self.0.shared.swf;
+         let padding = Self::GUTTER * 2;
+ 
+@@ -1220,8 +1238,10 @@ impl<'gc> EditText<'gc> {
          // [KJ] FP always displays the first visible line (sometimes masked, sometimes sticking out of bounds),
          //      culls any other line which is not fully visible; masking is always used for left/right bounds
          // TODO: also cull text that's simply out of screen, just like we cull whole DOs in render_self().
@@ -119,7 +149,7 @@ index 422efa6c..e057252f 100644
          {
              return;
          }
-@@ -2731,16 +2737,19 @@ impl<'gc> TDisplayObject<'gc> for EditText<'gc> {
+@@ -2731,16 +2751,19 @@ impl<'gc> TDisplayObject<'gc> for EditText<'gc> {
              }
          }
  
@@ -147,7 +177,7 @@ index 422efa6c..e057252f 100644
  
          context.transform_stack.push(&Transform {
              matrix: self.layout_to_local_matrix(),
-@@ -2758,12 +2767,14 @@ impl<'gc> TDisplayObject<'gc> for EditText<'gc> {
+@@ -2758,12 +2781,14 @@ impl<'gc> TDisplayObject<'gc> for EditText<'gc> {
  
          context.transform_stack.pop();
  
@@ -168,8 +198,16 @@ index 422efa6c..e057252f 100644
  
          if let Some(draw_caret_command) = render_state.draw_caret_command {
              context.commands.commands.push(draw_caret_command);
+@@ -3183,6 +3208,7 @@ bitflags::bitflags! {
+         const HAS_BACKGROUND = 1 << 1;
+         const CONDENSE_WHITE = 1 << 13;
+         const ALWAYS_SHOW_SELECTION = 1 << 14;
++        const GAMESWF_SINGLE_LINE = 1 << 15;
+ 
+         // The following bits need to match `swf::EditTextFlag`.
+         const READ_ONLY = 1 << 3;
 diff --git a/core/src/external.rs b/core/src/external.rs
-index 071f1e73..982d6d8c 100644
+index 071f1e73..8227eaee 100644
 --- a/core/src/external.rs
 +++ b/core/src/external.rs
 @@ -342,6 +342,13 @@ impl<'gc> Callback<'gc> {
@@ -204,7 +242,7 @@ index 071f1e73..982d6d8c 100644
          }
      }
  
-@@ -420,7 +427,267 @@ impl<'gc> ExternalInterface<'gc> {
+@@ -420,7 +427,330 @@ impl<'gc> ExternalInterface<'gc> {
          self.provider.as_ref().and_then(|p| p.get_id())
      }
  
@@ -373,6 +411,10 @@ index 071f1e73..982d6d8c 100644
 +        Some(size) => size,
 +        None => format.get(size_name, activation)?.coerce_to_f64(activation)?,
 +    };
++    // measured and shown on one line, not wrapped
++    if let Some(field) = object.as_display_object().and_then(|o| o.as_edit_text()) {
++        field.set_gameswf_single_line(activation.context);
++    }
 +    if !base.is_finite() || base <= 0.0 {
 +        return Ok(None);
 +    }
@@ -387,6 +429,65 @@ index 071f1e73..982d6d8c 100644
 +        object.call_method(set_format, &[format.into()], activation, reason)?;
 +    }
 +    Ok(Some((base, text)))
++}
++
++/// Cut the text of the text field at `target` where it leaves the field and end it with "...",
++/// as gameswf did with fields named single-line (`SLHM`: at the width, on one line) or
++/// multi-line (`MLHM`: at the height). Does nothing while the text is still `last_text`.
++/// Returns the text the field shows.
++pub fn truncate_avm1_text(
++    context: &mut UpdateContext<'_>,
++    target: &str,
++    multi_line: bool,
++    last_text: Option<&str>,
++) -> Option<String> {
++    with_avm1_object(context, target, |activation, object| {
++        truncate_text(activation, object, multi_line, last_text).ok().flatten()
++    })
++    .flatten()
++}
++
++fn truncate_text<'gc>(
++    activation: &mut Avm1Activation<'_, 'gc>,
++    object: Avm1Object<'gc>,
++    multi_line: bool,
++    last_text: Option<&str>,
++) -> Result<Option<String>, Avm1Error<'gc>> {
++    let text_name = AvmString::new_utf8(activation.gc(), "text");
++    let text = object.get(text_name, activation)?.coerce_to_string(activation)?.to_string();
++    if last_text == Some(text.as_str()) {
++        return Ok(None);
++    }
++    let Some(field) = object.as_display_object().and_then(|o| o.as_edit_text()) else {
++        return Ok(None);
++    };
++    if !multi_line {
++        field.set_gameswf_single_line(activation.context);
++    }
++    let (room_name, used_name) = if multi_line { ("_height", "textHeight") } else { ("_width", "textWidth") };
++    let room = object.get(AvmString::new_utf8(activation.gc(), room_name), activation)?.coerce_to_f64(activation)? - 4.0;
++    let used_name = AvmString::new_utf8(activation.gc(), used_name);
++    let fits = |activation: &mut Avm1Activation<'_, 'gc>, shown: &str| -> Result<bool, Avm1Error<'gc>> {
++        object.set(text_name, AvmString::new_utf8(activation.gc(), shown), activation)?;
++        Ok(object.get(used_name, activation)?.coerce_to_f64(activation)? <= room)
++    };
++    if fits(activation, &text)? {
++        return Ok(Some(text));
++    }
++    // the longest start of the text that fits with "..."
++    let ends: Vec<usize> = text.char_indices().map(|(i, _)| i).skip(1).chain([text.len()]).collect();
++    let (mut low, mut high) = (0, ends.len());
++    while low < high {
++        let middle = (low + high).div_ceil(2);
++        if fits(activation, &format!("{}...", text[..ends[middle - 1]].trim_end()))? {
++            low = middle;
++        } else {
++            high = middle - 1;
++        }
++    }
++    let shown = if low == 0 { "...".to_string() } else { format!("{}...", text[..ends[low - 1]].trim_end()) };
++    fits(activation, &shown)?;
++    Ok(Some(shown))
 +}
 +
 +/// What a touch at (`x`, `y`) lands on, for gameswf's native buttons.
@@ -473,10 +574,10 @@ index 071f1e73..982d6d8c 100644
 +    .unwrap_or(Value::Null)
 +}
 diff --git a/core/src/player.rs b/core/src/player.rs
-index c3756621..9cd6ff4f 100644
+index c3756621..e63698b3 100644
 --- a/core/src/player.rs
 +++ b/core/src/player.rs
-@@ -2535,6 +2535,76 @@ impl Player {
+@@ -2535,6 +2535,84 @@ impl Player {
          })
      }
  
@@ -519,6 +620,14 @@ index c3756621..9cd6ff4f 100644
 +    ) -> Option<(f64, String)> {
 +        self.mutate_with_update_context(|context| {
 +            crate::external::fit_avm1_text(context, target, min_scale, base_size, last_text)
++        })
++    }
++
++    /// Cut a text field's text with "..." where it leaves the field; see
++    /// `external::truncate_avm1_text`.
++    pub fn truncate_avm1_text(&mut self, target: &str, multi_line: bool, last_text: Option<&str>) -> Option<String> {
++        self.mutate_with_update_context(|context| {
++            crate::external::truncate_avm1_text(context, target, multi_line, last_text)
 +        })
 +    }
 +
