@@ -68,7 +68,21 @@ fn main() -> Result<()> {
         }
         // "wait:seconds" lets the game run that long
         if let Some(seconds) = tap.strip_prefix("wait:") {
-            engine.run(seconds.trim().parse()?, |_| false)?;
+            let seconds: f64 = seconds.trim().parse()?;
+            if std::env::var_os("SUPERNOVA_RENDER_TIMES").is_some() {
+                // as the app does it: every frame drawn
+                let end = std::time::Instant::now() + std::time::Duration::from_secs_f64(seconds);
+                while std::time::Instant::now() < end {
+                    engine.step()?;
+                    engine.render()?;
+                    let mut state = engine.state.borrow_mut();
+                    state.screens.as_any().downcast_mut::<RuffleScreens>().unwrap().layer_textures();
+                    drop(state);
+                    std::thread::sleep(std::time::Duration::from_millis(33));
+                }
+            } else {
+                engine.run(seconds, |_| false)?;
+            }
             continue;
         }
         // "pinch:x,y,from,to" spreads (or closes) two fingers around x,y from one distance to the other
@@ -116,6 +130,12 @@ fn main() -> Result<()> {
         let mut state = engine.state.borrow_mut();
         let screens = state.screens.as_any().downcast_mut::<RuffleScreens>().unwrap();
         println!("cached (pictures, screens, loaded): {:?}", screens.cached());
+        // SUPERNOVA_RENDER_TIMES=1: how long drawing each shown screen takes
+        if std::env::var_os("SUPERNOVA_RENDER_TIMES").is_some() {
+            for _ in 0..10 {
+                screens.layer_textures();
+            }
+        }
     }
     // SUPERNOVA_PROBE="GameUIQuest_F0:SC_TEXT:textHeight,_height": properties of the text fields
     // of a screen whose name contains the given part

@@ -55,6 +55,8 @@ struct App {
     cursor: (f64, f64),
     pressed: bool,
     next_frame: Instant,
+    /// frames since `frames_since`, and the time spent in them, for the frame rate in the log
+    frames: (u32, Duration, Duration, Instant),
     keyboard: Option<SoftKeyboard>,
     /// where the keyboard's top edge was last told to the game, while it is up
     keyboard_top: Option<f64>,
@@ -156,9 +158,11 @@ impl App {
     }
 
     fn frame(&mut self) {
+        let start = Instant::now();
         if let Err(e) = self.engine.step().and_then(|_| self.engine.render()) {
             tracing::warn!("{e}");
         }
+        let scripts = start.elapsed();
         if let Some(keyboard) = self.engine.take_keyboard() {
             let show = matches!(keyboard, Keyboard::Show { .. });
             match (&self.keyboard, &self.window) {
@@ -172,6 +176,23 @@ impl App {
         let layers = self.screens().layer_textures();
         if let Some(compositor) = &mut self.compositor {
             compositor.draw(&layers);
+        }
+        let (count, in_scripts, total, since) = &mut self.frames;
+        *count += 1;
+        *in_scripts += scripts;
+        *total += start.elapsed();
+        if since.elapsed() >= Duration::from_secs(10) {
+            let n = (*count).max(1);
+            tracing::info!(
+                "{:.1} frames/s, {:?} per frame ({:?} in the scripts and screens)",
+                *count as f64 / since.elapsed().as_secs_f64(),
+                *total / n,
+                *in_scripts / n
+            );
+            for (name, _, run, draw) in crate::screens::take_times().into_iter().take(4) {
+                tracing::info!("  {name}: {run:?} running, {draw:?} drawing");
+            }
+            self.frames = (0, Duration::ZERO, Duration::ZERO, Instant::now());
         }
     }
 }
@@ -274,6 +295,7 @@ pub fn run(event_loop: EventLoop<()>, config: Config) -> Result<()> {
         cursor: (0.0, 0.0),
         pressed: false,
         next_frame: Instant::now(),
+        frames: (0, Duration::ZERO, Duration::ZERO, Instant::now()),
         keyboard: config.keyboard,
         keyboard_top: None,
         fingers: Vec::new(),

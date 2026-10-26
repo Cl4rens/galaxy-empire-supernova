@@ -16,6 +16,7 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use anyhow::{Result, anyhow};
 use ruffle_core::backend::ui::FontDefinition;
@@ -102,6 +103,7 @@ trait Movie {
     fn replace_bitmap(&mut self, name: &str, pixels: Box<dyn FnOnce(u32, u32) -> Vec<u8>>) -> bool;
     fn fit_text(&mut self, fit: &Fit) -> Option<(f64, String)>;
     fn cut_text(&mut self, target: &str, multi_line: bool, last_text: Option<&str>) -> Option<String>;
+    fn center_text(&mut self, target: &str, last_text: Option<&str>, place: Option<(f64, f64)>) -> Option<(String, (f64, f64))>;
     fn text_field_paths(&mut self, marker: &str) -> Vec<String>;
     fn find_button(&mut self, x: f64, y: f64) -> Option<String>;
 }
@@ -124,6 +126,9 @@ impl Movie for Player {
     }
     fn cut_text(&mut self, target: &str, multi_line: bool, last_text: Option<&str>) -> Option<String> {
         self.truncate_avm1_text(target, multi_line, last_text)
+    }
+    fn center_text(&mut self, target: &str, last_text: Option<&str>, place: Option<(f64, f64)>) -> Option<(String, (f64, f64))> {
+        self.center_avm1_text(target, last_text, place)
     }
     fn text_field_paths(&mut self, marker: &str) -> Vec<String> {
         Player::text_field_paths(self, marker)
@@ -153,6 +158,9 @@ impl Movie for UpdateContext<'_> {
     }
     fn cut_text(&mut self, target: &str, multi_line: bool, last_text: Option<&str>) -> Option<String> {
         external::truncate_avm1_text(self, target, multi_line, last_text)
+    }
+    fn center_text(&mut self, target: &str, last_text: Option<&str>, place: Option<(f64, f64)>) -> Option<(String, (f64, f64))> {
+        external::center_avm1_text(self, target, last_text, place)
     }
     fn text_field_paths(&mut self, marker: &str) -> Vec<String> {
         external::text_field_paths(self, marker)
@@ -289,34 +297,82 @@ struct Fit {
     min_scale: f64,
     base_size: Option<f64>,
     text: Option<String>,
-    /// found by its name (`SINGLE_LINE_MARK`, `MULTI_LINE_MARK`), not asked for by SetLineMax:
-    /// its text is cut with "..." (on one line or several), not made smaller
-    by_name: Option<bool>,
+    /// found by its name, not asked for by SetLineMax (which makes the text smaller)
+    by_name: Option<Mark>,
+    /// a centred field's own place (y, height)
+    place: Option<(f64, f64)>,
 }
 
-/// Text fields named with these show what fits of their text, ending with "...", on one line
-/// or as many as the field has (gameswf did it)
-const SINGLE_LINE_MARK: &str = "_SLHM";
-const MULTI_LINE_MARK: &str = "_MLHM";
+thread_local! {
+    /// time spent per screen since the last `take_times`: (frames, running, drawing)
+    static TIMES: RefCell<HashMap<String, (u32, Duration, Duration)>> = RefCell::default();
+}
+
+fn note_time(object: &str, running: Duration, drawing: Duration) {
+    TIMES.with(|t| {
+        let mut t = t.borrow_mut();
+        let entry = t.entry(object.to_string()).or_default();
+        if running > Duration::ZERO {
+            entry.0 += 1;
+        }
+        entry.1 += running;
+        entry.2 += drawing;
+    });
+}
+
+/// The screens that took the most time since the last call: name, frames, running, drawing
+/// (averages per frame).
+pub fn take_times() -> Vec<(String, u32, Duration, Duration)> {
+    let times = TIMES.with(|t| std::mem::take(&mut *t.borrow_mut()));
+    let mut out: Vec<_> = times
+        .into_iter()
+        .map(|(name, (n, run, draw))| {
+            let n = n.max(1);
+            (name, n, run / n, draw / n)
+        })
+        .collect();
+    out.sort_by_key(|(_, _, run, draw)| std::cmp::Reverse(*run + *draw));
+    out
+}
+
+/// What gameswf did with text fields named with a layout mark
+#[derive(Clone, Copy, PartialEq)]
+enum Mark {
+    /// what fits of the text, ending with "...", on one line
+    SingleLine,
+    /// the same on as many lines as the field has
+    MultiLine,
+    /// the text wrapped at the field's width, its lines centred on the field (message boxes)
+    Centered,
+}
+
+const MARKS: [(&str, Mark); 3] = [("_SLHM", Mark::SingleLine), ("_MLHM", Mark::MultiLine), ("_SLAC", Mark::Centered)];
 
 /// Keep the fitted text of the fields, find new marked fields and fit what changed.
 fn fit_texts(movie: &mut dyn Movie, extras: &RefCell<Extras>) {
     // the fitting runs ActionScript, which may call the scripts and they this object: no borrow
     let mut fits = std::mem::take(&mut extras.borrow_mut().fits);
-    let mut named: HashMap<String, bool> = HashMap::new();
-    for (mark, multi_line) in [(SINGLE_LINE_MARK, false), (MULTI_LINE_MARK, true)] {
-        named.extend(movie.text_field_paths(mark).into_iter().map(|target| (target, multi_line)));
+    let mut named: HashMap<String, Mark> = HashMap::new();
+    for (name, mark) in MARKS {
+        named.extend(movie.text_field_paths(name).into_iter().map(|target| (target, mark)));
     }
     fits.retain(|f| f.by_name.is_none() || named.contains_key(&f.target));
-    for (target, multi_line) in named {
+    for (target, mark) in named {
         if !fits.iter().any(|f| f.target == target) {
-            fits.push(Fit { target, min_scale: 1.0, base_size: None, text: None, by_name: Some(multi_line) });
+            fits.push(Fit { target, min_scale: 1.0, base_size: None, text: None, by_name: Some(mark), place: None });
         }
     }
     for fit in fits.iter_mut() {
         match fit.by_name {
-            Some(multi_line) => {
-                if let Some(text) = movie.cut_text(&fit.target, multi_line, fit.text.as_deref()) {
+            Some(Mark::Centered) => {
+                if let Some((text, place)) = movie.center_text(&fit.target, fit.text.as_deref(), fit.place) {
+                    fit.text = Some(text);
+                    fit.place = Some(place);
+                }
+            }
+            Some(mark) => {
+                if let Some(text) = movie.cut_text(&fit.target, mark == Mark::MultiLine, fit.text.as_deref()) {
+                    tracing::trace!("cut {}: {text:?}", fit.target);
                     fit.text = Some(text);
                 }
             }
@@ -465,7 +521,9 @@ impl RuffleScreens {
         for object in self.rendered.clone() {
             let Some(screen) = self.screens.get(&object) else { continue };
             let mut p = screen.player.lock().unwrap();
+            let start = std::time::Instant::now();
             p.render();
+            note_time(&object, Duration::ZERO, start.elapsed());
             let Some(renderer) = <dyn std::any::Any>::downcast_mut::<WgpuRenderBackend<TextureTarget>>(p.renderer_mut()) else { continue };
             if let Some(layer) = renderer.capture_frame() {
                 out.push((object, layer));
@@ -481,7 +539,9 @@ impl RuffleScreens {
         for object in &self.rendered {
             let Some(screen) = self.screens.get(object) else { continue };
             let mut p = screen.player.lock().unwrap();
+            let start = std::time::Instant::now();
             p.render();
+            note_time(&object, Duration::ZERO, start.elapsed());
             if let Some(renderer) = <dyn std::any::Any>::downcast_ref::<WgpuRenderBackend<TextureTarget>>(p.renderer()) {
                 out.push(renderer.target().texture.clone());
             }
@@ -552,8 +612,10 @@ impl Screens for RuffleScreens {
                         return Vec::new(); // the movie is in the middle of a command
                     }
                     if let Ok(mut p) = player.try_lock() {
+                        let start = std::time::Instant::now();
                         p.tick(FloatDuration::from_millis(dt));
                         fit_texts(&mut *p, &extras);
+                        note_time(&name, start.elapsed(), Duration::ZERO);
                     }
                     Vec::new()
                 }))
@@ -626,6 +688,7 @@ impl Screens for RuffleScreens {
                     base_size: None,
                     text: None,
                     by_name: None,
+                    place: None,
                 };
                 let fits = &mut extras.borrow_mut().fits;
                 fits.retain(|f| f.target != fit.target);
