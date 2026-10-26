@@ -415,8 +415,8 @@ top bar.
 | `POST messages.json` `message_type=4` | mail to all members |
 
 Ranks (`level`): 0 member, 1 vice president, 2 president. The empire carries `alliance_id`,
-`alliance_name`, `alliance_membership_id` and `alliance_application_id`. The treasury
-(`bag_log`) and coordinated attacks (`acses`) answer empty lists.
+`alliance_name`, `alliance_membership_id` and `alliance_application_id`. The treasury and
+coordinated attacks have sections of their own below.
 
 ### Tutorial quests
 
