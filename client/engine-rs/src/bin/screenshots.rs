@@ -66,6 +66,11 @@ fn main() -> Result<()> {
             shot(&mut engine, &out, &format!("5-tap{}", n + 1))?;
             continue;
         }
+        // "wait:seconds" lets the game run that long
+        if let Some(seconds) = tap.strip_prefix("wait:") {
+            engine.run(seconds.trim().parse()?, |_| false)?;
+            continue;
+        }
         // "drag:x1,y1,x2,y2" moves a finger from one point to the other
         if let Some(points) = tap.strip_prefix("drag:") {
             let p: Vec<f64> = points.split(',').map(|v| v.trim().parse()).collect::<Result<_, _>>()?;
