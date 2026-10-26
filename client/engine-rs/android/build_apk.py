@@ -24,7 +24,7 @@ HERE = Path(__file__).resolve().parent
 ENGINE = HERE.parent
 OUT = ENGINE / "target" / "android"
 ABIS = ["arm64-v8a", "x86_64"]
-MIN_SDK = "24"
+MIN_SDK = "26"
 KEY_ALIAS = "supernova"
 KEY_PASS = "supernova"
 

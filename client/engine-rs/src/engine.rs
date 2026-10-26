@@ -13,6 +13,7 @@ use mlua::serde::{DeserializeOptions, SerializeOptions};
 use mlua::{Function, Lua, LuaSerdeExt, MultiValue, Table, Value};
 
 use crate::assets::Assets;
+use crate::audio::Audio;
 use crate::crypto;
 
 const PRELUDE: &str = include_str!("../../supernova_client/prelude.lua");
@@ -140,6 +141,8 @@ pub struct State {
     pending: usize,
     /// The keyboard the game wants: shown (with the input type) or hidden, until the app took it.
     keyboard: Option<Keyboard>,
+    /// music and sounds, once the app switched them on (the test tools stay quiet)
+    audio: Option<Audio>,
     pub screens: Box<dyn Screens>,
 }
 
@@ -232,6 +235,7 @@ impl Engine {
             answers: channel(),
             pending: 0,
             keyboard: None,
+            audio: None,
             screens,
         }));
         // the game uses the debug library (tracebacks), which mlua leaves out by default
@@ -385,8 +389,29 @@ impl Engine {
         self.state.borrow_mut().keyboard.take()
     }
 
+    /// Play the game's music and sounds on the system's sound output.
+    pub fn enable_audio(&self) {
+        self.state.borrow_mut().audio = Audio::open();
+    }
+
+    /// Two fingers on the screen, in the game's coordinates: OnMultiTouchBegin/Move/End.
+    pub fn two_touch(&self, phase: Touch, x1: f64, y1: f64, x2: f64, y2: f64) -> Result<()> {
+        let name = match phase {
+            Touch::Pressed => "OnMultiTouchBegin",
+            Touch::Moved => "OnMultiTouchMove",
+            Touch::Released => "OnMultiTouchEnd",
+        };
+        if let Ok(handler) = self.lua.globals().raw_get::<Function>(name) {
+            handler.call::<()>((x1, y1, x2, y2))?;
+        }
+        Ok(())
+    }
+
     /// The app goes to the background or comes back (OnPause/OnResume).
     pub fn pause(&self, paused: bool) -> Result<()> {
+        if let Some(audio) = &mut self.state.borrow_mut().audio {
+            audio.pause(paused);
+        }
         let name = if paused { "OnPause" } else { "OnResume" };
         if let Ok(handler) = self.lua.globals().raw_get::<Function>(name) {
             handler.call::<()>(())?;
@@ -434,7 +459,13 @@ impl Engine {
 }
 
 /// Hand a Flash command to the scripts: the fscommand handler of the object's Flash class.
+/// PLAYSFX (a button's click) the engine plays itself, as gameswf did.
 fn dispatch_fscommand(lua: &Lua, class: &str, command: &str, arg: &str) -> Result<()> {
+    if command == "PLAYSFX" {
+        let audio: Table = lua.globals().raw_get::<Table>("ext")?.raw_get("audio")?;
+        audio.get::<Function>("playEffect")?.call::<()>(format!("sound/{arg}"))?;
+        return Ok(());
+    }
     let classes: Table = lua.globals().raw_get("__sn_flash_classes")?;
     let class_table: Table = classes.get(class).map_err(|_| anyhow!("no Flash class {class}"))?;
     let handler: Function = class_table.get("fscommand").map_err(|_| anyhow!("{class} has no fscommand handler"))?;
@@ -542,6 +573,29 @@ fn native_table(lua: &Lua, state: &Rc<RefCell<State>>) -> Result<Table> {
         Ok(Value::String(lua.create_string(crypto::encrypt(&key, &data))?))
     });
     native!("copy", |st, lua, args| Ok(Value::Nil));
+    native!("audio", |st, lua, args| {
+        let (command, value) = (arg(&args, 0), arg(&args, 1));
+        let mut s = st.borrow_mut();
+        let State { assets, audio, .. } = &mut *s;
+        let Some(audio) = audio else { return Ok(Value::Nil) };
+        let sound = || assets.file(value.trim_start_matches("./")).map(<[u8]>::to_vec);
+        let volume = || value.parse::<f32>().unwrap_or(1.0);
+        match command.as_str() {
+            "music" => match sound() {
+                Some(data) => audio.play_music(data),
+                None => tracing::warn!("no music {value}"),
+            },
+            "stop" => audio.stop_music(),
+            "effect" => match sound() {
+                Some(data) => audio.play_effect(data),
+                None => tracing::warn!("no sound {value}"),
+            },
+            "music_volume" => audio.set_music_volume(volume()),
+            "sound_volume" => audio.set_sound_volume(volume()),
+            _ => {}
+        }
+        Ok(Value::Nil)
+    });
     native!("keyboard", |st, lua, args| {
         let show = matches!(args.first(), Some(Value::Boolean(true)));
         st.borrow_mut().keyboard = Some(if show { Keyboard::Show { input_type: arg(&args, 1) } } else { Keyboard::Hide });

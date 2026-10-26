@@ -170,6 +170,10 @@ class Engine:
                 engine.clipboard = text
 
             @staticmethod
+            def audio(command, value=None):
+                pass
+
+            @staticmethod
             def keyboard(show, input_type=None):
                 engine.keyboard = bool(show)
 

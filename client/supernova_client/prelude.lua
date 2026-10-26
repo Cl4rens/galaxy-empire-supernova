@@ -19,6 +19,13 @@ for _, sub in ipairs({"http", "video", "audio", "keyboard", "json", "socialShare
   ext[sub] = api_table("ext." .. sub)
 end
 
+-- music and sounds (files under sound/)
+function ext.audio.playBackgroundMusic(path) native.audio("music", path) end
+function ext.audio.stopBackgroundMusic() native.audio("stop") end
+function ext.audio.playEffect(path) native.audio("effect", path) end
+function ext.audio.SetMusicVolume(volume) native.audio("music_volume", volume) end
+function ext.audio.SetSoundVolume(volume) native.audio("sound_volume", volume) end
+
 -- device and app
 function ext.GetPlatform() return "Android" end
 function ext.GetIOSOpenUdid() return native.udid() end

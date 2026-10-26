@@ -71,6 +71,24 @@ fn main() -> Result<()> {
             engine.run(seconds.trim().parse()?, |_| false)?;
             continue;
         }
+        // "pinch:x,y,from,to" spreads (or closes) two fingers around x,y from one distance to the other
+        if let Some(values) = tap.strip_prefix("pinch:") {
+            let p: Vec<f64> = values.split(',').map(|v| v.trim().parse()).collect::<Result<_, _>>()?;
+            let [x, y, from, to] = p[..] else { bail!("pinch needs four numbers") };
+            let at = |d: f64| (x - d / 2.0, y, x + d / 2.0, y);
+            let (x1, y1, x2, y2) = at(from);
+            engine.two_touch(Touch::Pressed, x1, y1, x2, y2)?;
+            for step in 1..=10 {
+                engine.run(0.03, |_| false)?;
+                let (x1, y1, x2, y2) = at(from + (to - from) * step as f64 / 10.0);
+                engine.two_touch(Touch::Moved, x1, y1, x2, y2)?;
+            }
+            let (x1, y1, x2, y2) = at(to);
+            engine.two_touch(Touch::Released, x1, y1, x2, y2)?;
+            engine.run(2.0, |_| false)?;
+            shot(&mut engine, &out, &format!("5-tap{}", n + 1))?;
+            continue;
+        }
         // "drag:x1,y1,x2,y2" moves a finger from one point to the other
         if let Some(points) = tap.strip_prefix("drag:") {
             let p: Vec<f64> = points.split(',').map(|v| v.trim().parse()).collect::<Result<_, _>>()?;

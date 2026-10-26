@@ -2,6 +2,7 @@
 //! player's APK) on devices the original 32-bit engine does not support.
 
 pub mod assets;
+pub mod audio;
 pub mod crypto;
 pub mod engine;
 pub mod convert;

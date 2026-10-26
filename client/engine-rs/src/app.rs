@@ -58,6 +58,9 @@ struct App {
     keyboard: Option<SoftKeyboard>,
     /// where the keyboard's top edge was last told to the game, while it is up
     keyboard_top: Option<f64>,
+    /// the fingers on the screen (id, window position), and whether two of them were down
+    fingers: Vec<(u64, f64, f64)>,
+    two_fingers: bool,
 }
 
 impl App {
@@ -73,6 +76,60 @@ impl App {
         let (gx, gy) = to_game(w, h, x, y);
         if let Err(e) = self.engine.touch(phase, gx, gy) {
             tracing::warn!("touch: {e}");
+        }
+    }
+
+    /// One finger is a touch; with a second one the game gets the two (pinching, moving the
+    /// map) until both are lifted.
+    fn finger(&mut self, id: u64, phase: TouchPhase, x: f64, y: f64) {
+        match phase {
+            TouchPhase::Started => {
+                self.fingers.push((id, x, y));
+                match self.fingers.len() {
+                    1 if !self.two_fingers => self.touch(Touch::Pressed, x, y),
+                    2 => {
+                        // the first finger's touch ends where nothing takes it
+                        if let Err(e) = self.engine.touch(Touch::Released, -1000.0, -1000.0) {
+                            tracing::warn!("touch: {e}");
+                        }
+                        self.two_fingers = true;
+                        self.two_touch(Touch::Pressed);
+                    }
+                    _ => {}
+                }
+            }
+            TouchPhase::Moved => {
+                if let Some(finger) = self.fingers.iter_mut().find(|f| f.0 == id) {
+                    (finger.1, finger.2) = (x, y);
+                }
+                if self.two_fingers {
+                    self.two_touch(Touch::Moved);
+                } else if self.fingers.len() == 1 {
+                    self.touch(Touch::Moved, x, y);
+                }
+            }
+            TouchPhase::Ended | TouchPhase::Cancelled => {
+                if self.two_fingers {
+                    if self.fingers.len() == 2 {
+                        self.two_touch(Touch::Released);
+                    }
+                } else if self.fingers.iter().any(|f| f.0 == id) {
+                    self.touch(Touch::Released, x, y);
+                }
+                self.fingers.retain(|f| f.0 != id);
+                if self.fingers.is_empty() {
+                    self.two_fingers = false;
+                }
+            }
+        }
+    }
+
+    fn two_touch(&self, phase: Touch) {
+        let (Some(compositor), [(_, x1, y1), (_, x2, y2), ..]) = (&self.compositor, self.fingers.as_slice()) else { return };
+        let (w, h) = compositor.size();
+        let ((x1, y1), (x2, y2)) = (to_game(w, h, *x1, *y1), to_game(w, h, *x2, *y2));
+        if let Err(e) = self.engine.two_touch(phase, x1, y1, x2, y2) {
+            tracing::warn!("two-finger touch: {e}");
         }
     }
 
@@ -163,14 +220,7 @@ impl ApplicationHandler for App {
                 let phase = if self.pressed { Touch::Pressed } else { Touch::Released };
                 self.touch(phase, self.cursor.0, self.cursor.1);
             }
-            WindowEvent::Touch(touch) => {
-                let phase = match touch.phase {
-                    TouchPhase::Started => Touch::Pressed,
-                    TouchPhase::Moved => Touch::Moved,
-                    TouchPhase::Ended | TouchPhase::Cancelled => Touch::Released,
-                };
-                self.touch(phase, touch.location.x, touch.location.y);
-            }
+            WindowEvent::Touch(touch) => self.finger(touch.id, touch.phase, touch.location.x, touch.location.y),
             // typed text for the game's text box (the soft keyboard sends keys too)
             // (Android's key map gives some keys as characters: enter as "\n")
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
@@ -215,6 +265,7 @@ pub fn run(event_loop: EventLoop<()>, config: Config) -> Result<()> {
             Engine::with_assets(Assets::from_game_zip(game_zip)?, key, &config.server, config.save_dir, &config.language, screens)?
         }
     };
+    engine.enable_audio();
     engine.boot()?;
     let mut app = App {
         engine,
@@ -225,6 +276,8 @@ pub fn run(event_loop: EventLoop<()>, config: Config) -> Result<()> {
         next_frame: Instant::now(),
         keyboard: config.keyboard,
         keyboard_top: None,
+        fingers: Vec::new(),
+        two_fingers: false,
     };
     event_loop.run_app(&mut app)?;
     Ok(())
