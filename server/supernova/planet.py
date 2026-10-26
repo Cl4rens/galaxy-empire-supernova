@@ -79,7 +79,8 @@ def fields(planet: dict) -> tuple[int, int]:
     """(used, available) building fields."""
     used = sum(b["building_level"] for b in planet["buildings"])
     if is_moon(planet):
-        return used, 1 + MOON_FIELDS_PER_BASE_LEVEL * level(planet, eco.MOON_BASE)
+        # lunar terraformers add fields
+        return used, 1 + MOON_FIELDS_PER_BASE_LEVEL * level(planet, eco.MOON_BASE) + planet.get("extra_fields", 0)
     return used, PLANET_FIELDS + planet.get("extra_fields", 0)  # terraformers add fields
 
 
@@ -241,9 +242,12 @@ def tick(empire: dict, now: float | None = None) -> None:
     for key, benefit in (("build", "build"), ("research", "research"), ("mines", "production"),
                          ("ships", "shipyard")):
         boost[key] = boost.get(key, 0) + vip.benefit(empire, benefit, now)
+    from . import specials
     for planet in bodies(empire):
         add_missing_fleets(planet)
-        planet["officer"] = boost
+        specials.expire(planet, now)
+        abyss = specials.projection_bonus(planet, "build", now)  # an Abyss Projection
+        planet["officer"] = dict(boost, build=boost.get("build", 0) + abyss) if abyss else boost
         _tick_planet(empire, planet, now)
         planet["transmit_recharge_event"] = [e for e in planet.get("transmit_recharge_event", [])
                                              if e["finish_time"] > now]

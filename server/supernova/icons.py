@@ -55,9 +55,42 @@ WIKI_FILES = {
     "officer_guider_1.png": "Navigator@2x.png",  # the guider's pictures are named navigator
     "officer_guider_2.png": "Navigator_lv2@2x.png",
     "officer_guider_3.png": "Navigator_lv3@2x.png",
-    "container_metal.png": "Items_metal@2x.png",
-    "container_crystal.png": "Items_crystal@2x.png",
-    "container_gas.png": "Items_gas@2x.png",
+    "container_metal.png": Source("Metal_Container.png", cover=(84, 11, 116, 43)),
+    "container_crystal.png": Source("Crystal_Containers.png", cover=(87, 15, 118, 46)),
+    "container_gas.png": Source("Gas_Containers.png", cover=(85, 8, 116, 39)),
+    "speedstone_1m.png": Source("1m_Speedstone.png", crop=(10, 15, 112, 117), cover=(70, 15, 99, 43)),
+    "speedstone_5m.png": Source("5m_Speedstone.png", crop=(10, 15, 112, 117), cover=(74, 20, 103, 48)),
+    "speedstone_30m.png": Source("30m_Speedstone.png", crop=(12, 15, 114, 117), cover=(74, 14, 103, 43)),
+    "speedstone_1h.png": Source("1h_Speedstone.png", crop=(12, 15, 114, 117), cover=(72, 9, 101, 38)),
+    "speedstone_5h.png": Source("5h_Speedstone.png", crop=(10, 15, 112, 117), cover=(73, 11, 102, 40)),
+    "speedstone_24h.png": Source("24h_Speedstone.png", crop=(12, 15, 114, 117), cover=(75, 18, 104, 47)),
+    # specials.py; the wiki has the Energy Projection only at level 1
+    "projection_abyss_1.png": "Item_skycurtain-abyss_lv1@2x.png",
+    "projection_abyss_2.png": "Item_skycurtain-abyss_lv2@2x.png",
+    "projection_black_hole_1.png": "Item_skycurtain-wromhole_lv1@2x.png",
+    "projection_black_hole_2.png": "Item_skycurtain-wromhole_lv2@2x.png",
+    "projection_energy_1.png": "Item_skycurtain-highEN_lv1@2x.png",
+    "projection_energy_2.png": "Item_skycurtain-highEN_lv1@2x.png",
+    "projection_steel_1.png": "Item_skycurtain-iron_lv1@2x.png",
+    "projection_steel_2.png": "Item_skycurtain-iron_lv2@2x.png",
+    "projection_evil_1.png": "Item_skycurtain-evil_lv1@2x.png",
+    "projection_evil_2.png": "Item_skycurtain-evil_lv2@2x.png",
+    "peace_1.png": Source("Protect_lv1.png"),
+    "peace_2.png": Source("Protect_lv2.png"),
+    "planet_shifter.png": "Xingqiuzhuanyi@2x.png",
+    "planet_shifter_galaxy.png": Source("Planet_Shifter_2.png"),
+    "planet_shifter_chosen.png": Source("Planet_exchange_gu_diy.png"),
+    "nebula_navigator_1.png": Source("Nebula_Navigator.png"),
+    "nebula_navigator_2.png": Source("Nebula_Navigator_Lv._2.png"),
+    "nebula_navigator_3.png": Source("Nebula_Navigator_Lv._3.png"),
+    "lunar_terraformer_1.png": Source("Lunar_Terraformer.png", crop=(5, 18, 110, 123), cover=(76, 9, 107, 39)),
+    "lunar_terraformer_2.png": Source("Lunar_Terraformer_Lv.2.png", crop=(28, 120, 258, 350), cover=(171, -6, 233, 55)),
+    "lunar_catalyst.png": Source("Lunar_Catalyst.png", crop=(10, 20, 112, 122), cover=(74, 26, 104, 56)),
+    "lunar_catalyst_advanced.png": Source("Advanced_Lunar_Catalyst_b.png", crop=(32, 120, 262, 350), cover=(174, 3, 236, 65)),
+    "reformer_crystal_1.png": Source("Crystal_Reformers.png", cover=(83, 12, 115, 44)),
+    "reformer_crystal_2.png": Source("Crystal_Reformers_Level_2.png", cover=(89, 11, 121, 42)),
+    "reformer_gas_1.png": Source("Gas_Reformers.png", cover=(79, 9, 109, 39)),
+    "reformer_gas_2.png": Source("Gas_Reformers_Level_2.png", cover=(84, 12, 116, 44)),
     "terraformer.png": "Terraformation@2x.png",
     "ecm_chip.png": "Electronic_warfare_chip.png",
     # VIP points items (vip.py): the wiki's level badges, which show the points
@@ -68,7 +101,7 @@ WIKI_FILES = {
     "vip_points_5.png": Source("VIP_5.png"),
     "vip_points_6.png": Source("VIP_6.png"),
     # the wiki only has a screenshot of the store entry: its picture, without the "i" badge
-    "gamma_detector.png": Source("Gamma_Detector_(Large).png", crop=(14, 27, 117, 118), cover=(68, -2, 107, 36)),
+    "gamma_detector.png": Source("Gamma_Detector_(Large).png", crop=(14, 27, 117, 118), cover=(70, 0, 104, 33)),
 }
 
 
@@ -123,7 +156,7 @@ def _saved(folder: Path, wiki: str) -> Path | None:
 
 def picture(data: bytes, source: Source) -> bytes:
     """A saved wiki file as an item picture: SIZE x SIZE, PNG."""
-    from PIL import Image, ImageDraw, ImageFilter  # only importing pictures needs Pillow
+    from PIL import Image, ImageDraw, ImageFilter, ImageStat  # only importing pictures needs Pillow
 
     image = Image.open(io.BytesIO(data)).convert("RGBA")
     w, h = image.size
@@ -132,7 +165,12 @@ def picture(data: bytes, source: Source) -> bytes:
     if source.cover:
         mask = Image.new("L", image.size, 0)
         ImageDraw.Draw(mask).ellipse(source.cover, fill=255)
-        for _ in range(120):  # from the edge inwards
+        # first the average colour around it, so nothing of the badge shines through ...
+        ring = mask.filter(ImageFilter.MaxFilter(9))
+        ring.paste(0, mask=mask)
+        average = tuple(int(v) for v in ImageStat.Stat(image, mask=ring).mean)
+        image.paste(Image.new("RGBA", image.size, average), mask=mask)
+        for _ in range(120):  # ... then the surroundings from the edge inwards
             image.paste(image.filter(ImageFilter.GaussianBlur(2)), mask=mask)
     if image.size != (SIZE, SIZE):
         image = image.resize((SIZE, SIZE), Image.LANCZOS)

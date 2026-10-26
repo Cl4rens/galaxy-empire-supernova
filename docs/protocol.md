@@ -647,7 +647,7 @@ total_time, fleets}]`.
 | `GET game_items/item_packages` | `{item_packages: []}` |
 | `POST users/{id}/buy_game_item` `game_item_id, number` | `{darkmatter, credits, info, id, item_type}` |
 | `GET users/{id}/game_items` `category` | `{items: [item + amount, can_be_use], dark_matter_count, gu_count}` |
-| `POST users/{id}/use_game_item` `game_item_id, number, planet_id` | `{info, categories: [the changed item], empire, planet}` |
+| `POST users/{id}/use_game_item` `game_item_id, number, planet_id` (a directional planet shifter, `item_type` 92, adds `galaxy_position, system_position, planet_position`) | `{info, categories: [the changed item], empire, planet}` |
 | `POST users/{id}/del_game_item` `game_item_id` | `{item: {game_item_id}}` |
 | `GET {building_events, fleet_building_events, research_upgrading_events}/{id}/speedup_info.json` | `{items: [speed-up items with amount], left_time, dark_matter_count (price to finish now)}` |
 | `POST .../{id}/speedup.json` `game_item_id` | uses an owned speed-up; `game_item_id=0` finishes with dark matter. Answer: `{update: {buildings, fleets, researches}, empire, planet}` |
@@ -684,8 +684,10 @@ The client hides the daily tasks button (`GameUICityUIUp:SetTap4funButtonVisible
 
 | Request | Answer |
 |---------|--------|
-| `GET users/{id}/game_items_shortcuts?shortcuts=N` (1-3 metal/crystal/gas containers, 4 terraformers, 11 officers; others empty) | `{items: [item + amount]}` |
+| `GET users/{id}/game_items_shortcuts?shortcuts=N` (1-3 metal/crystal/gas containers, 4 terraformers, 5 planet shifters, 7 lunar terraformers, 8 projections, 9 peace agreements, 10 gamma detectors and nebula navigators, 11 officers; 6 empty) | `{items: [item + amount]}` |
 | `POST users/{id}/buy_and_use_game_item` `game_item_id, planet_id` | like `use_game_item` |
+
+Planets in `systems/{id}` carry `planet_icon` (a projection: the solar system's frame label `planet_Icon_N`, 22-31) and `is_protected` (a peace agreement); the player's own planets carry `planet_icon`, `planet_icon_end_time` and `planet_icon_info {name, desc}`, which the city screen shows.
 
 Items now carry `pay_type` 1 (dark matter) or 2 (credits). `GET users/my_buffs_ext` lists the
 hired officers in `buff_list: [{buffer_name, end_time, buffer_desc, buff_type, img}]`.

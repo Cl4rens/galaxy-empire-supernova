@@ -16,7 +16,7 @@ import random
 import time
 
 from . import combat, config, db, ranking
-from . import vip
+from . import specials, vip
 from . import economy as eco
 from . import daily, devices, ecm, flagships, items, officers, kryptons, lordship, mails, npc, protection, quests, repairs
 from . import planet as planet_rules
@@ -155,7 +155,9 @@ def allowed_missions(player_id: int, origin: dict, target: tuple[int, int, int],
     else:
         if ESPIONAGE_PROBE in ships:
             missions.append(ESPIONAGE)
-        if any(combat.STATS[t].weapon > 0 for t in ships) and                 protection.can_attack(player_id, row["player_id"]) == protection.ATTACK_OK:
+        if any(combat.STATS[t].weapon > 0 for t in ships) and \
+                protection.can_attack(player_id, row["player_id"]) == protection.ATTACK_OK and \
+                not specials.target_at_peace(row["id"], time.time()):
             missions.append(ATTACK)
     return missions
 
@@ -163,7 +165,8 @@ def allowed_missions(player_id: int, origin: dict, target: tuple[int, int, int],
 def plan(empire: dict, player_id: int, ships: dict[int, int], target: tuple[int, int, int],
          percent: int = 100, origin: dict | None = None, moon: bool = False) -> dict:
     origin = origin or empire["main_planet"]
-    speed = min(ship_speed(empire, t) for t in ships)
+    black_hole = specials.projection_bonus(origin, "flight_speed", time.time())
+    speed = int(min(ship_speed(empire, t) for t in ships) * (1 + black_hole / 100))
     dist = eco.distance(_position(origin), target)
     return {
         "missions": allowed_missions(player_id, origin, target, ships, moon),
@@ -196,6 +199,8 @@ def send(player_id: int, state: dict, params: dict, now: float) -> None:
             verdict = protection.can_attack(player_id, target_row["player_id"])
             if verdict != protection.ATTACK_OK:
                 raise FleetError(protection.MESSAGES[verdict])
+            if specials.target_at_peace(target_row["id"], now):
+                raise FleetError("This planet is protected by a peace agreement")
         raise FleetError("This mission is not possible here")
     if mission == TRANSMIT:
         _transmit(empire, origin, target, ships, now)
@@ -229,19 +234,23 @@ def send(player_id: int, state: dict, params: dict, now: float) -> None:
     quest_action = QUEST_ACTIONS.get(mission)
     if mission == ATTACK:
         quest_action = quests.ATTACK_PLAYER if target_row else quests.ATTACK_PIRATES
+    if mission == ATTACK and target_row and target_row["player_id"] != player_id:
+        specials.end_peace(empire)  # attacking ends your own peace agreements
     if quest_action:
         quests.record_action(state, quest_action)
     if mission in DAILY_ACTIONS or (mission == ATTACK and not target_row):
         daily.record(state, DAILY_ACTIONS.get(mission, daily.ATTACK_PIRATES))
     conn = db.connect()
     with db.lock(), conn:
-        conn.execute(
+        cur = conn.execute(
             "INSERT INTO fleet_events (owner_id, origin_planet_id, target_planet_id, target_galaxy, target_system, "
             "target_position, mission, ships, cargo, start_time, arrival_time, return_time, status) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'outbound')",
             (player_id, origin["planet_id"], target_id, *target, mission,
              json.dumps({str(t): n for t, n in ships.items()}), json.dumps(cargo),
              int(now), int(now) + flight, int(now) + 2 * flight))
+    if mission == EXPEDITION:
+        specials.navigator_start(empire, cur.lastrowid, ships)
 
 
 def portal_recharge_seconds(portal_level: int) -> int:
@@ -482,11 +491,11 @@ def _side(name: str, empire: dict, units: dict[int, int], planet: dict | None = 
                        planet_rules.research_level(empire, eco.SHIELDING_TECH),
                        planet_rules.research_level(empire, eco.ARMOUR_TECH),
                        kryptons.bonus(planet, "attack") + behemoth_bonus + ecm_bonus + lord.get("increase_attack", 0)
-                       + vip.benefit(empire, "attack"),
+                       + vip.benefit(empire, "attack") + specials.projection_bonus(planet, "attack"),
                        kryptons.bonus(planet, "shield") + ecm_bonus + lord.get("increase_shield", 0)
-                       + vip.benefit(empire, "shield"),
+                       + vip.benefit(empire, "shield") + specials.projection_bonus(planet, "shield"),
                        kryptons.bonus(planet, "armour") + ecm_bonus + lord.get("increase_armour", 0)
-                       + vip.benefit(empire, "armour"),
+                       + vip.benefit(empire, "armour") + specials.projection_bonus(planet, "armour"),
                        devices.unit_bonuses(empire), planet_rules.research_level(empire, eco.MISSILE_TECH),
                        officers.defense_save(empire))
 
@@ -862,7 +871,34 @@ def _expedition(row) -> str:
                 "explore_data": {"curr": npc.expeditions_today(owner, now),
                                  "max": secure_explorations(db.load_state(owner)["empire"], now)}},
                now)
+    if _explore_again(row, ships, cargo):
+        return "outbound"
     return _fly_home(row, ships, cargo)
+
+
+def _explore_again(row, ships: dict[int, int], cargo: dict) -> bool:
+    """A navigated expedition (Nebula Navigator) sets out on its next run from the nebula."""
+    owner, now = row["owner_id"], row["arrival_time"]
+    with db.player_state(owner) as state:
+        empire = state["empire"]
+        if str(row["id"]) not in (empire.get("navigator") or {}).get("fleets", {}):
+            return False
+        origin = planet_rules.find_planet(empire, row["origin_planet_id"])
+        if origin:
+            planet_rules.tick(empire, now)
+        left = npc.expeditions_today(owner, now) < secure_explorations(empire, now)
+        ships = specials.navigator_next(empire, row["id"], origin, ships, left)
+        if ships is None:
+            return False
+    npc.record_expedition(owner, now)
+    one_way = row["arrival_time"] - row["start_time"]
+    conn = db.connect()
+    with db.lock(), conn:
+        conn.execute("UPDATE fleet_events SET ships = ?, cargo = ?, start_time = ?, arrival_time = ?, "
+                     "return_time = ? WHERE id = ?",
+                     (json.dumps({str(t): n for t, n in ships.items()}), json.dumps(cargo), now, now + one_way,
+                      now + 2 * one_way, row["id"]))
+    return True
 
 
 def _recycle(row) -> str:
@@ -956,6 +992,14 @@ def _arrive(row) -> str:
             _espionage(row, target_owner, state, planet)
             return "returning"
         if row["mission"] == ATTACK:
+            if specials.at_peace(planet, row["arrival_time"]):
+                mails.send(row["owner_id"], mails.REPORT, mails.SENDER_FLEET, _username(row["owner_id"]),
+                           "Attack called off", {"mission_type": ATTACK, "is_returning": False,
+                                                 "event_info": _event_info(row, row["arrival_time"]),
+                                                 "notify_message": "The planet signed a peace agreement; "
+                                                                   "your fleet turned back."},
+                           row["arrival_time"])
+                return "returning"
             return _attack(row, target_owner, state, planet)
         for res in RESOURCES:
             planet[res] += cargo[res]
@@ -1017,7 +1061,7 @@ def process_due(now: float | None = None) -> int:
                 with db.lock(), conn:
                     if status == "done":
                         conn.execute("DELETE FROM fleet_events WHERE id = ?", (row["id"],))
-                    else:
+                    elif status == "returning":
                         conn.execute("UPDATE fleet_events SET status = 'returning', turn_time = arrival_time "
                                      "WHERE id = ?", (row["id"],))
             else:

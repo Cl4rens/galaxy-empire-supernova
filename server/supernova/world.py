@@ -396,6 +396,12 @@ async def vip_items(world_id: int, request: Request, player_id: int = Depends(cu
     return encrypted_json({"items": items.vip_shop(items.VIP_POINTS if kind == "add_score" else items.VIP_TIME)})
 
 
+def _coordinates(params: dict) -> tuple[int, int, int] | None:
+    """The position chosen for a directional planet shifter, if any."""
+    keys = ("galaxy_position", "system_position", "planet_position")
+    return tuple(_int(params, k) for k in keys) if all(params.get(k) for k in keys) else None
+
+
 @router.get("/users/{user_id}/game_items_shortcuts")
 def item_shortcuts(user_id: int, shortcuts: int = 0, player_id: int = Depends(current_player)):
     """Quick-buy lists (resource containers, terraformers, officers ...)."""
@@ -414,7 +420,7 @@ async def buy_and_use_item(world_id: int, user_id: int, request: Request, player
             empire = state["empire"]
             planet_rules.tick(empire, now)
             item_id = _int(params, "game_item_id")
-            info = items.buy_and_use(state, item_id, empire["main_planet"], now)
+            info = items.buy_and_use(state, item_id, empire["main_planet"], now, _coordinates(params))
             planet_rules.tick(empire, now)
             return {"info": info, "categories": [items.owned_view(state, items.item(item_id))],
                     "empire": player.empire_summary(state), "planet": planet_rules.client_view(empire, now)}
@@ -1646,7 +1652,8 @@ async def use_item(world_id: int, user_id: int, request: Request, player_id: int
                 return {"energy_particle_amount": items.amount(state, items.GALAXIUM),
                         "dark_matter": empire["dark_matter_count"], "gu": empire.get("gu_count", 0),
                         "interceptor": planet_rules.fleet(empire["main_planet"], 23)["amount"]}
-            info = items.use(state, item_id, _int(params, "number", 1), empire["main_planet"], now)
+            info = items.use(state, item_id, _int(params, "number", 1), empire["main_planet"], now,
+                             target=_coordinates(params))
             planet_rules.tick(empire, now)  # officers take effect at once
             return {"info": info, "categories": [items.owned_view(state, items.item(item_id))],
                     "empire": player.empire_summary(state), "planet": planet_rules.client_view(empire, now)}

@@ -10,7 +10,7 @@ import time
 from . import economy as eco
 from . import checkin, config, fleets, fortresses, gifts, growth, mails, ranking
 from . import planet as planet_rules
-from . import universe, vip
+from . import specials, universe, vip
 
 # Planet lots 1-3 are reserved for the mines; free building lots are 4-15.
 MINE_POSITIONS = {eco.METAL_MINE: 1, eco.CRYSTAL_MINE: 2, eco.DEUTERIUM_MINE: 3}
@@ -170,8 +170,8 @@ def planets_info(empire: dict) -> list[dict]:
         "radar_level": planet_rules.level(p, eco.RADAR_CENTER),
         "is_radar_on": p.get("radar_on", True),
         "moon_array": [_moon_info(p["moon"])] if p.get("moon") else [],
-        "is_protected": 0,
-        "protected_time": 0,
+        "is_protected": int(specials.at_peace(p, time.time())),
+        "protected_time": specials.peace_left(p, time.time()),
         "attacked_time": 0,
         "attacked_num": 0,
         "auto_explore": False,

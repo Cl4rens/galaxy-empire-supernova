@@ -70,6 +70,8 @@ class Item:
     vip_points: int = 0  # VIP points, added when bought
     vip_days: int = 0  # days of VIP benefits, added when bought
     explorations: int = 0  # gamma detector: secure explorations beyond the day's
+    special: tuple = ()  # planet and moon items of specials.py: (kind, *arguments)
+    item_type: int = 1  # what the capsule does on "Use" (92: asks for coordinates)
 
     def image(self) -> str:
         """What the client shows for the item ("icons/..."), the original picture if the server has it."""
@@ -78,6 +80,8 @@ class Item:
 
 # quick-buy lists of the client
 SHORTCUT_METAL, SHORTCUT_CRYSTAL, SHORTCUT_DEUTERIUM, SHORTCUT_FIELDS, SHORTCUT_OFFICERS = 1, 2, 3, 4, 11
+SHORTCUT_SHIFT, SHORTCUT_MOON_FIELDS, SHORTCUT_PROJECTION, SHORTCUT_PEACE, SHORTCUT_EXPLORER = 5, 7, 8, 9, 10
+CHOOSE_POSITION = 92  # item_type: the capsule opens the coordinate picker (GameUIDirecMigration)
 
 
 def _container(item_id, name, size, amount, index, icon, price, shortcut, featured=False, code=""):
@@ -87,10 +91,78 @@ def _container(item_id, name, size, amount, index, icon, price, shortcut, featur
                 featured=featured, code=code, shortcut=shortcut, picture=f"container_{name.lower()}.png")
 
 
+def _specials() -> list[Item]:
+    """The wiki's planet and moon items (specials.py)."""
+    from . import specials
+    out = []
+    # wiki: Projections Lv.1 359 credits, Lv.2 499, for a week
+    for n, kind in enumerate(specials.PROJECTIONS, 1):
+        for lv, price in ((1, 359), (2, 499)):
+            out.append(Item(3400 + 10 * n + lv, OTHER, f"{specials.PROJECTIONS[kind][0]} Lv.{lv}",
+                            specials.projection_desc(kind, lv), "item_res_06.png", price, pay_type=CREDITS,
+                            special=("projection", kind, lv), shortcut=SHORTCUT_PROJECTION,
+                            picture=f"projection_{kind}_{lv}.png"))
+    # wiki: Peace Agreement Lv.1 4 hours for 69 credits, Lv.2 12 hours for 159
+    for lv, hours, price in ((1, 4, 69), (2, 12, 159)):
+        out.append(Item(3500 + lv, OTHER, f"Peace Agreement Lv.{lv}", f"No one can attack the planet you are on "
+                        f"for {hours} hours. One agreement a day; attacking someone yourself ends it.",
+                        "item_res_16.png", price, pay_type=CREDITS, special=("peace", hours),
+                        shortcut=SHORTCUT_PEACE, picture=f"peace_{lv}.png"))
+    # wiki: Planet Shifter 799 credits, Advanced (random galaxy) 1,000, Directional 1,499
+    out += [
+        Item(3601, OTHER, "Planet Shifter", "Moves the planet you are on, with its moon and buildings, to a random "
+             "free position in its galaxy.", "item_res_13.png", 799, pay_type=CREDITS,
+             special=("shift", specials.SHIFT_RANDOM), shortcut=SHORTCUT_SHIFT, picture="planet_shifter.png"),
+        Item(3602, OTHER, "Advanced Planet Shifter", "Moves the planet you are on, with its moon and buildings, to a "
+             "random free position in a random galaxy.", "item_res_13.png", 1000, pay_type=CREDITS,
+             special=("shift", specials.SHIFT_GALAXY), shortcut=SHORTCUT_SHIFT, picture="planet_shifter_galaxy.png"),
+        Item(3603, OTHER, "Directional Planet Shifter", "Moves the planet you are on, with its moon and buildings, "
+             "to a free position you choose. Once in 48 hours.", "item_res_13.png", 1499, pay_type=CREDITS,
+             special=("shift", specials.SHIFT_CHOSEN), shortcut=SHORTCUT_SHIFT, item_type=CHOOSE_POSITION,
+             picture="planet_shifter_chosen.png"),
+    ]
+    # wiki: 20 runs for 25 credits in the store (50 and 100 runs came from events)
+    for lv, (runs, price) in enumerate(((20, 25), (50, 59), (100, 109)), 1):
+        out.append(Item(3700 + lv, OTHER, f"Nebula Navigator ({runs} runs)", f"Your next expedition fleet explores "
+                        f"the nebula up to {runs} times in a row (as long as secure explorations are left); ships it "
+                        "loses are replaced from its planet.", "item_res_13.png", price, pay_type=CREDITS,
+                        special=("navigator", runs), shortcut=SHORTCUT_EXPLORER, picture=f"nebula_navigator_{lv}.png"))
+    # wiki store screenshots: Lunar Terraformer 1-10 fields for 159 credits, Lv.2 5-15 for 245
+    for lv, (low, high, price) in enumerate(((1, 10, 159), (5, 15, 245)), 1):
+        out.append(Item(3800 + lv, OTHER, f"Lunar Terraformer Lv.{lv}", f"Adds {low}-{high} building fields to the "
+                        "moon you are on (the best result counts).", "chests.png", price, pay_type=CREDITS,
+                        special=("lunar_fields", low, high), shortcut=SHORTCUT_MOON_FIELDS,
+                        picture=f"lunar_terraformer_{lv}.png"))
+    # wiki store screenshots: Lunar Catalyst 10 % for 99 credits, Advanced 20 % for 169
+    out += [
+        Item(3811, OTHER, "Lunar Catalyst", "A 10% chance of creating a moon around the planet you are on.",
+             "item_res_13.png", 99, pay_type=CREDITS, special=("moon", 0.10), picture="lunar_catalyst.png"),
+        Item(3812, OTHER, "Advanced Lunar Catalyst", "A 20% chance of creating a moon around the planet you are on.",
+             "item_res_13.png", 169, pay_type=CREDITS, special=("moon", 0.20), picture="lunar_catalyst_advanced.png"),
+    ]
+    # wiki: Crystal Reformers turn 100k / 1M / 10M crystal into half as much metal for 2 / 12 / 70 dark
+    # matter, Lv.2 into 80 % for 9 / 59 / 349 credits. The wiki's Gas Reformers page repeats that
+    # text; here they turn gas into crystal the same way.
+    for base, (source, target, name) in enumerate((("crystal", "metal", "Crystal"),
+                                                   ("deuterium", "crystal", "Gas"))):
+        for n, (size, amount, dm, credits) in enumerate((("S", 100_000, 2, 9), ("M", 1_000_000, 12, 59),
+                                                         ("L", 10_000_000, 70, 349))):
+            for lv, share, price, pay in ((1, 50, dm, DARK_MATTER), (2, 80, credits, CREDITS)):
+                label = f"{name} Reformer ({size})" + (" Lv.2" if lv == 2 else "")
+                out.append(Item(3901 + 10 * base + 3 * (lv - 1) + n, RESOURCE, label,
+                                f"Turns {amount:,} {name.lower()} on the planet you are on into "
+                                f"{amount * share // 100:,} {target}.", "item_res_04.png" if target == "metal"
+                                else "item_res_03.png", price, pay_type=pay,
+                                special=("reform", source, amount, target, amount * share // 100),
+                                picture=f"reformer_{name.lower()}_{lv}.png"))
+    return out
+
+
 def _speedup(item_id, label, seconds, price, pay_type=DARK_MATTER, featured=False):
     name = f"Speed Stone {label}" if pay_type == CREDITS else f"Speed-up {label}"
     return Item(item_id, SPEEDUP, name, f"Shortens a running construction, research or shipyard order by {label}.",
-                "item_res_09.png", price, seconds=seconds, featured=featured, pay_type=pay_type)
+                "item_res_09.png", price, seconds=seconds, featured=featured, pay_type=pay_type,
+                picture=f"speedstone_{label}.png" if pay_type == CREDITS else "")
 
 
 def _officers() -> list[Item]:
@@ -106,27 +178,28 @@ def _officers() -> list[Item]:
 
 CATALOG = [
     # code 1101: the tutorial points at this item when it asks the player to buy resources
-    _container(1101, "Metal", "S", 10_000, 0, "item_res_04.png", 2, SHORTCUT_METAL, featured=True, code="1101"),
-    _container(1102, "Metal", "M", 100_000, 0, "item_res_04.png", 15, SHORTCUT_METAL),
-    _container(1107, "Metal", "L", 1_000_000, 0, "item_res_04.png", 120, SHORTCUT_METAL),
-    _container(1103, "Crystal", "S", 10_000, 1, "item_res_03.png", 3, SHORTCUT_CRYSTAL),
-    _container(1104, "Crystal", "M", 100_000, 1, "item_res_03.png", 22, SHORTCUT_CRYSTAL),
-    _container(1108, "Crystal", "L", 1_000_000, 1, "item_res_03.png", 180, SHORTCUT_CRYSTAL),
-    _container(1105, "Gas", "S", 10_000, 2, "item_res_01.png", 4, SHORTCUT_DEUTERIUM),
-    _container(1106, "Gas", "M", 100_000, 2, "item_res_01.png", 30, SHORTCUT_DEUTERIUM),
-    _container(1109, "Gas", "L", 1_000_000, 2, "item_res_01.png", 240, SHORTCUT_DEUTERIUM),
+    # wiki: 10,000 metal, 6,500 crystal or 3,500 gas for 1 dark matter; M ten times, L a hundred times
+    _container(1101, "Metal", "S", 10_000, 0, "item_res_04.png", 1, SHORTCUT_METAL, featured=True, code="1101"),
+    _container(1102, "Metal", "M", 100_000, 0, "item_res_04.png", 10, SHORTCUT_METAL),
+    _container(1107, "Metal", "L", 1_000_000, 0, "item_res_04.png", 100, SHORTCUT_METAL),
+    _container(1103, "Crystal", "S", 6_500, 1, "item_res_03.png", 1, SHORTCUT_CRYSTAL),
+    _container(1104, "Crystal", "M", 65_000, 1, "item_res_03.png", 10, SHORTCUT_CRYSTAL),
+    _container(1108, "Crystal", "L", 650_000, 1, "item_res_03.png", 100, SHORTCUT_CRYSTAL),
+    _container(1105, "Gas", "S", 3_500, 2, "item_res_01.png", 1, SHORTCUT_DEUTERIUM),
+    _container(1106, "Gas", "M", 35_000, 2, "item_res_01.png", 10, SHORTCUT_DEUTERIUM),
+    _container(1109, "Gas", "L", 350_000, 2, "item_res_01.png", 100, SHORTCUT_DEUTERIUM),
     _speedup(2101, "5 min", 300, 1),
     _speedup(2102, "30 min", 1800, 5, featured=True),
     _speedup(2103, "1 h", 3600, 9),
     _speedup(2104, "4 h", 4 * 3600, 30),
     _speedup(2105, "12 h", 12 * 3600, 80),
-    # the wiki's speed stones, sold for credits
+    # the wiki's speed stones, sold for credits (prices from its store screenshots)
     _speedup(2201, "1m", 60, 2, CREDITS),
-    _speedup(2202, "5m", 300, 8, CREDITS),
-    _speedup(2203, "30m", 1800, 40, CREDITS),
-    _speedup(2204, "1h", 3600, 70, CREDITS),
-    _speedup(2205, "5h", 5 * 3600, 300, CREDITS),
-    _speedup(2206, "24h", 24 * 3600, 1200, CREDITS),
+    _speedup(2202, "5m", 300, 5, CREDITS),
+    _speedup(2203, "30m", 1800, 18, CREDITS),
+    _speedup(2204, "1h", 3600, 36, CREDITS),
+    _speedup(2205, "5h", 5 * 3600, 180, CREDITS),
+    _speedup(2206, "24h", 24 * 3600, 864, CREDITS),
     Item(LIGHT_SPEED_ENGINE, SPEEDUP, "Light Speed Engine", "Brings a returning fleet home at once (from the flight "
          "list).", "item_res_02.png", 10, pay_type=CREDITS),
     Item(3101, OTHER, "ECM chips x5", "Five core chips for ECM module upgrades.", "item_res_12.png", 20,
@@ -184,11 +257,13 @@ CATALOG += [
 # (Large) 398 credits for 20
 CATALOG += [
     Item(GAMMA_DETECTOR_S, OTHER, "Gamma Detector (Small)", "Safely conducts 10 exploration missions beyond the "
-         "day's secure explorations.", "item_res_13.png", 49, explorations=10, picture="gamma_detector.png"),
+         "day's secure explorations.", "item_res_13.png", 49, explorations=10, shortcut=SHORTCUT_EXPLORER,
+         picture="gamma_detector.png"),
     Item(GAMMA_DETECTOR_L, OTHER, "Gamma Detector (Large)", "Safely conducts 20 exploration missions beyond the "
          "day's secure explorations.", "item_res_13.png", 398, pay_type=CREDITS, explorations=20,
-         picture="gamma_detector.png"),
+         shortcut=SHORTCUT_EXPLORER, picture="gamma_detector.png"),
 ]
+CATALOG += _specials()
 CATALOG += _officers()
 from . import devices  # noqa: E402 (devices builds its items with Item)
 
@@ -221,7 +296,8 @@ def item(item_id: int) -> Item:
 
 def _view(i: Item) -> dict:
     return {"id": i.id, "game_item_id": i.id, "name": i.name, "desc": i.desc, "img": i.image(),
-            "pay_type": i.pay_type, "sale_price": i.price, "code": i.code, "item_type": 1, "category": i.category,
+            "pay_type": i.pay_type, "sale_price": i.price, "code": i.code, "item_type": i.item_type,
+            "category": i.category,
             "is_featured": i.featured, "is_gift": bool(i.pack or i.units), "step_gacha": 0}
 
 
@@ -297,7 +373,7 @@ def buy(state: dict, item_id: int, n: int) -> dict:
 
 
 def use(state: dict, item_id: int, n: int, planet: dict, now: float | None = None,
-        rng: random.Random | None = None) -> str:
+        rng: random.Random | None = None, target: tuple[int, int, int] | None = None) -> str:
     i = item(item_id)
     if i.category == SPEEDUP:
         raise ItemError("Use speed-ups on a running construction, research or shipyard order")
@@ -307,6 +383,10 @@ def use(state: dict, item_id: int, n: int, planet: dict, now: float | None = Non
         raise ItemError("You do not have that many")
     if i.id == COMPONENT:
         return _build_reapers(state, n, planet)
+    if i.special:
+        info = _use_special(state, i, n, planet, time.time() if now is None else now, rng, target)
+        _add(state, i.id, -n)
+        return info
     if i.unit == 28:
         owned = sum(planet_rules.fleet(p, 28)["amount"] for p in planet_rules.bodies(state["empire"]))
         if owned + n > MAX_ANNIHILATORS:
@@ -354,6 +434,30 @@ def use(state: dict, item_id: int, n: int, planet: dict, now: float | None = Non
                 "fields." if best > before else f"The terraformer found room for {best} fields; the planet keeps its "
                 f"{before} extra fields.")
     return info
+
+
+def _use_special(state: dict, i: Item, n: int, planet: dict, now: float, rng, target) -> str:
+    """Planet and moon items (specials.py). Only reformers can be used several at once."""
+    from . import specials
+    kind, *args = i.special
+    if kind == "reform":
+        source, amount_, out_res, out = args
+        return specials.reform(planet, source, amount_, out_res, out, n)
+    if n != 1:
+        raise ItemError(f"Use one {i.name} at a time")
+    if kind == "projection":
+        return specials.apply_projection(planet, *args, now)
+    if kind == "peace":
+        return specials.make_peace(state, planet, args[0], now)
+    if kind == "shift":
+        return specials.shift_planet(state["empire"]["user_id"], state, planet, args[0], now, target, rng)
+    if kind == "navigator":
+        return specials.add_navigator_runs(state, args[0])
+    if kind == "lunar_fields":
+        return specials.terraform_moon(planet, *args, rng)
+    if kind == "moon":
+        return specials.catalyse_moon(state["empire"]["user_id"], planet, args[0], rng)
+    raise ItemError("This item cannot be used")
 
 
 def _build_reapers(state: dict, n: int, planet: dict) -> str:
@@ -417,14 +521,15 @@ def shortcut_view(state: dict, shortcut: int) -> list[dict]:
     return [owned_view(state, i) for i in CATALOG if i.shortcut == shortcut and i.sold]
 
 
-def buy_and_use(state: dict, item_id: int, planet: dict, now: float) -> str:
+def buy_and_use(state: dict, item_id: int, planet: dict, now: float,
+                target: tuple[int, int, int] | None = None) -> str:
     i = item(item_id)
     if not i.sold:
         raise ItemError("This item is not for sale")
     _pay(state, i.price, i.pay_type)
     _add(state, i.id, 1)
     try:
-        return use(state, i.id, 1, planet, now)
+        return use(state, i.id, 1, planet, now, target=target)
     except ItemError:
         _add(state, i.id, -1)
         key = "dark_matter_count" if i.pay_type == DARK_MATTER else "gu_count"

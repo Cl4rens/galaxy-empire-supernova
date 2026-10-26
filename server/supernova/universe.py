@@ -6,6 +6,7 @@ map every system is a tile of a 34 x 34 grid.
 """
 
 import random
+import time
 
 from . import db
 
@@ -147,6 +148,8 @@ def system_view(galaxy: int, system: int, viewer_id: int = 0) -> dict:
             if viewer_id:
                 from . import protection
                 slot["can_attack"] = protection.can_attack(viewer_id, row["player_id"])
+            from . import specials  # projections and peace agreements
+            slot.update(specials.public_view(row["player_id"], row["id"], time.time()))
             if row["moon_id"]:
                 slot["moon_array"] = [{"moon_id": row["moon_id"], "moon_name": row["moon_name"]}]
             planets.append(slot)
