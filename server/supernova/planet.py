@@ -12,7 +12,6 @@ from . import config, economy as eco
 FREE_LOTS = range(4, 16)  # lots 1-3 belong to the mines
 EVENT_UPGRADE, EVENT_TEARDOWN = 1, 2
 FLEET_CATEGORY_SHIP, FLEET_CATEGORY_DEFENSE = 1, 2
-PLANET_FIELDS = 163
 PLANET_TYPE_MOON = 3
 MOON_FIELDS_PER_BASE_LEVEL = 3
 RESOURCES = ("metal", "crystal", "deuterium")
@@ -81,7 +80,13 @@ def fields(planet: dict) -> tuple[int, int]:
     if is_moon(planet):
         # lunar terraformers add fields
         return used, 1 + MOON_FIELDS_PER_BASE_LEVEL * level(planet, eco.MOON_BASE) + planet.get("extra_fields", 0)
-    return used, PLANET_FIELDS + planet.get("extra_fields", 0)  # terraformers add fields
+    # colonies have their own size, home planets the wiki's 178; terraformers add fields
+    return used, planet.get("max_fields", eco.HOME_FIELDS) + planet.get("extra_fields", 0)
+
+
+def temperatures(planet: dict) -> tuple[int, int]:
+    """(minimum, maximum) temperature; it changes when a planet shifter moves the planet."""
+    return eco.temperatures(planet["planet_position"], planet.get("temp_offset", 0))
 
 
 PERCENT_FIELDS = ("metal_mine_percent", "crystal_mine_percent", "deuterium_mine_percent", "solar_plant_percent",
@@ -152,7 +157,8 @@ def production(planet: dict, empire: dict) -> dict:
         eco.DEUTERIUM_MINE: planet["deuterium_mine_percent"] / 100,
     }
     solar = eco.solar_energy(level(planet, eco.SOLAR_PLANT)) * planet["solar_plant_percent"] / 100
-    satellites = fleet(planet, eco.SOLAR_SATELLITE)["amount"] * eco.SOLAR_SATELLITE_ENERGY
+    temp_max = temperatures(planet)[1]
+    satellites = fleet(planet, eco.SOLAR_SATELLITE)["amount"] * eco.satellite_energy(temp_max)
     fusion_level = level(planet, eco.FUSION_REACTOR)
     fusion_pct = planet["fusion_reactor_percent"] / 100
     officer = planet.get("officer", {})
@@ -170,7 +176,9 @@ def production(planet: dict, empire: dict) -> dict:
     def mine(btype: int, resource: str) -> float:
         krypton = 1 + (planet.get("krypton_bonus", {}).get(resource, 0) + lord.get(f"increase_{resource}", 0) + fortress[resource]
                        + officer.get("mines", 0)) / 100
-        return eco.BASE_PRODUCTION[resource] + eco.mine_output(btype, level(planet, btype)) * pct[btype] * factor * krypton
+        climate = eco.gas_factor(temp_max) if btype == eco.DEUTERIUM_MINE else 1
+        return (eco.BASE_PRODUCTION[resource]
+                + eco.mine_output(btype, level(planet, btype)) * pct[btype] * factor * krypton * climate)
 
     return {
         "metal": mine(eco.METAL_MINE, "metal") * config.SPEED,
@@ -609,12 +617,12 @@ def client_view(empire: dict, now: float) -> dict:
                       if buildable_here(planet, b["building_type"]) or b["building_level"]],
         "building_events": [event_view(planet, e) for e in planet["building_events"]],
         "current_server_time": int(now),
-        # Planet info screen; temperature as in OGame by position.
+        # Planet info screen
         "senor_array_range": max(0, sensor_range(planet)) if is_moon(planet) else 0,
         "field_current": fields(planet)[0],
         "field_max": fields(planet)[1],
-        "temp_max": 150 - 12 * planet["planet_position"],
-        "temp_min": 110 - 12 * planet["planet_position"],
+        "temp_max": temperatures(planet)[1],
+        "temp_min": temperatures(planet)[0],
         # no projection: the client checks for 0, not for empty values
         "planet_icon": planet.get("planet_icon") or 0,
         "is_radar_on": planet.get("radar_on", True),

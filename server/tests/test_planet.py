@@ -48,7 +48,7 @@ def test_base_production_and_storage_limit():
     empire = state["empire"]
     p = empire["main_planet"]
     planet.tick(empire, T0 + 3600)
-    assert p["metal"] == pytest.approx(500 + 30 * eco.config.SPEED)
+    assert p["metal"] == pytest.approx(500 + eco.BASE_PRODUCTION["metal"] * eco.config.SPEED)
     planet.tick(empire, T0 + 3600 * 10_000)
     assert p["metal"] == planet.capacity(p, "metal")
 
@@ -61,7 +61,7 @@ def test_mines_need_energy():
     without_energy = planet.production(p, empire)["metal"]
     planet.building(p, eco.SOLAR_PLANT)["building_level"] = 10
     with_energy = planet.production(p, empire)["metal"]
-    assert without_energy == pytest.approx(30 * eco.config.SPEED)
+    assert without_energy == pytest.approx(eco.BASE_PRODUCTION["metal"] * eco.config.SPEED)
     assert with_energy > without_energy
 
 
@@ -217,7 +217,27 @@ def test_solar_satellites_produce_energy():
     p = state["empire"]["main_planet"]
     before = planet.production(p, state["empire"])["energy_max"]
     planet.fleet(p, eco.SOLAR_SATELLITE)["amount"] = 4
-    assert planet.production(p, state["empire"])["energy_max"] == before + 4 * eco.SOLAR_SATELLITE_ENERGY
+    each = eco.satellite_energy(planet.temperatures(p)[1])
+    assert planet.production(p, state["empire"])["energy_max"] == before + 4 * each
+
+
+def test_planets_differ_by_position():
+    assert [eco.satellite_energy(t) for t in (300, 100, 0, -200)] == [40, 40, 23, 1]  # wiki: 1-40
+    assert eco.gas_factor(-30) > eco.gas_factor(100)  # cold planets yield more gas
+    assert eco.temperatures(1) == (98, 138) and eco.temperatures(15) == (-70, -30)
+    sizes = [eco.COLONY_FIELDS[pos] for pos in range(1, 16)]
+    assert min(low for low, _ in sizes) >= 60 and max(high for _, high in sizes) <= 289  # wiki: 60s to 280s
+    assert max(range(1, 16), key=lambda pos: sum(eco.COLONY_FIELDS[pos])) in range(3, 8)
+    state = new_player()
+    p = state["empire"]["main_planet"]
+    assert planet.fields(p)[1] == eco.HOME_FIELDS == 178
+    p.update(max_fields=90, extra_fields=5, temp_offset=-10)
+    assert planet.fields(p)[1] == 95
+    assert planet.temperatures(p) == tuple(t - 10 for t in eco.temperatures(p["planet_position"]))
+    # wiki gas mine level 2: 175 / h on a planet of about 40 degrees
+    assert abs(eco.mine_output(eco.DEUTERIUM_MINE, 2) * eco.gas_factor(40) - 175) < 2
+    # wiki metal mine: 350 at level 2, 3,172 at level 10 (with the base production)
+    assert round(eco.mine_output(eco.METAL_MINE, 10) + eco.BASE_PRODUCTION["metal"]) == 3172
 
 
 def test_shipyard_rules():

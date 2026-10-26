@@ -987,6 +987,9 @@ def _colonize(row) -> str:
             return "returning"
         planet_rules.tick(empire, row["arrival_time"])
         colony = player.new_planet(planet_id, *target, player.COLONY_NAME, resources=json.loads(row["cargo"]))
+        low, high = eco.COLONY_FIELDS[target[2]]  # a colony's size and climate are its own
+        colony.update(max_fields=random.randint(low, high),
+                      temp_offset=random.randint(-eco.TEMPERATURE_SPREAD, eco.TEMPERATURE_SPREAD))
         colony["last_update"] = row["arrival_time"]
         ships[COLONY_SHIP] -= 1  # the colony ship becomes the colony
         for ftype, n in ships.items():

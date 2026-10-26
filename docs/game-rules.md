@@ -19,7 +19,8 @@ Colonies can be given up as long as no fleet flies from or to them; the home pla
 
 - 500 metal, 500 crystal, 0 deuterium
 - all buildings at level 0; storage for 10,000 of each resource
-- base production without any mine: 30 metal and 15 crystal per hour
+- base production without any mine: 60 metal and 30 crystal per hour
+- the home planet has 178 building fields (wiki)
 
 ## Buildings
 
@@ -62,15 +63,25 @@ Cost to upgrade from level *L* to *L+1*: `base × factor^L`.
 
 | | Formula |
 |-|---------|
-| Metal Mine | 30 × L × 1.1^L |
-| Crystal Mine | 20 × L × 1.1^L |
-| Deuterium Synthesizer | 10 × L × 1.1^L |
+| Metal Mine | 120 × L × 1.1^L |
+| Crystal Mine | 80 × L × 1.1^L |
+| Deuterium Synthesizer | 60 × L × 1.1^L × (1.28 − 0.002 × maximum temperature) |
 | Solar Plant (energy) | 20 × L × 1.1^L |
 | Fusion Reactor (energy) | 30 × L × (1.05 + 0.01 × Energy Technology)^L, uses 10 × L × 1.1^L deuterium |
 
 Mines use energy (metal and crystal 10 × L × 1.1^L, deuterium 20 × L × 1.1^L). If they need more
 energy than the planet produces, all mines produce proportionally less. Every mine and power
 plant can be throttled with its percentage setting.
+
+The mine formulas are fitted to the wiki's tables (metal 350 / h at level 2 and 3,172 at level 10
+including the base production, crystal 223 and 2,104, gas 175 at level 2): four times OGame's
+metal and crystal mines, six times its synthesizer. Energy use and the solar plant match OGame.
+
+**Planets.** The temperature depends on the position: maximum 150 − 12 × position (± 10 per
+planet), minimum 40 below. Cold planets yield more gas; a solar satellite gives
+⌊(maximum temperature + 140) / 6⌋ energy, 1 to 40. Home planets have 178 fields; a colony gets a
+random size for its position, largest at 3-7 (150-285 fields), smallest at 1-2 and 13-15 (60-160).
+A planet shifter changes the temperature but not the size.
 
 **Storage capacity** = 5000 × ⌊2.5 × e^(20 × L / 33)⌋. Mines stop producing when the storage is
 full.
@@ -135,7 +146,7 @@ immediately.
 - The **shipyard and the nanite factory cannot be upgraded while the shipyard is working**, and
   nothing can be ordered while one of them is being upgraded.
 - **Shield domes** exist only once per planet.
-- Every **solar satellite** produces 25 energy (OGame: depends on the planet temperature).
+- Every **solar satellite** produces 1-40 energy depending on the planet's temperature (see Production).
 - Interceptors (23) come from the krypton shop and Iron Behemoths (24) from the Pioneer Lab.
 - The Proton Cannon (27, defense) is built in the shipyard (shipyard 15, nanite factory 2).
 - Devourer Interceptors (25), Titanenergetic Frigates (26) and Annihilator construction

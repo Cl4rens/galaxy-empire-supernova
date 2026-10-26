@@ -203,14 +203,16 @@ async def planet_info_at(world_id: int, request: Request, player_id: int = Depen
         return error(str(e))
     row = fleets.target_planet((galaxy, system, position))
     owner = db.load_state(row["player_id"])["empire"] if row else {}
+    planet = planet_rules.find_planet(owner, row["id"]) if row else None
+    low, high = eco.temperatures(min(position, universe.PLANET_POSITIONS), (planet or {}).get("temp_offset", 0))
     return encrypted_json({
         "location": row["name"] if row else f"{galaxy}:{system}:{position}",
         "player_name": db.connect().execute("SELECT username FROM players WHERE id = ?",
                                             (row["player_id"],)).fetchone()["username"] if row else "",
         "alliance_id": owner.get("alliance_id", 0),
         "alliance_name": owner.get("alliance_name", ""),
-        "temp_max": 150 - 12 * min(position, universe.PLANET_POSITIONS),
-        "temp_min": 110 - 12 * min(position, universe.PLANET_POSITIONS),
+        "temp_max": high,
+        "temp_min": low,
     })
 
 

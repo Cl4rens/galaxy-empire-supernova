@@ -66,7 +66,10 @@ MOON_BUILDINGS = (MOON_SHIPYARD, MOON_ROBOTICS_FACTORY, MOON_BASE, SENSOR_ARRAY,
 STORAGE_FOR = {"metal": METAL_STORAGE, "crystal": CRYSTAL_STORAGE, "deuterium": DEUTERIUM_STORAGE}
 
 # Production every planet has without any mine (per hour).
-BASE_PRODUCTION = {"metal": 30, "crystal": 15, "deuterium": 0}
+# The wiki's mine tables (metal 350 / h at level 2, 3,172 at 10; crystal 223 and 2,104; gas 175 at
+# level 2 on a planet of about 40 degrees) fit four times OGame's metal and crystal mines with
+# twice its base production, and six times its gas synthesizer.
+BASE_PRODUCTION = {"metal": 60, "crystal": 30, "deuterium": 0}
 
 
 # Astrophysics (wiki table, by level 0-26): daily safe explorations and expedition fleets a
@@ -122,8 +125,13 @@ def storage_capacity(level: int) -> int:
 
 def mine_output(btype: int, level: int) -> float:
     """Raw production per hour at 100 %, before the energy factor and speed."""
-    base = {METAL_MINE: 30, CRYSTAL_MINE: 20, DEUTERIUM_MINE: 10}[btype]
+    base = {METAL_MINE: 120, CRYSTAL_MINE: 80, DEUTERIUM_MINE: 60}[btype]
     return base * level * 1.1 ** level
+
+
+def gas_factor(temp_max: int) -> float:
+    """Cold planets yield more gas (OGame's 1.28 - 0.002 x maximum temperature)."""
+    return 1.28 - 0.002 * temp_max
 
 
 def mine_energy(btype: int, level: int) -> float:
@@ -200,7 +208,24 @@ LIGHT_FIGHTER, SMALL_CARGO, SOLAR_SATELLITE = 1, 9, 14
 SMALL_SHIELD_DOME, LARGE_SHIELD_DOME = 21, 22
 
 # Energy one solar satellite delivers (OGame: depends on the planet's temperature).
-SOLAR_SATELLITE_ENERGY = 25
+def satellite_energy(temp_max: int) -> int:
+    """A solar satellite gives 1-40 energy (wiki), more near the sun: OGame's (T + 140) / 6."""
+    return max(1, min(40, (temp_max + 140) // 6))
+
+
+# Planet sizes (building fields). Wiki: every home planet has 178; colonies range from the 60s to
+# the 280s, the largest at positions 3-7. The ranges per position are Supernova's.
+HOME_FIELDS = 178
+COLONY_FIELDS = {1: (60, 120), 2: (70, 140), 3: (150, 280), 4: (160, 285), 5: (160, 285), 6: (150, 280),
+                 7: (140, 270), 8: (110, 220), 9: (100, 200), 10: (95, 190), 11: (90, 180), 12: (85, 170),
+                 13: (75, 160), 14: (70, 150), 15: (65, 140)}
+TEMPERATURE_SPREAD = 10  # a planet is up to this much warmer or colder than its position's average
+
+
+def temperatures(position: int, offset: int = 0) -> tuple[int, int]:
+    """(minimum, maximum) temperature: hotter near the sun."""
+    top = 150 - 12 * position + offset
+    return top - 40, top
 
 # Units that exist only once per planet.
 UNIQUE_UNITS = (SMALL_SHIELD_DOME, LARGE_SHIELD_DOME)
