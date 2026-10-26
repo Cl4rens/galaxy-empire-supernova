@@ -26,6 +26,14 @@ function ext.audio.playEffect(path) native.audio("effect", path) end
 function ext.audio.SetMusicVolume(volume) native.audio("music_volume", volume) end
 function ext.audio.SetSoundVolume(volume) native.audio("sound_volume", volume) end
 
+-- local notifications: the game's 1.9.36 scripts never add one (addAllLocalPush returns at
+-- once), so there is nothing to schedule or cancel
+function ext.localpush.add() end
+function ext.localpush.cancelAll() end
+function ext.localpush.clearEventWithIdentity() end
+function ext.localpush.setSwitch() end
+function ext.localpush.gcmRegisteGCMOnServer() end
+
 -- device and app
 function ext.GetPlatform() return "Android" end
 function ext.GetIOSOpenUdid() return native.udid() end
@@ -63,6 +71,10 @@ function ext._QueryAppConfig(key) return nil end
 function ext.GetAndroidDeviceTotalMem() return 4096 end
 function ext.GetAndroidDeviceAvailMem() return 2048 end
 function ext.video.isMovieFinished() return true end
+-- what the game tells the native side, which has nothing to do with it here
+function ext.OnGameLoadingFinished() end
+function ext.onLoginSuccess() end
+function ext.GameCenter.isGameCenterEnabled() return false end
 function ext.__debugLog(text) native.log(text) end
 function ext.Logi(...) end
 function ext.showAlert(title, text, ...) native.alert(tostring(title), tostring(text)) end
