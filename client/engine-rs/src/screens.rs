@@ -30,6 +30,7 @@ use ruffle_render_wgpu::backend::{WgpuRenderBackend, create_wgpu_instance, reque
 use ruffle_render_wgpu::descriptors::Descriptors;
 use ruffle_render_wgpu::target::TextureTarget;
 use ruffle_render_wgpu::wgpu;
+use ruffle_render::quality::StageQuality;
 
 use crate::assets::Assets;
 use crate::convert::{Converter, FONT};
@@ -39,6 +40,8 @@ use crate::engine::{Arg, Call, Screens, Texts};
 pub const WIDTH: u32 = 640;
 pub const HEIGHT: u32 = 1136;
 const LAYOUT_SUFFIX: &str = "_16x9";
+/// No multisampling: every screen has its own buffers, and the screens are mostly pictures
+const SCREEN_QUALITY: StageQuality = StageQuality::Low;
 
 type Commands = Arc<Mutex<Vec<(String, String, String)>>>;
 /// (object, command, argument): hands a Flash command to the scripts
@@ -199,6 +202,8 @@ pub struct RuffleScreens {
     converter: Converter,
     screens: HashMap<String, Screen>,
     commands: Commands,
+    /// the device font every screen draws its text with, read once
+    font: Option<Arc<dyn AsRef<[u8]>>>,
     /// objects in the order the game rendered them this frame
     pub rendered: Vec<String>,
     pub missing: HashMap<String, u32>,
@@ -376,6 +381,7 @@ impl RuffleScreens {
             converter: Converter::default(),
             screens: HashMap::new(),
             commands: Arc::default(),
+            font: None,
             rendered: Vec::new(),
             missing: HashMap::new(),
         })
@@ -422,16 +428,20 @@ impl RuffleScreens {
             .with_fs_commands(Box::new(Sender { object: object.to_string(), commands: self.commands.clone() }))
             .with_movie(movie)
             .with_viewport_dimensions(WIDTH, HEIGHT, 1.0)
+            .with_quality(SCREEN_QUALITY)
             .with_autoplay(true)
             .build();
         {
             let mut p = player.lock().unwrap();
-            if let Some(font) = assets.file(FONT) {
+            if self.font.is_none() {
+                self.font = assets.file(FONT).map(|font| Arc::new(font.to_vec()) as Arc<dyn AsRef<[u8]>>);
+            }
+            if let Some(font) = &self.font {
                 p.register_device_font(FontDefinition::FontFile {
                     name: "Arial".into(),
                     is_bold: false,
                     is_italic: false,
-                    data: FontFileData::new(font.to_vec()),
+                    data: FontFileData::new_shared(font.clone()),
                     index: 0,
                 });
                 for default in [DefaultFont::Sans, DefaultFont::Serif, DefaultFont::Typewriter] {
@@ -490,6 +500,12 @@ impl RuffleScreens {
 
     pub fn player(&self, object: &str) -> Option<Arc<Mutex<Player>>> {
         self.screens.get(object).map(|s| s.player.clone())
+    }
+
+    /// Bytes the converter keeps: (pictures, converted screens), and how many screens are loaded
+    pub fn cached(&self) -> (usize, usize, usize) {
+        let (pictures, screens) = self.converter.cached_bytes();
+        (pictures, screens, self.screens.len())
     }
 
     pub fn objects(&self) -> impl Iterator<Item = (&String, &Arc<Mutex<Player>>)> {
@@ -654,6 +670,13 @@ impl Screens for RuffleScreens {
 
     fn begin_frame(&mut self) {
         self.rendered.clear();
+    }
+
+    fn free(&mut self, object: &str) {
+        if self.screens.remove(object).is_some() {
+            tracing::debug!("{object}: freed");
+        }
+        self.rendered.retain(|o| o != object);
     }
 
     fn as_any(&mut self) -> &mut dyn std::any::Any {

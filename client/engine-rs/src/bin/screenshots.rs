@@ -112,6 +112,11 @@ fn main() -> Result<()> {
         engine.run(3.0, |_| false)?;
         shot(&mut engine, &out, &format!("5-tap{}", n + 1))?;
     }
+    {
+        let mut state = engine.state.borrow_mut();
+        let screens = state.screens.as_any().downcast_mut::<RuffleScreens>().unwrap();
+        println!("cached (pictures, screens, loaded): {:?}", screens.cached());
+    }
     // SUPERNOVA_PROBE="GameUIQuest_F0:SC_TEXT:textHeight,_height": properties of the text fields
     // of a screen whose name contains the given part
     if let Ok(probe) = std::env::var("SUPERNOVA_PROBE") {

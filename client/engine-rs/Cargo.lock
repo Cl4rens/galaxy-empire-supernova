@@ -3493,6 +3493,7 @@ dependencies = [
  "mlua",
  "rodio",
  "ruffle_core",
+ "ruffle_render",
  "ruffle_render_wgpu",
  "serde_json",
  "sha2",

@@ -492,20 +492,60 @@ pub fn texture_to_png(texture: &[u8], alpha_pak: Option<&[u8]>) -> Result<Vec<u8
 
 /// Converted screens and decoded pictures, made once per run.
 pub struct Converter {
-    pictures: HashMap<String, Option<Vec<u8>>>,
-    screens: HashMap<String, Vec<u8>>,
+    pictures: Recent,
+    screens: Recent,
 }
 
 impl Default for Converter {
     fn default() -> Self {
-        Self { pictures: HashMap::new(), screens: HashMap::new() }
+        Self { pictures: Recent::new(CACHE_BYTES), screens: Recent::new(CACHE_BYTES) }
+    }
+}
+
+/// How much each of the converter's caches keeps
+const CACHE_BYTES: usize = 24 << 20;
+
+/// The files used last, up to a number of bytes.
+struct Recent {
+    files: Vec<(String, Vec<u8>)>,
+    limit: usize,
+}
+
+impl Recent {
+    fn new(limit: usize) -> Self {
+        Self { files: Vec::new(), limit }
+    }
+
+    fn get(&mut self, name: &str) -> Option<Vec<u8>> {
+        let i = self.files.iter().position(|(n, _)| n == name)?;
+        let file = self.files.remove(i);
+        let data = file.1.clone();
+        self.files.push(file);
+        Some(data)
+    }
+
+    fn insert(&mut self, name: &str, data: Vec<u8>) {
+        self.files.retain(|(n, _)| n != name);
+        self.files.push((name.to_string(), data));
+        while self.files.len() > 1 && self.bytes() > self.limit {
+            self.files.remove(0);
+        }
+    }
+
+    fn bytes(&self) -> usize {
+        self.files.iter().map(|(_, d)| d.len()).sum()
     }
 }
 
 impl Converter {
+    /// Bytes kept: (pictures, converted screens)
+    pub fn cached_bytes(&self) -> (usize, usize) {
+        (self.pictures.bytes(), self.screens.bytes())
+    }
+
     pub fn picture(&mut self, assets: &Assets, name: &str) -> Option<Vec<u8>> {
         if let Some(found) = self.pictures.get(name) {
-            return found.clone();
+            return Some(found);
         }
         let mut data = assets.file(&format!("data2/{name}")).map(<[u8]>::to_vec);
         if let Some(d) = &data
@@ -515,24 +555,24 @@ impl Converter {
             data = texture_to_png(d, assets.file(&alpha_name)).ok();
         }
         // a picture the game has not got may still come (downloaded item icons)
-        if data.is_some() {
-            self.pictures.insert(name.to_string(), data.clone());
+        if let Some(data) = &data {
+            self.pictures.insert(name, data.clone());
         }
         data
     }
 
-    /// A screen ("data2/Login.tfs") as a standard SWF, with the game texts in `texts`. Kept
-    /// for the next time once the game has loaded its texts.
+    /// A screen ("data2/Login.tfs") as a standard SWF, with the game texts in `texts`. Recent
+    /// ones are kept for the next time once the game has loaded its texts.
     pub fn screen(&mut self, assets: &Assets, texts: &HashMap<String, String>, path: &str) -> Result<Vec<u8>> {
         if let Some(swf) = self.screens.get(path) {
-            return Ok(swf.clone());
+            return Ok(swf);
         }
         let Some(tfs) = assets.file(path.trim_start_matches("./")) else { bail!("no screen {path}") };
         let tfs = tfs.to_vec();
         let font = assets.file(FONT).map(<[u8]>::to_vec);
         let swf = fill_bitmaps(&tfs, |name| self.picture(assets, name), |key| texts.get(key).cloned(), font.as_deref())?;
         if !texts.is_empty() {
-            self.screens.insert(path.to_string(), swf.clone());
+            self.screens.insert(path, swf.clone());
         }
         Ok(swf)
     }

@@ -96,6 +96,8 @@ pub trait Screens {
     }
     /// A new frame starts; the game is about to call Render on what it shows.
     fn begin_frame(&mut self) {}
+    /// The game let go of the object (it is gone with the scripts' garbage).
+    fn free(&mut self, _object: &str) {}
     fn as_any(&mut self) -> &mut dyn std::any::Any;
 }
 
@@ -280,6 +282,16 @@ impl Engine {
         }
         if let Ok(frame) = self.lua.globals().raw_get::<Function>("__sn_text_input_frame") {
             frame.call::<()>(())?;
+        }
+        // the Flash objects the scripts let go of, and made no new one of since (a step of the
+        // garbage collector each frame finds them soon)
+        self.lua.gc_step()?;
+        if let Ok(dropped) = self.lua.globals().raw_get::<Function>("__sn_dropped_flash") {
+            let names: Vec<String> = dropped.call(())?;
+            let mut s = self.state.borrow_mut();
+            for name in names {
+                s.screens.free(&name);
+            }
         }
         Ok(())
     }

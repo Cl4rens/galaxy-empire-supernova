@@ -112,13 +112,27 @@ end
 -- Flash objects: `ext.RegisteFlashClass(name, super)` makes _G[super][name] with :new()
 -- The Flash objects record what the game asks of them (native.flash); a renderer replaces them.
 __sn_flash_classes = {}
+-- The game lets go of a screen by dropping its object (UnloadFlashObject); gameswf freed it
+-- with the garbage. An object's proxy notes that it went; the engine frees the screen once a
+-- frame, unless a newer object of the class came meanwhile.
+local newest_object = {}
+local dropped = {}
 local function flash_class(class_name)
   local class = __sn_flash_classes[class_name]
   if class then return class end
   class = {}
   __sn_flash_classes[class_name] = class
   function class:new()
-    local object = {__class = class, __name = class_name}
+    local serial = (newest_object[class_name] or 0) + 1
+    newest_object[class_name] = serial
+    local proxy = newproxy(true)
+    getmetatable(proxy).__gc = function()
+      if newest_object[class_name] == serial then
+        newest_object[class_name] = nil
+        dropped[#dropped + 1] = class_name
+      end
+    end
+    local object = {__class = class, __name = class_name, __proxy = proxy}
     return setmetatable(object, {__index = function(t, method)
       local f = function(self, ...) return native.flash(class_name, method, ...) end
       rawset(t, method, f)
@@ -126,6 +140,14 @@ local function flash_class(class_name)
     end})
   end
   return class
+end
+function __sn_dropped_flash()
+  local gone = {}
+  for _, name in ipairs(dropped) do
+    if newest_object[name] == nil then gone[#gone + 1] = name end
+  end
+  dropped = {}
+  return gone
 end
 __sn_flash_class = flash_class
 
