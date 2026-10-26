@@ -231,7 +231,7 @@ index 422efa6c..16eb31e8 100644
          if self.visible()
              && self.mouse_enabled()
 diff --git a/core/src/external.rs b/core/src/external.rs
-index 071f1e73..60c5a532 100644
+index 071f1e73..077cde17 100644
 --- a/core/src/external.rs
 +++ b/core/src/external.rs
 @@ -342,6 +342,13 @@ impl<'gc> Callback<'gc> {
@@ -266,7 +266,7 @@ index 071f1e73..60c5a532 100644
          }
      }
  
-@@ -420,7 +427,365 @@ impl<'gc> ExternalInterface<'gc> {
+@@ -420,7 +427,388 @@ impl<'gc> ExternalInterface<'gc> {
          self.provider.as_ref().and_then(|p| p.get_id())
      }
  
@@ -560,16 +560,33 @@ index 071f1e73..60c5a532 100644
 +    object: crate::display_object::DisplayObject<'gc>,
 +    point: swf::Point<swf::Twips>,
 +    prefix: &str,
++    interactive: bool,
 +) -> Option<Pick<'gc>> {
 +    use crate::display_object::{HitTestOptions, TDisplayObject, TDisplayObjectContainer};
-+    if !object.visible() || object.maskee().is_some() || object.clip_depth() > 0 {
++    // text fields take no touches with gameswf (a wide "0/5" over a button)
++    if !object.visible() || object.maskee().is_some() || object.clip_depth() > 0 || object.as_edit_text().is_some() {
 +        return None;
 +    }
-+    let is_button = object.name().is_some_and(|n| n.to_string().starts_with(prefix));
++    // clips named "btn..." are buttons, and so are "...btn" clips with a "released" frame
++    // (the chest screen's "helpbtn")
++    let is_button = object.name().is_some_and(|n| {
++        let n = n.to_string();
++        n.starts_with(prefix)
++            || (n.ends_with(prefix)
++                && object.as_movie_clip().is_some_and(|clip| {
++                    clip.frame_label_to_number(crate::string::WStr::from_units(b"released"), context).is_some()
++                }))
++    });
++    // only what reacts to the mouse covers what lies below it (a dialog's dark background with
++    // its onPress does, the end of a progress bar over a button does not)
++    let interactive = interactive
++        || is_button
++        || object.as_avm1_button().is_some()
++        || object.as_movie_clip().is_some_and(|clip| clip.is_button_mode(context));
 +    if let Some(container) = object.as_container() {
 +        let children: Vec<_> = container.iter_render_list().collect();
 +        for child in children.into_iter().rev() {
-+            match pick(context, child, point, prefix) {
++            match pick(context, child, point, prefix, interactive) {
 +                Some(Pick::Other) if is_button => return Some(Pick::Button(object)),
 +                Some(found) => return Some(found),
 +                None => {}
@@ -577,7 +594,13 @@ index 071f1e73..60c5a532 100644
 +        }
 +        None
 +    } else if object.hit_test_shape(context, point, HitTestOptions::SKIP_INVISIBLE | HitTestOptions::SKIP_CHILDREN) {
-+        Some(if is_button { Pick::Button(object) } else { Pick::Other })
++        if is_button {
++            Some(Pick::Button(object))
++        } else if interactive {
++            Some(Pick::Other)
++        } else {
++            None
++        }
 +    } else {
 +        None
 +    }
@@ -588,7 +611,7 @@ index 071f1e73..60c5a532 100644
 +pub fn find_avm1_button(context: &mut UpdateContext<'_>, x: f64, y: f64, prefix: &str) -> Option<String> {
 +    use crate::display_object::TDisplayObject;
 +    let root = context.stage.root_clip()?;
-+    match pick(context, root, swf::Point::from_pixels(x, y), prefix)? {
++    match pick(context, root, swf::Point::from_pixels(x, y), prefix, false)? {
 +        Pick::Button(button) => Some(button.path().to_string()),
 +        Pick::Other => None,
 +    }
@@ -658,6 +681,90 @@ index 367e4ad9..c9865b59 100644
          );
          let interim_adjustment = max(
              if !final_line_of_para && self.effective_alignment() == swf::TextAlign::Justify {
+diff --git a/core/src/html/text_format.rs b/core/src/html/text_format.rs
+index d5942ad8..10213ecc 100644
+--- a/core/src/html/text_format.rs
++++ b/core/src/html/text_format.rs
+@@ -729,6 +729,15 @@ impl FormatSpans {
+             default_format.align = Some(swf::TextAlign::Left);
+         }
+ 
++        // gameswf read loose attributes too: `<font size =26>`; Supernova
++        let loose;
++        let html = if crate::avm1::GAMESWF.load(std::sync::atomic::Ordering::Relaxed) {
++            loose = WString::from_utf8(&loose_html_attributes(&html.to_utf8_lossy()));
++            &loose[..]
++        } else {
++            html
++        };
++
+         let mut format_stack = vec![default_format.clone()];
+         let mut text = WString::new();
+         let mut spans: Vec<TextSpan> = Vec::new();
+@@ -2034,3 +2043,63 @@ impl<'a> FormatState<'a> {
+         }
+     }
+ }
++
++/// HTML with the attributes of its tags written strictly: no spaces around `=`, values in
++/// quotes (`<font size =26>` becomes `<font size="26">`), as gameswf read them; Supernova
++fn loose_html_attributes(html: &str) -> String {
++    let mut out = String::with_capacity(html.len() + 8);
++    let mut rest = html;
++    while let Some(start) = rest.find('<') {
++        out.push_str(&rest[..start]);
++        let Some(end) = rest[start..].find('>').map(|e| start + e) else {
++            out.push_str(&rest[start..]);
++            return out;
++        };
++        let tag = &rest[start + 1..end];
++        if !tag.contains('=') {
++            out.push_str(&rest[start..=end]);
++        } else {
++            out.push('<');
++            let chars: Vec<char> = tag.chars().collect();
++            let mut i = 0;
++            while i < chars.len() {
++                let c = chars[i];
++                if c == '=' {
++                    while out.ends_with(' ') {
++                        out.pop();
++                    }
++                    out.push('=');
++                    i += 1;
++                    while i < chars.len() && chars[i] == ' ' {
++                        i += 1;
++                    }
++                    if i < chars.len() && (chars[i] == '"' || chars[i] == '\'') {
++                        let quote = chars[i];
++                        out.push(quote);
++                        i += 1;
++                        while i < chars.len() && chars[i] != quote {
++                            out.push(chars[i]);
++                            i += 1;
++                        }
++                        out.push(quote);
++                        i += 1;
++                    } else {
++                        out.push('"');
++                        while i < chars.len() && chars[i] != ' ' && chars[i] != '/' {
++                            out.push(chars[i]);
++                            i += 1;
++                        }
++                        out.push('"');
++                    }
++                } else {
++                    out.push(c);
++                    i += 1;
++                }
++            }
++            out.push('>');
++        }
++        rest = &rest[end + 1..];
++    }
++    out.push_str(rest);
++    out
++}
 diff --git a/core/src/player.rs b/core/src/player.rs
 index c3756621..b34e0fcc 100644
 --- a/core/src/player.rs

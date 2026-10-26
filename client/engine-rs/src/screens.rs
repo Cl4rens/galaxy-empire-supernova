@@ -203,7 +203,15 @@ struct Extras {
     /// text fields that shrink their text to fit
     fits: Vec<Fit>,
     buttons: Buttons,
+    /// clips kept hidden (see `HIDDEN`)
+    hidden: Vec<&'static str>,
 }
+
+/// Clips the engine keeps hidden, by screen file: what needs a service that is gone
+const HIDDEN: [(&str, &str); 1] = [
+    // logging in with Facebook
+    ("data2/Login", "_root.LoginUI.ButtonPanel.btn_facebook_login"),
+];
 
 pub struct RuffleScreens {
     descriptors: Arc<Descriptors>,
@@ -506,7 +514,11 @@ impl RuffleScreens {
             }
             p.set_window_mode("transparent");
         }
-        self.screens.insert(object.to_string(), Screen { player: player.clone(), extras: Rc::default() });
+        let extras = Extras {
+            hidden: HIDDEN.iter().filter(|(screen, _)| path.starts_with(screen)).map(|(_, clip)| *clip).collect(),
+            ..Default::default()
+        };
+        self.screens.insert(object.to_string(), Screen { player: player.clone(), extras: Rc::new(RefCell::new(extras)) });
         Ok(Call::Later(Box::new(move || {
             let mut p = player.lock().unwrap();
             p.preload(&mut ExecutionLimit::none());
@@ -615,6 +627,10 @@ impl Screens for RuffleScreens {
                         let start = std::time::Instant::now();
                         p.tick(FloatDuration::from_millis(dt));
                         fit_texts(&mut *p, &extras);
+                        let hidden = extras.borrow().hidden.clone();
+                        for clip in hidden {
+                            p.set_property(clip, "_visible", ExternalValue::Bool(false));
+                        }
                         note_time(&name, start.elapsed(), Duration::ZERO);
                     }
                     Vec::new()
@@ -629,6 +645,7 @@ impl Screens for RuffleScreens {
                     // the game does not hand the touch to the screens below
                     let Ok(mut p) = player.try_lock() else { return vec![Arg::Bool(false)] };
                     let under = p.find_button(x, y).map(|b| script_path(&b));
+                    tracing::trace!("{name}: {method} at {x},{y} on {under:?}");
                     let (on_button, action) = extras.borrow_mut().buttons.touch(&method, under);
                     if let Some(action) = &action {
                         play(&mut *p, action);

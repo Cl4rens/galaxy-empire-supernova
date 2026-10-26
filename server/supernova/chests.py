@@ -139,7 +139,9 @@ def open_chest(state: dict, now: float) -> str:
 
 def ask_for_help(state: dict, now: float) -> None:
     if not _members(state["empire"]["user_id"]):
-        raise ChestError("Join an alliance to ask its members for help.")
+        if alliances.membership(state["empire"]["user_id"]) is None:
+            raise ChestError("Join an alliance to ask its members for help.")
+        raise ChestError("Your alliance has no other members yet who could help you.")
     c = _data(state, now)
     if c["progress"] >= need_progress(c["level"]):
         raise ChestError("Your chest is full: open it!")
