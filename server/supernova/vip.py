@@ -53,6 +53,7 @@ BENEFITS = {
     "attack": ("Weapons", "%", _grow(4, 5, 20)),
     "battle_recovery": ("Battle loss recovery", "%", _grow(4, 10, 15)),
     "shipyard_queue": ("Ship building queue", "+", [0, 0, 0, 0, 1, 1]),
+    "flight_routes": ("Flight routes (expeditions excluded)", "+", [0, 0, 0, 1, 1, 1]),
 }
 
 

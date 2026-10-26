@@ -107,7 +107,21 @@ Cost to research level *L+1*: `base × factor^L`. Research needs a research lab;
 \* No OGame equivalent; values are made up. Types 17 (krypton technology), 20 and 21 (flagship
 technologies) belong to other screens and are not part of the lab.
 
-Energy Technology raises the output of the fusion reactor.
+What researches do besides unlocking buildings and ships (the game's texts and the wiki):
+
+- **Energy Technology** raises the output of the fusion reactor.
+- **Combustion / Impulse / Hyperspace Drive** add 10 / 20 / 30 % to the speed of the ships using them.
+- **Hyperspace Technology** saves fuel: 26 % × (1 − 0.65^level), fitted to the wiki's measurements.
+- **Computer Technology:** fleets in the air at once (expeditions not counted) = 1 + ⌊level / 2⌋;
+  VIP 4 and up add one flight route.
+- **Astrophysics:** one more planet every two levels (at most 8 colonies), and by level (wiki table)
+  the daily safe explorations (0, 8, 16, 16, 48, 48, 64, 64, 80, then 120) and the expedition
+  fleets a planet can have out at once (0, 1, 1, 1, 2 from level 4, 3 from 9, 4 from 16, 5 from 25).
+- **Weapons / Shielding / Armour Technology:** +10 % per level in combat.
+- **Ultra Temperature Polymerizer:** the Pioneer Lab costs 3 % less per level.
+- **Anti-Gravity:** the Pioneer Lab is built 2 % faster per level.
+- Ion Technology "increases construction efficiency" according to the game, but neither the game
+  nor the wiki gives a number, so it only unlocks things here.
 
 ## Shipyard
 
@@ -170,8 +184,8 @@ Ships fly between planets; defense units and solar satellites cannot fly. Implem
 - **Espionage:** needs at least one espionage probe; probes return after the report.
 - **Attack:** needs armed ships; fights the planet's ships and defense (see Combat).
 - **Colonize:** a colony ship settles a free position (1–15). The ship becomes the colony; other
-  ships and the cargo stay there. How many planets a player may rule depends on Astrophysics
-  (OGame): 1 + ⌈level / 2⌉, i.e. one more planet at levels 1, 3, 5, …
+  ships and the cargo stay there. How many planets a player may rule depends on Astrophysics:
+  1 + ⌊level / 2⌋, at most 9, i.e. one more planet at levels 2, 4, 6, …
 - **Recycle:** recyclers collect a debris field up to their cargo space (20,000 each), metal
   first; the rest stays for later.
 
@@ -284,7 +298,7 @@ fights with weapons/shielding/armour technology *L*, and holds *L*² × (6,000 m
 base empty for 4 hours / game speed; the galaxy view shows the countdown. Pirate bases can be
 spied on and leave debris like any battle.
 
-**Expeditions** fly to position 16. Each player can start 10 per day. Outcomes:
+**Expeditions** fly to position 16. They need Astrophysics, which sets how many a day are safe and how many fleets a planet can have out at once (see Research); VIP and gamma detectors add more. Outcomes:
 
 | Chance | Outcome |
 |-------:|---------|

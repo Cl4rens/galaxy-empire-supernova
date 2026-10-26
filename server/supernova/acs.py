@@ -134,6 +134,7 @@ def join(player_id: int, state: dict, acs_id: int, planet_id: int, fleets_text: 
     origin = planet_rules.find_planet(empire, planet_id) or empire["main_planet"]
     ships = parse_fleets(fleets_text)
     leader, target, plan = _check_join(player_id, state, acs_id, origin, ships, now)
+    fleets.check_fleet_slot(player_id, empire, now)
     if origin["deuterium"] < plan["fuel_consumption"]:
         raise AcsError("Not enough deuterium for the flight")
     origin["deuterium"] -= plan["fuel_consumption"]

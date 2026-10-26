@@ -242,6 +242,8 @@ def tick(empire: dict, now: float | None = None) -> None:
     for key, benefit in (("build", "build"), ("research", "research"), ("mines", "production"),
                          ("ships", "shipyard")):
         boost[key] = boost.get(key, 0) + vip.benefit(empire, benefit, now)
+    boost["pioneer_cost"] = eco.PIONEER_COST_CUT * research_level(empire, eco.ULTRA_TEMPERATURE_POLYMERIZER)
+    boost["pioneer_time"] = eco.PIONEER_TIME_CUT * research_level(empire, eco.ANTI_GRAVITY)
     from . import specials
     for planet in bodies(empire):
         add_missing_fleets(planet)
@@ -353,8 +355,7 @@ def start_building_event(empire: dict, state: dict, building_id: int, event_type
             taken = {x["building_position_index"] for x in planet["buildings"]}
             if lot not in FREE_LOTS or lot in taken:
                 raise GameError("This building lot is not free")
-        cost = eco.upgrade_cost(btype, current)
-        seconds = _faster(planet, "build", eco.build_seconds(cost[0], cost[1], *robotics_levels(planet)))
+        cost, seconds = _upgrade(planet, btype, current)
     elif event_type == EVENT_TEARDOWN:
         if current == 0:
             raise GameError("Nothing to tear down")
@@ -536,18 +537,29 @@ def cancel_fleet_order(empire: dict, event_id: int, now: float) -> dict:
 # --- What the client sees -----------------------------------------------------------------
 
 
+def _upgrade(planet: dict, btype: int, lv: int) -> tuple[tuple[int, int, int], int]:
+    """Cost and seconds of the next level (the Pioneer Lab's cut by the empire's research)."""
+    cost = eco.upgrade_cost(btype, lv)
+    seconds = _faster(planet, "build", eco.build_seconds(cost[0], cost[1], *robotics_levels(planet)))
+    if btype == eco.PIONEER_LAB:
+        boost = planet.get("officer", {})
+        cost = tuple(c * (100 - min(90, boost.get("pioneer_cost", 0))) // 100 for c in cost)
+        seconds = max(1, seconds * (100 - min(90, boost.get("pioneer_time", 0))) // 100)
+    return cost, seconds
+
+
 def building_view(planet: dict, b: dict) -> dict:
     btype, lv = b["building_type"], b["building_level"]
     rule = eco.BUILDINGS[btype]
     robotics, nanite = robotics_levels(planet)
-    up = eco.upgrade_cost(btype, lv)
+    up, up_time = _upgrade(planet, btype, lv)
     view = dict(b)
     view.update({
         "building_name": rule.name,
         "up_metal_require": up[0],
         "up_crystal_require": up[1],
         "up_deuterium_require": up[2],
-        "up_time": _faster(planet, "build", eco.build_seconds(up[0], up[1], robotics, nanite)),
+        "up_time": up_time,
         "up_extra_energy": RADAR_ENERGY_PER_LEVEL if btype == eco.RADAR_CENTER
         else round(eco.mine_energy(btype, lv + 1) - eco.mine_energy(btype, lv))
         if btype in eco.MINES else 0,

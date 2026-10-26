@@ -85,10 +85,11 @@ def test_store_items_work_at_once_and_detectors_add_explorations():
 
 
 def test_expeditions_past_the_secure_ones_need_a_detector():
-    from .test_npc import NOW, send
+    from .test_npc import NOW, astrophysics, send
     pid = new_player_with_cargo(5)
+    astrophysics(pid, 4)  # 48 safe explorations, two fleets at once
     galaxy, system, _ = position(pid)
-    for _ in range(npc.EXPEDITIONS_PER_DAY):
+    for _ in range(48):
         npc.record_expedition(pid, NOW)
     with pytest.raises(planet_rules.GameError, match="Gamma Detector"):
         send(pid, {9: 1}, (galaxy, system, 16), fleets.EXPEDITION)
@@ -99,7 +100,7 @@ def test_expeditions_past_the_secure_ones_need_a_detector():
     with db.player_state(pid) as state:  # VIP 2 adds five a day
         vip.add_points(state, 500)
         vip.activate(state, 1, NOW)
-    assert fleets.secure_explorations(db.load_state(pid)["empire"], NOW) == npc.EXPEDITIONS_PER_DAY + 5
+    assert fleets.secure_explorations(db.load_state(pid)["empire"], NOW) == 48 + 5
 
 
 def test_client_views():

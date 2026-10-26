@@ -46,7 +46,7 @@ def test_colonize_and_switch_planets():
     pid = new_player_with_cargo(0)
     with db.player_state(pid) as state:
         research = next(r for r in state["empire"]["researches"] if r["research_type"] == eco.ASTROPHYSICS)
-        research["research_level"] = 1
+        research["research_level"] = 2
     target = free_position(pid)
     colonize(pid, target)
 
@@ -75,7 +75,7 @@ def test_switch_planet_over_api():
     pid = state["user_id"]
     with db.player_state(pid) as s:
         research = next(r for r in s["empire"]["researches"] if r["research_type"] == eco.ASTROPHYSICS)
-        research["research_level"] = 1
+        research["research_level"] = 2
         s["empire"]["main_planet"].update(metal=10_000, crystal=10_000, deuterium=10_000)
     colonize(pid, free_position(pid))
     colony_id = db.load_state(pid)["empire"]["planets"][1]["planet_id"]
@@ -106,7 +106,7 @@ def test_abandon_colony_but_not_home():
     pid = state["user_id"]
     with db.player_state(pid) as s:
         research = next(r for r in s["empire"]["researches"] if r["research_type"] == eco.ASTROPHYSICS)
-        research["research_level"] = 1
+        research["research_level"] = 2
         s["empire"]["main_planet"].update(metal=10_000, crystal=10_000, deuterium=10_000)
     target = free_position(pid)
     colonize(pid, target)

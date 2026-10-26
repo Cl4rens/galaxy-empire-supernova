@@ -139,7 +139,9 @@ def test_reformers():
 
 
 def test_nebula_navigator_explores_again_and_again():
+    from .test_npc import astrophysics
     pid = new_player_with_cargo(5)
+    astrophysics(pid, 1)
     _use(pid, _item("navigator", 20))
     with db.player_state(pid) as state:
         state["empire"]["navigator"]["runs"] = 3

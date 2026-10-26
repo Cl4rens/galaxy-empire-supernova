@@ -16,7 +16,6 @@ from . import combat, config, db
 from . import economy as eco
 
 PIRATE_RESPAWN_SECONDS = 4 * 3600
-EXPEDITIONS_PER_DAY = 10
 
 # fleet_type -> count per pirate level
 PIRATE_FLEET = {1: 8, 2: 3, 3: 1, 15: 10, 16: 4}

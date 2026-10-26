@@ -5,6 +5,7 @@ import random
 import pytest
 
 from supernova import db, fleets, mails, npc
+from supernova import economy as eco
 from supernova import planet as planet_rules
 
 from .test_fleets import new_player_with_cargo, position
@@ -60,18 +61,29 @@ def test_expedition_outcomes_are_well_formed(seed):
         assert set(outcome["found"]) == {"metal", "crystal", "deuterium"}
 
 
+def astrophysics(pid, level):
+    with db.player_state(pid) as state:
+        next(r for r in state["empire"]["researches"] if r["research_type"] == eco.ASTROPHYSICS)["research_level"] = level
+
+
 def test_expedition_mission_and_daily_limit():
     pid = new_player_with_cargo(0)
     galaxy, system, _ = position(pid)
     with db.player_state(pid) as state:
         assert fleets.plan(state["empire"], pid, {9: 1}, (galaxy, system, 16))["missions"] == [fleets.EXPEDITION]
+    with pytest.raises(planet_rules.GameError, match="Research Astrophysics"):
+        send(pid, {9: 5}, (galaxy, system, 16), fleets.EXPEDITION)
+    astrophysics(pid, 1)
     send(pid, {9: 5}, (galaxy, system, 16), fleets.EXPEDITION)
     mail = mails.undelivered(pid)[0]
     assert mail["message_type"] == mails.EXPLORE
-    assert mail["body"]["explore_data"] == {"curr": 1, "max": npc.EXPEDITIONS_PER_DAY}
+    assert mail["body"]["explore_data"] == {"curr": 1, "max": 8}  # wiki: 8 safe runs at Astrophysics 1
     assert "situation" in mail["body"]["expedition_result"]
+    with pytest.raises(planet_rules.GameError, match="1 expedition fleet"):  # still flying home
+        send(pid, {9: 1}, (galaxy, system, 16), fleets.EXPEDITION)
+    fleets.process_due(NOW + 10**7)
 
-    for _ in range(npc.EXPEDITIONS_PER_DAY - 1):
+    for _ in range(8 - 1):
         npc.record_expedition(pid, NOW)
     with pytest.raises(planet_rules.GameError, match="secure explorations"):
         send(pid, {9: 1}, (galaxy, system, 16), fleets.EXPEDITION)

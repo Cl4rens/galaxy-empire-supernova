@@ -67,8 +67,31 @@ def ship_speed(empire: dict, ftype: int) -> int:
 
 
 def secure_explorations(empire: dict, now: float | None = None) -> int:
-    """Expeditions a day: npc.EXPEDITIONS_PER_DAY, more with VIP (gamma detectors add beyond)."""
-    return npc.EXPEDITIONS_PER_DAY + vip.benefit(empire, "secure_explorations", now)
+    """Expeditions a day: by Astrophysics, more with VIP (gamma detectors add beyond)."""
+    return (eco.safe_explorations(planet_rules.research_level(empire, eco.ASTROPHYSICS))
+            + vip.benefit(empire, "secure_explorations", now))
+
+
+def fleet_slots(empire: dict, now: float | None = None) -> int:
+    """Flights at once besides expeditions: Computer Tech, and a VIP flight route."""
+    return (eco.fleet_slots(planet_rules.research_level(empire, eco.COMPUTER_TECH))
+            + vip.benefit(empire, "flight_routes", now))
+
+
+def flights_in_air(player_id: int) -> int:
+    return db.connect().execute("SELECT COUNT(*) FROM fleet_events WHERE owner_id = ? AND mission != ?",
+                                (player_id, EXPEDITION)).fetchone()[0]
+
+
+def check_fleet_slot(player_id: int, empire: dict, now: float) -> None:
+    slots = fleet_slots(empire, now)
+    if flights_in_air(player_id) >= slots:
+        raise FleetError(f"All {slots} flight routes are in use. Every two levels of Computer Tech add one.")
+
+
+def _expeditions_from(planet_id: int) -> int:
+    return db.connect().execute("SELECT COUNT(*) FROM fleet_events WHERE origin_planet_id = ? AND mission = ?",
+                                (planet_id, EXPEDITION)).fetchone()[0]
 
 
 def _position(p: dict) -> tuple[int, int, int]:
@@ -173,7 +196,8 @@ def plan(empire: dict, player_id: int, ships: dict[int, int], target: tuple[int,
         "speed": speed,
         "distance": dist,
         "total_time": eco.flight_seconds(dist, speed, percent),
-        "fuel_consumption": eco.fuel(ships, dist, percent),
+        "fuel_consumption": eco.fuel(ships, dist, percent,
+                                     planet_rules.research_level(empire, eco.HYPERSPACE_TECH)),
         "empty_cargobays": eco.cargo_capacity(ships),
     }
 
@@ -207,7 +231,15 @@ def send(player_id: int, state: dict, params: dict, now: float) -> None:
         return
     if mission == COLONY and len(empire["planets"]) >= max_planets(empire):
         raise FleetError("Research more Astrophysics to rule more planets")
+    if mission != EXPEDITION:
+        check_fleet_slot(player_id, empire, now)
     if mission == EXPEDITION:
+        astrophysics = planet_rules.research_level(empire, eco.ASTROPHYSICS)
+        if not astrophysics:
+            raise FleetError("Research Astrophysics to send expeditions")
+        if _expeditions_from(origin["planet_id"]) >= eco.expedition_fleets(astrophysics):
+            raise FleetError(f"This planet can have {eco.expedition_fleets(astrophysics)} expedition fleet(s) "
+                             "out at once; more Astrophysics allows more")
         if npc.expeditions_today(player_id, now) >= secure_explorations(empire, now):
             if empire.get("secure_explorations", 0) <= 0:
                 raise FleetError("No more secure explorations today; a Gamma Detector gives more")
@@ -929,8 +961,8 @@ def _recycle(row) -> str:
 
 
 def max_planets(empire: dict) -> int:
-    """OGame: Astrophysics allows one more colony every two levels."""
-    return 1 + (planet_rules.research_level(empire, eco.ASTROPHYSICS) + 1) // 2
+    """Astrophysics allows one more colony every two levels, at most eight."""
+    return 1 + eco.colonies(planet_rules.research_level(empire, eco.ASTROPHYSICS))
 
 
 def _colonize(row) -> str:

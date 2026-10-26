@@ -69,6 +69,35 @@ STORAGE_FOR = {"metal": METAL_STORAGE, "crystal": CRYSTAL_STORAGE, "deuterium": 
 BASE_PRODUCTION = {"metal": 30, "crystal": 15, "deuterium": 0}
 
 
+# Astrophysics (wiki table, by level 0-26): daily safe explorations and expedition fleets a
+# planet can have out at once; colonies come every two levels, at most 8 (the game's text).
+SAFE_EXPLORATIONS = [0, 8, 16, 16, 48, 48, 64, 64, 80] + [120] * 18
+EXPEDITION_FLEETS = [0, 1, 1, 1, 2, 2, 2, 2, 2] + [3] * 7 + [4] * 9 + [5] * 2
+MAX_COLONIES = 8
+PIONEER_COST_CUT, PIONEER_TIME_CUT = 3, 2  # % per level of Ultra Temperature Polymerizer / Anti-Gravity
+
+
+def _by_level(table: list[int], level: int) -> int:
+    return table[min(level, len(table) - 1)]
+
+
+def safe_explorations(astrophysics: int) -> int:
+    return _by_level(SAFE_EXPLORATIONS, astrophysics)
+
+
+def expedition_fleets(astrophysics: int) -> int:
+    return _by_level(EXPEDITION_FLEETS, astrophysics)
+
+
+def colonies(astrophysics: int) -> int:
+    return min(MAX_COLONIES, astrophysics // 2)
+
+
+def fleet_slots(computer_tech: int) -> int:
+    """Fleets in the air at once, expeditions not counted: one more every two levels of Computer Tech."""
+    return 1 + computer_tech // 2
+
+
 def upgrade_cost(btype: int, level: int) -> tuple[int, int, int]:
     """Cost to go from `level` to `level + 1`."""
     rule = BUILDINGS[btype]
@@ -296,9 +325,12 @@ def flight_seconds(dist: int, speed: int, percent: int) -> int:
     return max(1, round((10 + 3500 / (percent / 10) * math.sqrt(10 * dist / speed)) / config.SPEED))
 
 
-def fuel(ships: dict[int, int], dist: int, percent: int) -> int:
+def fuel(ships: dict[int, int], dist: int, percent: int, hyperspace_tech: int = 0) -> int:
+    """Deuterium for a flight. Hyperspace Tech saves a little: the wiki's measurements (428 at
+    level 0, 389, 364, 347 ... 317 at level 14) follow 26 % * (1 - 0.65^level)."""
     base = sum(SHIPS[t].fuel * n for t, n in ships.items())
-    return 1 + round(base * dist / 35000 * (percent / 100 + 1) ** 2)
+    saving = 0.26 * (1 - 0.65 ** hyperspace_tech)
+    return 1 + round(base * dist / 35000 * (percent / 100 + 1) ** 2 * (1 - saving))
 
 
 def cargo_capacity(ships: dict[int, int]) -> int:
