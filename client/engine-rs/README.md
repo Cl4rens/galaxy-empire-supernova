@@ -25,7 +25,9 @@ cargo build --release
 | native buttons (clips named `btn...`) | `find_avm1_button(x, y, "btn")`, then `focus_in`/`released` and `on_clicked` from `screens.rs` |
 | names without regard to case, `"a,b,".split(",")` gives two, text not clipped to its field | `set_gameswf_compat(true)` |
 | scripts of attached clips run at once | `call_avm1_function` runs the queued actions before it returns |
-| text fields named `..._SLHM_...` fit one line | `text_field_paths("_SLHM")`, then `fit_avm1_text` from `screens.rs` |
+| text fields named `..._SLHM_...` / `..._MLHM_...` show what fits, ending with "..." | `text_field_paths(mark)`, then `truncate_avm1_text` from `screens.rs` |
+| a text field turned into a string gives its text | `set_gameswf_compat(true)` |
+| Flash commands reach the scripts at once | `FsCommandProvider::on_fs_command_in` with the running movie |
 
 Text fields named after a game text (`LC_MENU_TAB_OFFICER`, also with the layout mark
 `SLHM_`/`MLHM_` in it) get that text when `convert.rs` converts the screen.
@@ -45,8 +47,9 @@ python -m supernova_client.screens --apk ../../apk/galaxy-empire-1-9-36.apk --ou
 ./target/release/supernova ../../apk/galaxy-empire-1-9-36.apk http://127.0.0.1:8000 save
 ```
 
-A window with the game; the mouse is the finger. Every Flash object draws into its own
-texture, and `compositor.rs` stacks them in the order the game rendered them.
+A window with the game; the mouse is the finger, and the keyboard types into text fields.
+Every Flash object draws into its own texture, and `compositor.rs` stacks them in the order the
+game rendered them.
 
 ## Play without a window
 
@@ -60,7 +63,11 @@ filled from the ETC1 textures, and text fields draw with the game's `data2/Arial
 ./target/release/screenshots ../../apk/galaxy-empire-1-9-36.apk http://127.0.0.1:8000 save shots
 ```
 
-`screenshots` logs in and saves the title screen and the first screen after the login.
+`screenshots` logs in and saves the title screen and the first screen after the login, then one
+picture after each step in `SUPERNOVA_TAPS`, separated by `;`: `x,y` taps (in the game's
+640x1136 coordinates), `drag:x1,y1,x2,y2`, `pinch:x,y,from,to`, `type:text` (`
+` ends the
+input) and `wait:seconds`. The test tools play no sound.
 `screen-convert <apk> <dir> ItemShop.tfs a1.png` writes screens as SWF and pictures as PNG.
 `SUPERNOVA_LAYERS=1` also saves every Flash object on its own, `SUPERNOVA_DUMP_SCREENS=<dir>`
 writes the converted screens as SWF files, and `RUST_LOG=supernova_engine=debug` shows the
@@ -80,6 +87,7 @@ adds the game files from the player's own APK on their computer, and that is the
   `supernova/server.txt`.
 - If it cannot start, it says why in logcat (tag `supernova`) and in `error.txt` in
   `Android/data/org.supernova.galaxyempire/files/`.
+- It needs Android 8.0 (API 26) or newer: sound goes out through AAudio.
 
 Build the engine app (needs the Android SDK with build-tools, a platform and the NDK, Java, and [cargo-ndk](https://github.com/bbqsrc/cargo-ndk); no Gradle):
 

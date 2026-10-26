@@ -21,7 +21,7 @@ from the APK is stored here.
 | game texts (`LuaLoader`, `data2/text/*.idx` + language files) | done |
 | device information, app version, platform | done |
 | Flash objects (`ext.RegisteFlashClass`, `Load`, `InvokeASCallback`, `fscommand`) | recorded only, no picture yet |
-| audio, local notifications, Game Center | not yet (logged, ignored) |
+| audio, local notifications, Game Center | not here (logged, ignored); audio is in `engine-rs` |
 | touch input | through `fscommand` only |
 
 With it the original game boots against a Supernova server: update check, loading screen,
@@ -74,8 +74,12 @@ python -m supernova_client.screens --apk ../apk/galaxy-empire-1-9-36.apk --out s
 The engine itself is now [`engine-rs`](engine-rs/README.md): the Lua side in Rust with
 [mlua](https://github.com/mlua-rs/mlua), and every Flash object a [Ruffle](https://ruffle.rs)
 player, connected like gameswf did it (`InvokeASCallback`, `fscommand`, `ReplaceTexture`,
-native `btn...` buttons, text with `data2/Arial.ttf`). In a window it logs in and plays: news,
-city, fleet screens and buttons work. Still open: sound, a few placeholder texts.
+native `btn...` buttons, text with `data2/Arial.ttf`). It shows the screens' 16:9 layouts (as
+the original did on phones), plays the game's music and sounds, takes text input from the
+keyboard and two-finger gestures (zooming the city), and frees a screen when the game lets go
+of it. Compared side by side with the original app, the screens tried so far (title, news,
+city, store, chat, mail and battle reports, galaxy map and solar systems, dispatch and
+missions, shipyard, rankings, alliance) look and behave the same.
 
 ## Stage 3: an Android app (runs)
 
@@ -83,4 +87,5 @@ city, fleet screens and buttons work. Still open: sound, a few placeholder texts
 arm64 phones and x86_64 emulators, with nothing from the game in it. `tools/patch_apk.py --64bit`
 adds the game files from the player's own APK, so the player installs one APK. Tested on
 Android 13 (BlueStacks, x86_64): login over the LAN, news, city, tutorial dialogs, going to the
-background and back.
+background and back, typing with the on-screen keyboard (the screen moves up so the field stays
+visible), sound. The app needs Android 8.0 or newer.
