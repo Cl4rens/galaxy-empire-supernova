@@ -77,6 +77,9 @@ BASE_PRODUCTION = {"metal": 60, "crystal": 30, "deuterium": 0}
 SAFE_EXPLORATIONS = [0, 8, 16, 16, 48, 48, 64, 64, 80] + [120] * 18
 EXPEDITION_FLEETS = [0, 1, 1, 1, 2, 2, 2, 2, 2] + [3] * 7 + [4] * 9 + [5] * 2
 MAX_COLONIES = 8
+# Laser and Ion Technology "increase construction efficiency" (the game's texts, no number given):
+# each level makes buildings, ships and defense 10 % faster to build (time / (1 + 10 % x levels))
+CONSTRUCTION_EFFICIENCY = 10
 PIONEER_COST_CUT, PIONEER_TIME_CUT = 3, 2  # % per level of Ultra Temperature Polymerizer / Anti-Gravity
 
 

@@ -118,8 +118,11 @@ def radar_energy(planet: dict) -> int:
 
 
 def _faster(planet: dict, key: str, seconds: int) -> int:
-    """Officers shorten timers by a percentage (planet["officer"], kept up to date by tick)."""
-    return max(1, int(seconds * (100 - planet.get("officer", {}).get(key, 0)) / 100))
+    """Officers shorten timers by a percentage (planet["officer"], kept up to date by tick);
+    Laser and Ion Technology make constructions and the shipyard more efficient."""
+    boost = planet.get("officer", {})
+    efficiency = 1 + boost.get("construction", 0) / 100 if key in ("build", "ships", "defense") else 1
+    return max(1, int(seconds * (100 - boost.get(key, 0)) / 100 / efficiency))
 
 
 def sensor_range(moon: dict) -> int:
@@ -250,6 +253,8 @@ def tick(empire: dict, now: float | None = None) -> None:
     for key, benefit in (("build", "build"), ("research", "research"), ("mines", "production"),
                          ("ships", "shipyard")):
         boost[key] = boost.get(key, 0) + vip.benefit(empire, benefit, now)
+    boost["construction"] = eco.CONSTRUCTION_EFFICIENCY * (research_level(empire, eco.LASER_TECH)
+                                                           + research_level(empire, eco.ION_TECH))
     boost["pioneer_cost"] = eco.PIONEER_COST_CUT * research_level(empire, eco.ULTRA_TEMPERATURE_POLYMERIZER)
     boost["pioneer_time"] = eco.PIONEER_TIME_CUT * research_level(empire, eco.ANTI_GRAVITY)
     from . import specials

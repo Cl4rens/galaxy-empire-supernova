@@ -131,8 +131,8 @@ What researches do besides unlocking buildings and ships (the game's texts and t
 - **Weapons / Shielding / Armour Technology:** +10 % per level in combat.
 - **Ultra Temperature Polymerizer:** the Pioneer Lab costs 3 % less per level.
 - **Anti-Gravity:** the Pioneer Lab is built 2 % faster per level.
-- Ion Technology "increases construction efficiency" according to the game, but neither the game
-  nor the wiki gives a number, so it only unlocks things here.
+- **Laser / Ion Technology** "increase construction efficiency" (the game gives no number): every
+  level of either makes buildings, ships and defense 10 % faster to build: time / (1 + 10 % × levels).
 
 ## Shipyard
 

@@ -70,3 +70,16 @@ def test_pioneer_lab_is_cheaper_and_faster_with_research():
     assert cost == tuple(c * 85 // 100 for c in full_cost)
     assert seconds == full_time * 80 // 100
     assert planet_rules._upgrade(planet, eco.METAL_MINE, 0)[0] == eco.upgrade_cost(eco.METAL_MINE, 0)
+
+
+def test_laser_and_ion_tech_speed_up_constructions():
+    state = new_player()
+    empire = state["empire"]
+    planet = empire["main_planet"]
+    planet_rules.tick(empire, NOW)
+    slow = planet_rules._upgrade(planet, eco.METAL_MINE, 5)[1]
+    _research(state, eco.LASER_TECH, 6)
+    _research(state, eco.ION_TECH, 4)
+    planet_rules.tick(empire, NOW)
+    assert planet_rules._upgrade(planet, eco.METAL_MINE, 5)[1] == int(slow / 2)  # 10 levels: twice as fast
+    assert planet_rules._faster(planet, "research", 1000) == 1000  # research is not a construction
