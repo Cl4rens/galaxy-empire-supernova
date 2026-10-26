@@ -57,7 +57,15 @@ fn main() -> Result<()> {
     shot(&mut engine, &out, "4-city")?;
     // SUPERNOVA_TAPS="586,255;64,38": taps in the game's 640x960 coordinates, a picture after each
     let taps = std::env::var("SUPERNOVA_TAPS").unwrap_or_default();
+    // "type:text" types into the open text box instead ("\n" ends it, "\b" deletes)
     for (n, tap) in taps.split(';').filter(|t| !t.is_empty()).enumerate() {
+        if let Some(text) = tap.strip_prefix("type:") {
+            engine.text_input(&text.replace("\\n", "\n").replace("\\b", "\u{8}"))?;
+            engine.run(1.0, |_| false)?;
+            println!("keyboard: {:?}", engine.take_keyboard());
+            shot(&mut engine, &out, &format!("5-tap{}", n + 1))?;
+            continue;
+        }
         let (x, y) = tap.split_once(',').unwrap_or_default();
         let (x, y) = (x.trim().parse()?, y.trim().parse()?);
         engine.touch(Touch::Pressed, x, y)?;

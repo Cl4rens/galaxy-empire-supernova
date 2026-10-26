@@ -9,13 +9,15 @@ use std::time::{Duration, Instant};
 use anyhow::Result;
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
-use winit::event::{ElementState, MouseButton, TouchPhase, WindowEvent};
+use winit::event::{ElementState, Ime, MouseButton, TouchPhase, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId};
 
 use crate::assets::Assets;
 use crate::compositor::{Compositor, to_game};
-use crate::engine::{Engine, Touch};
+use crate::screens::HEIGHT;
+use crate::engine::{Engine, Keyboard, Touch};
 use crate::screens::RuffleScreens;
 
 const FRAME: Duration = Duration::from_micros(33_333);
@@ -34,6 +36,16 @@ pub struct Config {
     /// where the game keeps its saved files
     pub save_dir: PathBuf,
     pub language: String,
+    /// The on-screen keyboard; without it the window's input method is switched on and off
+    /// (desktop).
+    pub keyboard: Option<SoftKeyboard>,
+}
+
+pub struct SoftKeyboard {
+    /// brings the keyboard up (true) or takes it away
+    pub show: Box<dyn Fn(bool)>,
+    /// the lowest window row the keyboard leaves visible, in pixels
+    pub visible_bottom: Box<dyn Fn() -> Option<f64>>,
 }
 
 struct App {
@@ -43,6 +55,9 @@ struct App {
     cursor: (f64, f64),
     pressed: bool,
     next_frame: Instant,
+    keyboard: Option<SoftKeyboard>,
+    /// where the keyboard's top edge was last told to the game, while it is up
+    keyboard_top: Option<f64>,
 }
 
 impl App {
@@ -61,10 +76,42 @@ impl App {
         }
     }
 
+    fn text_input(&self, text: &str) {
+        if let Err(e) = self.engine.text_input(text) {
+            tracing::warn!("text input: {e}");
+        }
+    }
+
+    /// The game moves the screen up so that the text box stays above the keyboard: it needs
+    /// the keyboard's top edge, as a part of the game's height.
+    fn follow_keyboard(&mut self) {
+        let (Some(keyboard), Some(top), Some(compositor)) = (&self.keyboard, self.keyboard_top, &self.compositor) else { return };
+        let Some(bottom) = (keyboard.visible_bottom)() else { return };
+        let (w, h) = compositor.size();
+        let edge = if bottom < h as f64 - 1.0 { (to_game(w, h, 0.0, bottom).1 / HEIGHT as f64).clamp(0.0, 1.0) } else { 1.0 };
+        if (edge - top).abs() > 0.001 {
+            tracing::info!("keyboard top at {edge:.3} of the game's height");
+            self.keyboard_top = Some(edge);
+            if let Err(e) = self.engine.keyboard_moved(edge) {
+                tracing::warn!("keyboard: {e}");
+            }
+        }
+    }
+
     fn frame(&mut self) {
         if let Err(e) = self.engine.step().and_then(|_| self.engine.render()) {
             tracing::warn!("{e}");
         }
+        if let Some(keyboard) = self.engine.take_keyboard() {
+            let show = matches!(keyboard, Keyboard::Show { .. });
+            match (&self.keyboard, &self.window) {
+                (Some(keyboard), _) => (keyboard.show)(show),
+                (None, Some(window)) => window.set_ime_allowed(show),
+                _ => {}
+            }
+            self.keyboard_top = show.then_some(1.0);
+        }
+        self.follow_keyboard();
         let layers = self.screens().layer_textures();
         if let Some(compositor) = &mut self.compositor {
             compositor.draw(&layers);
@@ -124,6 +171,23 @@ impl ApplicationHandler for App {
                 };
                 self.touch(phase, touch.location.x, touch.location.y);
             }
+            // typed text for the game's text box (the soft keyboard sends keys too)
+            // (Android's key map gives some keys as characters: enter as "\n")
+            WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
+                tracing::debug!("key {:?} {:?}", event.logical_key, event.text);
+                let text = match &event.logical_key {
+                    Key::Named(NamedKey::Backspace) => Some("\u{8}".to_string()),
+                    Key::Named(NamedKey::Enter) => Some("\n".to_string()),
+                    Key::Character(c) => Some(c.to_string()),
+                    _ => event.text.as_ref().map(|t| t.to_string()),
+                };
+                if let Some(text) = text.map(|t| t.replace('\r', "\n"))
+                    && is_typed(&text)
+                {
+                    self.text_input(&text);
+                }
+            }
+            WindowEvent::Ime(Ime::Commit(text)) => self.text_input(&text),
             WindowEvent::RedrawRequested => self.frame(),
             _ => {}
         }
@@ -152,7 +216,21 @@ pub fn run(event_loop: EventLoop<()>, config: Config) -> Result<()> {
         }
     };
     engine.boot()?;
-    let mut app = App { engine, window: None, compositor: None, cursor: (0.0, 0.0), pressed: false, next_frame: Instant::now() };
+    let mut app = App {
+        engine,
+        window: None,
+        compositor: None,
+        cursor: (0.0, 0.0),
+        pressed: false,
+        next_frame: Instant::now(),
+        keyboard: config.keyboard,
+        keyboard_top: None,
+    };
     event_loop.run_app(&mut app)?;
     Ok(())
+}
+
+/// Text for a text box: characters, a newline (done) or a backspace, no other control keys
+fn is_typed(text: &str) -> bool {
+    !text.is_empty() && text.chars().all(|c| !c.is_control() || c == '\n' || c == '\u{8}')
 }

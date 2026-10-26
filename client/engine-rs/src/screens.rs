@@ -588,6 +588,27 @@ impl Screens for RuffleScreens {
                 }
                 Call::Done(Vec::new())
             }
+            // the field under a text box being typed in: the typed text, shown again (the
+            // screen hides it while the box is open); without a text only shown again
+            "SetEditText" => {
+                let field = text(0);
+                let typed = match args.get(1) {
+                    None | Some(Arg::Nil) => None,
+                    Some(typed) => Some(typed.text()),
+                };
+                Call::Later(Box::new(move || {
+                    with_movie(&name, &player, |m| {
+                        if let Some(typed) = typed {
+                            m.set_property(&field, "text", ExternalValue::String(typed));
+                        }
+                        m.set_property(&field, "_visible", ExternalValue::Bool(true));
+                    });
+                    Vec::new()
+                }))
+            }
+            // for the native text box drawn over the field; the field itself shows the text here
+            "GetFontSize" => Call::Done(vec![Arg::Num(20.0)]),
+            "GetFontColor" => Call::Done(vec![Arg::Num(0xFFFFFF as f64)]),
             // gameswf settings without a meaning here
             "SetTextBufferingEnabled" | "clearFonts" => Call::Done(Vec::new()),
             _ => {

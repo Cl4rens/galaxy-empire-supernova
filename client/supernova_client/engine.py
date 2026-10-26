@@ -170,6 +170,10 @@ class Engine:
                 engine.clipboard = text
 
             @staticmethod
+            def keyboard(show, input_type=None):
+                engine.keyboard = bool(show)
+
+            @staticmethod
             def json_parse(text):
                 return engine.to_lua(json.loads(text))
 

@@ -43,8 +43,9 @@ function ext.isAmazon() return false end
 function ext.isLangFR() return false end
 function ext.IsArm() return false end
 function ext.getSysTime() return native.now() end
-function ext.SCREEN_WIDTH() return 1080 end
-function ext.SCREEN_HEIGHT() return 1920 end
+-- the game's screen coordinates: native text boxes are placed in them (GameTextEdit)
+ext.SCREEN_WIDTH = 640
+ext.SCREEN_HEIGHT = 960
 function ext.QueryAppConfig(key) return nil end
 function ext._QueryAppConfig(key) return nil end
 function ext.GetAndroidDeviceTotalMem() return 4096 end
@@ -126,7 +127,107 @@ function ext.RegisteFlashClass(class_name, super_name)
   end
   return class
 end
-ext.RegisteTextInputClass = ext.RegisteFlashClass
+
+-- Text input: the native text box the game opens over a Flash text field (TextEditInput_t,
+-- see GameTextEdit.lua). The engine shows the keyboard and hands typed text to
+-- __sn_text_input; the text shows in the screen's own field while it is typed.
+local active_input
+local UTF8_CHAR = "[%z\1-\127\194-\244][\128-\191]*"
+local function utf8_chars(text)
+  return string.gmatch(text, UTF8_CHAR)
+end
+local function utf8_len(text)
+  local n = 0
+  for _ in utf8_chars(text) do n = n + 1 end
+  return n
+end
+local function show_input(input)
+  if not (input.fx and input.field) then return end
+  local text = input.text
+  if input.input_type == "Password" then text = string.rep("*", utf8_len(text)) end
+  -- a cursor while the box is open
+  if active_input == input then text = text .. "|" end
+  input.fx:SetEditText(input.field, text)
+end
+local function finish_input(input)
+  if input.finished then return end
+  input.finished = true
+  if input.endEditing then input:endEditing() end
+  input:Destroy()
+  -- the screen hides its field while the native box is open; the game does not show it again
+  if input.fx and input.field then input.fx:SetEditText(input.field) end
+  ext.keyboard.onKeyboardHide()
+end
+
+function ext.RegisteTextInputClass(class_name)
+  local class = {}
+  local meta = {__index = class}
+  function class:new() return setmetatable({text = "", max_length = 0}, meta) end
+  function class:Init(class_type, text, x, y, w, h, _, _, font_size, font_color, input_type)
+    self.text = tostring(text or "")
+    self.input_type = input_type
+    -- the screen object and field the game opens the box for (GameTextEdit:fscommand)
+    local edit = rawget(_G, "GameTextEdit")
+    if edit then self.fx, self.field = edit.m_currentRenderFx, edit.m_textfiled end
+  end
+  function class:SetMaxLength(n) self.max_length = tonumber(n) or 0 end
+  function class:SetAlign() end
+  function class:SetPos() end
+  function class:Show()
+    if active_input and active_input ~= self then finish_input(active_input) end
+    active_input = self
+    self.shown = false
+    native.keyboard(true, self.input_type)
+  end
+  function class:Hide()
+    if active_input == self then finish_input(self) end
+  end
+  function class:GetText() return self.text, utf8_len(self.text) end
+  function class:SetText(text)
+    self.text = tostring(text or "")
+    show_input(self)
+  end
+  function class:Destroy()
+    if active_input == self then
+      active_input = nil
+      native.keyboard(false)
+    end
+  end
+  rawset(_G, class_name, class)
+  return class
+end
+
+-- typed text from the engine: "\b" deletes, "\n" ends the input, as the done key does
+function __sn_text_input(text)
+  local input = active_input
+  if not input then return end
+  for ch in utf8_chars(text) do
+    if ch == "\n" or ch == "\r" then
+      finish_input(input)
+      return
+    end
+    local length = utf8_len(input.text)
+    if ch == "\b" then
+      if length > 0 and input:changeCharacter("\b", length - 1) ~= false then
+        input.text = string.gsub(input.text, UTF8_CHAR .. "$", "")
+      end
+    elseif ch ~= "\t" and (input.max_length <= 0 or length < input.max_length) then
+      if input:changeCharacter(ch, length) ~= false then input.text = input.text .. ch end
+    end
+    if active_input ~= input then return end
+  end
+  show_input(input)
+end
+
+-- once a frame: the field shows the text from the first frame of the input on (the screen
+-- hides it right after it opened the box)
+function __sn_text_input_frame()
+  local input = active_input
+  if input and not input.shown then
+    input.shown = true
+    show_input(input)
+  end
+end
 
 -- Native classes the game extends with its own callbacks (StoreObject: in-app purchases).
 -- Their objects answer every native method with nil, like a store with no products.

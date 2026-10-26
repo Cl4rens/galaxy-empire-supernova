@@ -138,7 +138,16 @@ pub struct State {
     agent: ureq::Agent,
     answers: (Sender<Answer>, Receiver<Answer>),
     pending: usize,
+    /// The keyboard the game wants: shown (with the input type) or hidden, until the app took it.
+    keyboard: Option<Keyboard>,
     pub screens: Box<dyn Screens>,
+}
+
+/// The game opens or closes a text box (see TextEditInput_t in the prelude).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Keyboard {
+    Show { input_type: String },
+    Hide,
 }
 
 pub struct Engine {
@@ -222,6 +231,7 @@ impl Engine {
             agent: ureq::AgentBuilder::new().timeout(Duration::from_secs(20)).build(),
             answers: channel(),
             pending: 0,
+            keyboard: None,
             screens,
         }));
         // the game uses the debug library (tracebacks), which mlua leaves out by default
@@ -263,6 +273,9 @@ impl Engine {
         }
         if let Ok(update) = self.lua.globals().raw_get::<Function>("Update") {
             update.call::<()>(dt)?;
+        }
+        if let Ok(frame) = self.lua.globals().raw_get::<Function>("__sn_text_input_frame") {
+            frame.call::<()>(())?;
         }
         Ok(())
     }
@@ -346,6 +359,30 @@ impl Engine {
             handler.call::<()>((x, y))?;
         }
         Ok(())
+    }
+
+    /// Typed text for the open text box: a backspace character deletes, a newline closes the box.
+    pub fn text_input(&self, text: &str) -> Result<()> {
+        if let Ok(input) = self.lua.globals().raw_get::<Function>("__sn_text_input") {
+            input.call::<()>(text)?;
+        }
+        Ok(())
+    }
+
+    /// The on-screen keyboard's top edge moved (a part of the game's height from the top, 1
+    /// when it is gone): the game moves the screen with the open text box above it.
+    pub fn keyboard_moved(&self, top: f64) -> Result<()> {
+        let keyboard: Table = self.lua.globals().raw_get::<Table>("ext")?.raw_get("keyboard")?;
+        if let Ok(Value::Function(shown)) = keyboard.raw_get::<Value>("onKeyboardShow") {
+            // the game takes the keyboard's height, as a part of the screen's
+            shown.call::<()>((0.0, 1.0 - top))?;
+        }
+        Ok(())
+    }
+
+    /// Whether the keyboard should come up or go away, once after the game asked for it.
+    pub fn take_keyboard(&self) -> Option<Keyboard> {
+        self.state.borrow_mut().keyboard.take()
     }
 
     /// The app goes to the background or comes back (OnPause/OnResume).
@@ -505,6 +542,11 @@ fn native_table(lua: &Lua, state: &Rc<RefCell<State>>) -> Result<Table> {
         Ok(Value::String(lua.create_string(crypto::encrypt(&key, &data))?))
     });
     native!("copy", |st, lua, args| Ok(Value::Nil));
+    native!("keyboard", |st, lua, args| {
+        let show = matches!(args.first(), Some(Value::Boolean(true)));
+        st.borrow_mut().keyboard = Some(if show { Keyboard::Show { input_type: arg(&args, 1) } } else { Keyboard::Hide });
+        Ok(Value::Nil)
+    });
     native!("json_parse", |st, lua, args| {
         let json: serde_json::Value = serde_json::from_str(&arg(&args, 0)).map_err(mlua::Error::external)?;
         lua.to_value_with(&json, json_to_lua())

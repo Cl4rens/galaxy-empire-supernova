@@ -15,7 +15,7 @@ use std::ffi::{CString, c_char, c_int};
 use std::io::Write;
 
 use anyhow::{Result, anyhow};
-use supernova_engine::app::{Config, Game, run};
+use supernova_engine::app::{Config, Game, SoftKeyboard, run};
 use supernova_engine::crypto::checked_key;
 use winit::event_loop::EventLoop;
 use winit::platform::android::EventLoopBuilderExtAndroid;
@@ -71,7 +71,24 @@ fn config(app: &AndroidApp) -> Result<Config> {
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| DEFAULT_SERVER.to_string());
     let internal = app.internal_data_path().ok_or_else(|| anyhow!("no app data folder"))?;
-    Ok(Config { game: Game::Files { game_zip, key }, server, save_dir: internal.join("save"), language: "en".into() })
+    let (soft_input, content) = (app.clone(), app.clone());
+    let keyboard = SoftKeyboard {
+        show: Box::new(move |show| {
+            if show { soft_input.show_soft_input(true) } else { soft_input.hide_soft_input(false) }
+        }),
+        // the activity's visible area ends where the keyboard begins
+        visible_bottom: Box::new(move || {
+            let rect = content.content_rect();
+            (rect.bottom > rect.top).then_some(rect.bottom as f64)
+        }),
+    };
+    Ok(Config {
+        game: Game::Files { game_zip, key },
+        server,
+        save_dir: internal.join("save"),
+        language: "en".into(),
+        keyboard: Some(keyboard),
+    })
 }
 
 #[unsafe(no_mangle)]

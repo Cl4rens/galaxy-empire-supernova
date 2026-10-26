@@ -30,7 +30,7 @@ index 3bc4200a..001fe1a7 100644
      }
      Ok(())
 diff --git a/core/src/avm1/globals/string.rs b/core/src/avm1/globals/string.rs
-index 7c2a45e2..580ee8bd 100644
+index 7c2a45e2..0f6e6216 100644
 --- a/core/src/avm1/globals/string.rs
 +++ b/core/src/avm1/globals/string.rs
 @@ -273,13 +273,19 @@ fn split<'gc>(
@@ -49,10 +49,10 @@ index 7c2a45e2..580ee8bd 100644
 +                .take(limit)
 +                .map(Value::from)
 +                .collect();
-+            // gameswf: "a,b,".split(",") is ["a", "b"]
++            // gameswf leaves out an empty last piece: "a,b,".split(",") is ["a", "b"], and
++            // "".split(",") is []
 +            if crate::avm1::GAMESWF.load(std::sync::atomic::Ordering::Relaxed)
-+                && pieces.len() > 1
-+                && this.as_wstr().ends_with(delimiter.as_wstr())
++                && (this.is_empty() || this.as_wstr().ends_with(delimiter.as_wstr()))
 +            {
 +                pieces.pop();
 +            }

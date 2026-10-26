@@ -18,6 +18,7 @@ fn main() -> Result<()> {
         server: args.get(2).cloned().unwrap_or_else(|| "http://127.0.0.1:8000".into()),
         save_dir: PathBuf::from(args.get(3).map(String::as_str).unwrap_or("client-save")),
         language: args.get(4).cloned().unwrap_or_else(|| "en".into()),
+        keyboard: None,
     };
     run(EventLoop::new()?, config)
 }
