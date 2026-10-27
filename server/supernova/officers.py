@@ -4,15 +4,14 @@ Six kinds with three levels each; level 1 is hired with dark matter for 7 or 30 
 and 3 with credits for 7 days. Effects and prices are the Galaxy Empire wiki's
 (galaxyempire.fandom.com/wiki/Commanders); where the wiki is vague, Supernova decides:
 
-- Commander: construction time -10 / -10 / -20 %
+- Commander: construction time -10 / -10 / -20 %, +1 / +2 / +2 constructions at once
 - Engineer: fusion energy +10 / +10 / +20 %; of the defense a battle destroys, the part that
   would be lost (30 %) is saved by 50 / 70 / 75 %
-- Technocrat: research time -25 / -30 / -35 %
+- Technocrat: research time -25 / -30 / -35 %, espionage +2 levels (the wiki gives no number;
+  OGame's technocrat)
 - Geologist: mine output +10 / +20 / +30 %
-- Admiral: defense construction time -10 / -15 / -20 % (the wiki's extra fleet slots do not
-  apply: Supernova has no fleet slot limit)
+- Admiral: defense construction time -10 / -15 / -20 %, +2 / +2 / +3 fleets in the air at once
 - Guider: of the ships an expedition loses, 35 / 45 / 55 % come back
-The building queues of the wiki's commander do not apply either (one construction at a time).
 A higher level replaces a lower one; hiring the same kind again adds time.
 """
 
@@ -29,14 +28,23 @@ EFFECT = {  # per level 1..3
     GEOLOGIST: (10, 20, 30), ADMIRAL: (10, 15, 20), GUIDER: (35, 45, 55),
 }
 ENGINEER_SAVE = (50, 70, 75)
-DESCRIPTIONS = {
-    COMMANDER: "Construction time -{}%.",
-    ENGINEER: "Fusion energy +{}%; saves more destroyed defense.",
-    TECHNOCRAT: "Research time -{}%.",
-    GEOLOGIST: "Mine output +{}%.",
-    ADMIRAL: "Defense construction time -{}%.",
-    GUIDER: "{}% of the ships an expedition loses come back.",
-}
+COMMANDER_QUEUE = (1, 2, 2)  # constructions at once besides the first
+ADMIRAL_FLEETS = (2, 2, 3)  # fleets in the air at once
+TECHNOCRAT_ESPIONAGE = 2  # espionage tech levels
+
+
+def describe(kind: str, lv: int) -> str:
+    """What an officer of this level does (wiki: galaxyempire.fandom.com/wiki/Commanders)."""
+    effect = EFFECT[kind][lv - 1]
+    return {
+        COMMANDER: f"Construction time -{effect}%, {COMMANDER_QUEUE[lv - 1]} more construction(s) at once.",
+        ENGINEER: f"Fusion reactor energy +{effect}%; keeps {ENGINEER_SAVE[lv - 1]}% of the defense a battle "
+                  "would destroy.",
+        TECHNOCRAT: f"Research time -{effect}%, Espionage Tech +{TECHNOCRAT_ESPIONAGE} levels.",
+        GEOLOGIST: f"Metal, crystal and gas production +{effect}%.",
+        ADMIRAL: f"{ADMIRAL_FLEETS[lv - 1]} more fleets in the air at once; defense construction time -{effect}%.",
+        GUIDER: f"Keeps {effect}% of an exploration fleet that is destroyed.",
+    }[kind]
 # (kind, level, days) -> (pay type, price); wiki prices
 PRICES = {
     (COMMANDER, 1, 7): (1, 25), (COMMANDER, 1, 30): (1, 100), (COMMANDER, 2, 7): (2, 400), (COMMANDER, 3, 7): (2, 800),
@@ -72,6 +80,23 @@ def percent(empire: dict, kind: str, now: float | None = None) -> int:
     return EFFECT[kind][lv - 1] if lv else 0
 
 
+def _by_level(empire: dict, kind: str, table: tuple, now: float | None) -> int:
+    lv = level(empire, kind, now)
+    return table[lv - 1] if lv else 0
+
+
+def build_queue(empire: dict, now: float | None = None) -> int:
+    return _by_level(empire, COMMANDER, COMMANDER_QUEUE, now)
+
+
+def fleet_slots(empire: dict, now: float | None = None) -> int:
+    return _by_level(empire, ADMIRAL, ADMIRAL_FLEETS, now)
+
+
+def espionage_levels(empire: dict, now: float | None = None) -> int:
+    return TECHNOCRAT_ESPIONAGE if level(empire, TECHNOCRAT, now) else 0
+
+
 def defense_save(empire: dict, now: float | None = None) -> int:
     lv = level(empire, ENGINEER, now)
     return ENGINEER_SAVE[lv - 1] if lv else 0
@@ -101,8 +126,7 @@ def buff_list(empire: dict, now: float) -> list[dict]:
     out = []
     for kind, o in _hired(empire).items():
         if o["until"] > now:
-            effect = EFFECT[kind][o["level"] - 1]
             out.append({"buffer_name": f"{NAMES[kind]} Lv.{o['level']}", "end_time": o["until"],
-                        "buffer_desc": DESCRIPTIONS[kind].format(effect), "buff_type": BUFF_TYPES[kind],
+                        "buffer_desc": describe(kind, o["level"]), "buff_type": BUFF_TYPES[kind],
                         "img": icons.pick(picture(kind, o["level"]), ICON)})
     return out

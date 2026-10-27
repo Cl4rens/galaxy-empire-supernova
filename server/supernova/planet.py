@@ -336,7 +336,8 @@ def start_building_event(empire: dict, state: dict, building_id: int, event_type
     planet = empire["main_planet"]
     tick(empire, now)
     from . import vip
-    if len(planet["building_events"]) >= 1 + vip.benefit(empire, "build_queue", now):
+    from . import officers
+    if len(planet["building_events"]) >= 1 + vip.benefit(empire, "build_queue", now) + officers.build_queue(empire, now):
         raise GameError("Another building is already under construction")
     if any(e["building_id"] == building_id for e in planet["building_events"]):
         raise GameError("This building is already under construction")

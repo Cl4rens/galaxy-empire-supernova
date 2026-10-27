@@ -303,11 +303,37 @@ function LuaLoader:new()
   return loader
 end
 
+-- LuaUtils:table_values lists a filtered list (table_filter keeps the old indices) in the order
+-- of pairs, which the game takes as the list's order (the store's dark matter / credits
+-- switches); in index order it is
+local function ordered_table_values(utils)
+  local table_values = utils.table_values
+  function utils:table_values(t)
+    local keys = {}
+    for k in pairs(t) do
+      if type(k) ~= "number" then return table_values(self, t) end
+      keys[#keys + 1] = k
+    end
+    table.sort(keys)
+    local r = {}
+    for _, k in ipairs(keys) do r[#r + 1] = t[k] end
+    return r
+  end
+end
+
 -- scripts: require("GameUtils.tfl"), loadfile("data1/X.tfl"), saved files ("ACCOUNT.tfl")
 table.insert(package.loaders, 2, function(name)
   local chunk = native.script(name)
   if chunk == nil then return "\n\tno script " .. name end
-  return assert(loadstring(chunk, name))
+  local f = assert(loadstring(chunk, name))
+  if string.find(name, "LuaUtils", 1, true) then
+    return function(...)
+      local results = {f(...)}
+      if type(LuaUtils) == "table" and LuaUtils.table_values then ordered_table_values(LuaUtils) end
+      return unpack(results)
+    end
+  end
+  return f
 end)
 local lua_loadfile = loadfile
 function loadfile(name)

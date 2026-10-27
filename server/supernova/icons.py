@@ -92,6 +92,8 @@ WIKI_FILES = {
     "reformer_gas_1.png": Source("Gas_Reformers.png", cover=(79, 9, 109, 39)),
     "reformer_gas_2.png": Source("Gas_Reformers_Level_2.png", cover=(84, 12, 116, 44)),
     "terraformer.png": "Terraformation@2x.png",
+    "ship_devourer_interceptor.png": Source("Devourer_Interceptor.png"),
+    "ship_titanenergetic_frigate.png": Source("Titanenergetic_Frigate.png"),
     "ecm_chip.png": "Electronic_warfare_chip.png",
     # VIP points items (vip.py): the wiki's level badges, which show the points
     "vip_points_1.png": Source("VIP_100.png"),
@@ -148,9 +150,9 @@ def missing() -> list[str]:
 
 def _saved(folder: Path, wiki: str) -> Path | None:
     """The file a browser saved for a wiki file (with "_" or " ", in any case, as PNG or as the
-    WebP the wiki serves to browsers)."""
+    WebP the wiki serves to browsers, or as JPEG)."""
     stem = wiki.rsplit(".", 1)[0]
-    wanted = {f"{s}.{ext}".lower() for s in (stem, stem.replace("_", " ")) for ext in ("png", "webp")}
+    wanted = {f"{s}.{ext}".lower() for s in (stem, stem.replace("_", " ")) for ext in ("png", "webp", "jpg", "jpeg")}
     return next((f for f in folder.iterdir() if f.is_file() and f.name.lower() in wanted), None)
 
 

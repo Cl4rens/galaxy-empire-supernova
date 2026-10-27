@@ -168,9 +168,8 @@ def _speedup(item_id, label, seconds, price, pay_type=DARK_MATTER, featured=Fals
 def _officers() -> list[Item]:
     out = []
     for n, ((kind, lv, days), (pay, price)) in enumerate(officers.PRICES.items()):
-        effect = officers.EFFECT[kind][lv - 1]
         out.append(Item(6001 + n, AFFAIR, f"{officers.NAMES[kind]} Lv.{lv} ({days} days)",
-                        officers.DESCRIPTIONS[kind].format(effect) + f" Hired for {days} days.",
+                        officers.describe(kind, lv) + f" Hired for {days} days.",
                         officers.ICON, price, pay_type=pay, officer=(kind, lv, days), shortcut=SHORTCUT_OFFICERS,
                         featured=(kind, lv, days) == (officers.GEOLOGIST, 1, 7), picture=officers.picture(kind, lv)))
     return out
@@ -225,9 +224,9 @@ CATALOG = [
          f"Builds one Annihilator on the planet you are on. A commander can have at most {MAX_ANNIHILATORS}.",
          "ship_destruction_star.png", 25, unit=28),
     Item(5003, OTHER, "Devourer Interceptor", "One Devourer Interceptor for the planet you are on. "
-         "Its shots pass through shields.", "item_res_14.png", 50, unit=25),
+         "Its shots pass through shields.", "item_res_14.png", 50, unit=25, picture="ship_devourer_interceptor.png"),
     Item(5004, OTHER, "Titanenergetic Frigate", "One Titanenergetic Frigate for the planet you are on. "
-         "Its armour is immense.", "item_res_15.png", 80, unit=26),
+         "Its armour is immense.", "item_res_15.png", 80, unit=26, picture="ship_titanenergetic_frigate.png"),
     Item(COMPONENT, OTHER, "Intricate component", f"Left behind by large warships destroyed in battle. "
          f"{REAPER_COMPONENTS:,} build one Reaper.", "box_activity.png", 0, sold=False),
     # code 01401 makes the capsule open the interceptor fusion screen
@@ -281,7 +280,7 @@ def contents(item_id: int) -> list[dict]:
         out.append({"name": "ECM chips", "amount": i.ecm_chips, "img": "icons/item_res_12.png"})
     out += [{"name": item(pid).name, "amount": n, "img": item(pid).image()} for pid, n in i.pack]
     out += [{"name": eco.SPECIAL_UNITS.get(t) or eco.UNITS[t].name, "amount": n,
-             "img": f"icons/item_res_{14 if t == 25 else 15}.png"} for t, n in i.units]
+             "img": next(x.image() for x in CATALOG if x.unit == t)} for t, n in i.units]
     out = out or [{"name": i.name, "amount": 1, "img": i.image()}]
     # the opening window shows only the name, so it carries the amount too
     return [dict(c, name=f"{c['amount']:,} {c['name']}") for c in out]

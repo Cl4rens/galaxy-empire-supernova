@@ -83,3 +83,17 @@ def test_laser_and_ion_tech_speed_up_constructions():
     planet_rules.tick(empire, NOW)
     assert planet_rules._upgrade(planet, eco.METAL_MINE, 5)[1] == int(slow / 2)  # 10 levels: twice as fast
     assert planet_rules._faster(planet, "research", 1000) == 1000  # research is not a construction
+
+
+def test_officers_add_constructions_fleets_and_espionage():
+    from supernova import officers
+    state = new_player()
+    empire = state["empire"]
+    assert officers.build_queue(empire, NOW) == officers.fleet_slots(empire, NOW) == 0
+    officers.hire(empire, officers.COMMANDER, 2, 7, NOW)
+    officers.hire(empire, officers.ADMIRAL, 3, 7, NOW)
+    officers.hire(empire, officers.TECHNOCRAT, 1, 7, NOW)
+    assert officers.build_queue(empire, NOW) == 2 and officers.fleet_slots(empire, NOW) == 3
+    assert officers.espionage_levels(empire, NOW) == 2
+    assert fleets.fleet_slots(empire, NOW) == 1 + 3
+    assert "3 more fleets" in officers.describe(officers.ADMIRAL, 3)

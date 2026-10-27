@@ -73,9 +73,9 @@ def secure_explorations(empire: dict, now: float | None = None) -> int:
 
 
 def fleet_slots(empire: dict, now: float | None = None) -> int:
-    """Flights at once besides expeditions: Computer Tech, and a VIP flight route."""
+    """Flights at once besides expeditions: Computer Tech, a VIP flight route and an Admiral."""
     return (eco.fleet_slots(planet_rules.research_level(empire, eco.COMPUTER_TECH))
-            + vip.benefit(empire, "flight_routes", now))
+            + vip.benefit(empire, "flight_routes", now) + officers.fleet_slots(empire, now))
 
 
 def flights_in_air(player_id: int) -> int:
@@ -475,8 +475,10 @@ def probe_result(target_state: dict, level: int, planet: dict) -> dict:
 def _espionage(row, target_owner: int, state: dict, planet: dict) -> None:
     owner_state = db.load_state(row["owner_id"])
     level = espionage_level(_ships(row).get(ESPIONAGE_PROBE, 0),
-                            planet_rules.research_level(owner_state["empire"], eco.ESPIONAGE_TECH),
-                            planet_rules.research_level(state["empire"], eco.ESPIONAGE_TECH))
+                            planet_rules.research_level(owner_state["empire"], eco.ESPIONAGE_TECH)
+                            + officers.espionage_levels(owner_state["empire"], row["arrival_time"]),
+                            planet_rules.research_level(state["empire"], eco.ESPIONAGE_TECH)
+                            + officers.espionage_levels(state["empire"], row["arrival_time"]))
     info = _event_info(row, row["arrival_time"])
     spy, victim = _username(row["owner_id"]), _username(target_owner)
     mails.send(row["owner_id"], mails.REPORT, mails.SENDER_FLEET, spy,
