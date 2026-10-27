@@ -39,7 +39,9 @@ fn main() -> Result<()> {
     let save = PathBuf::from(args.get(3).map(String::as_str).unwrap_or("client-save"));
     let out = PathBuf::from(args.get(4).map(String::as_str).unwrap_or("screenshots"));
     std::fs::create_dir_all(&out)?;
-    let mut engine = Engine::new(apk, server, save, "en", Box::new(RuffleScreens::new()?))?;
+    // SUPERNOVA_LANGUAGE=de: the game's texts in another language (data2/text/menu.<language>)
+    let language = std::env::var("SUPERNOVA_LANGUAGE").unwrap_or_else(|_| "en".into());
+    let mut engine = Engine::new(apk, server, save, &language, Box::new(RuffleScreens::new()?))?;
     engine.boot()?;
     engine.run(30.0, |e| e.active_objects().iter().any(|o| o == "GameObjectLoading"))?;
     engine.run(1.0, |_| false)?;

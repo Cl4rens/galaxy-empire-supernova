@@ -119,10 +119,28 @@ index 33250025..ae9fe67a 100644
              return 8;
          }
 diff --git a/core/src/display_object/edit_text.rs b/core/src/display_object/edit_text.rs
-index 422efa6c..16eb31e8 100644
+index 422efa6c..69686c59 100644
 --- a/core/src/display_object/edit_text.rs
 +++ b/core/src/display_object/edit_text.rs
-@@ -234,8 +234,11 @@ impl EditTextData<'_> {
+@@ -226,16 +226,28 @@ impl EditTextData<'_> {
+ 
+     fn parse_html(&self, text: &WStr) {
+         let default_format = self.text_spans.borrow().default_format().clone();
++        // gameswf kept a field's own alignment when a script set `<p align='right'>` (the city's
++        // icon bar); Supernova
++        let unaligned;
++        let parsed = if crate::avm1::GAMESWF.load(std::sync::atomic::Ordering::Relaxed) {
++            unaligned = WString::from_utf8(&without_paragraph_align(&text.to_utf8_lossy()));
++            &unaligned[..]
++        } else {
++            text
++        };
+         self.text_spans.replace(FormatSpans::from_html(
+-            text,
++            parsed,
+             default_format,
+             self.style_sheet.get().style_sheet(),
+             self.flags.get().contains(EditTextFlag::MULTILINE),
              self.flags.get().contains(EditTextFlag::CONDENSE_WHITE),
              self.shared.swf.version(),
          ));
@@ -135,7 +153,7 @@ index 422efa6c..16eb31e8 100644
                  Some(text.to_owned())
              } else {
                  None
-@@ -455,6 +458,7 @@ impl<'gc> EditText<'gc> {
+@@ -455,6 +467,7 @@ impl<'gc> EditText<'gc> {
              self.0
                  .text_spans
                  .replace(FormatSpans::from_text(text.into(), default_format));
@@ -143,7 +161,7 @@ index 422efa6c..16eb31e8 100644
          }
  
          self.relayout(context);
-@@ -1213,6 +1217,15 @@ impl<'gc> EditText<'gc> {
+@@ -1213,6 +1226,15 @@ impl<'gc> EditText<'gc> {
      ) {
          let origin = lbox.bounds().origin();
  
@@ -159,7 +177,7 @@ index 422efa6c..16eb31e8 100644
          // If text's top is under the textbox's bottom, skip drawing.
          // TODO: FP actually skips drawing a line as soon as its bottom is under the textbox;
          //   Current logic is conservative for safety (and even of this I'm not 100% sure).
-@@ -1220,8 +1233,10 @@ impl<'gc> EditText<'gc> {
+@@ -1220,8 +1242,10 @@ impl<'gc> EditText<'gc> {
          // [KJ] FP always displays the first visible line (sometimes masked, sometimes sticking out of bounds),
          //      culls any other line which is not fully visible; masking is always used for left/right bounds
          // TODO: also cull text that's simply out of screen, just like we cull whole DOs in render_self().
@@ -170,7 +188,7 @@ index 422efa6c..16eb31e8 100644
          {
              return;
          }
-@@ -2675,7 +2690,10 @@ impl<'gc> TDisplayObject<'gc> for EditText<'gc> {
+@@ -2675,7 +2699,10 @@ impl<'gc> TDisplayObject<'gc> for EditText<'gc> {
      fn render_self(self, context: &mut RenderContext<'_, 'gc>) {
          self.apply_autosize_bounds();
  
@@ -181,7 +199,7 @@ index 422efa6c..16eb31e8 100644
              && !self
                  .world_bounds(BoundsMode::Engine)
                  .intersects(&context.stage.view_bounds())
-@@ -2731,16 +2749,19 @@ impl<'gc> TDisplayObject<'gc> for EditText<'gc> {
+@@ -2731,16 +2758,19 @@ impl<'gc> TDisplayObject<'gc> for EditText<'gc> {
              }
          }
  
@@ -209,7 +227,7 @@ index 422efa6c..16eb31e8 100644
  
          context.transform_stack.push(&Transform {
              matrix: self.layout_to_local_matrix(),
-@@ -2758,12 +2779,14 @@ impl<'gc> TDisplayObject<'gc> for EditText<'gc> {
+@@ -2758,12 +2788,14 @@ impl<'gc> TDisplayObject<'gc> for EditText<'gc> {
  
          context.transform_stack.pop();
  
@@ -230,7 +248,7 @@ index 422efa6c..16eb31e8 100644
  
          if let Some(draw_caret_command) = render_state.draw_caret_command {
              context.commands.commands.push(draw_caret_command);
-@@ -3071,6 +3094,12 @@ impl<'gc> TInteractiveObject<'gc> for EditText<'gc> {
+@@ -3071,6 +3103,12 @@ impl<'gc> TInteractiveObject<'gc> for EditText<'gc> {
              return None;
          }
  
@@ -243,6 +261,48 @@ index 422efa6c..16eb31e8 100644
          // The text is hovered if the mouse is over any child nodes.
          if self.visible()
              && self.mouse_enabled()
+@@ -3672,3 +3710,41 @@ struct EditTextRenderState {
+     /// rendered outside of the text mask.
+     draw_caret_command: Option<RenderCommand>,
+ }
++
++/// `html` without the `align` attribute of its `<p>` tags; Supernova
++fn without_paragraph_align(html: &str) -> String {
++    let mut out = String::with_capacity(html.len());
++    let mut rest = html;
++    while let Some(start) = rest.find('<') {
++        out.push_str(&rest[..start]);
++        let Some(end) = rest[start..].find('>').map(|e| start + e + 1) else {
++            out.push_str(&rest[start..]);
++            return out;
++        };
++        let tag = &rest[start..end];
++        let lower = tag.to_ascii_lowercase();
++        if lower.starts_with("<p ") || lower.starts_with("<p\t") {
++            if let Some(at) = lower.find("align") {
++                // the attribute's value: quoted with ' or ", or up to the next space or '>'
++                let after = &tag[at + 5..];
++                let eq = after.find('=').filter(|e| after[..*e].trim().is_empty());
++                if let Some(eq) = eq {
++                    let value = after[eq + 1..].trim_start();
++                    let skipped = after.len() - value.len();
++                    let len = match value.chars().next() {
++                        Some(q @ ('\'' | '"')) => value[1..].find(q).map(|e| e + 2).unwrap_or(value.len()),
++                        _ => value.find(|c: char| c.is_whitespace() || c == '>').unwrap_or(value.len()),
++                    };
++                    out.push_str(&tag[..at]);
++                    out.push_str(&tag[at + 5 + skipped + len..]);
++                    rest = &rest[end..];
++                    continue;
++                }
++            }
++        }
++        out.push_str(tag);
++        rest = &rest[end..];
++    }
++    out.push_str(rest);
++    out
++}
 diff --git a/core/src/external.rs b/core/src/external.rs
 index 071f1e73..077cde17 100644
 --- a/core/src/external.rs

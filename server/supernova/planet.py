@@ -647,8 +647,10 @@ def client_view(empire: dict, now: float) -> dict:
 
 def _tech_tree(rule: eco.BuildingRule) -> dict:
     return {
-        "buildings_tree": [{"unit_type": t, "unit_level": l} for t, l in rule.buildings_required.items()],
-        "researches_tree": [{"unit_type": t, "unit_level": l} for t, l in rule.researches_required.items()],
+        "buildings_tree": [{"unit_type": t, "unit_level": l, "unit_name": eco.BUILDINGS[t].name}
+                           for t, l in rule.buildings_required.items()],
+        "researches_tree": [{"unit_type": t, "unit_level": l, "unit_name": eco.RESEARCHES[t].name}
+                            for t, l in rule.researches_required.items()],
     }
 
 

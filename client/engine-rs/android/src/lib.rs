@@ -86,9 +86,25 @@ fn config(app: &AndroidApp) -> Result<Config> {
         game: Game::Files { game_zip, key },
         server,
         save_dir: internal.join("save"),
-        language: "en".into(),
+        language: game_language(app),
         keyboard: Some(keyboard),
     })
+}
+
+/// The game's text language (data2/text/menu.<language>) for the device's language, as the
+/// original app chose it; English where the game has no texts.
+fn game_language(app: &AndroidApp) -> String {
+    let config = app.config();
+    let (language, country) = (config.language().unwrap_or_default(), config.country().unwrap_or_default());
+    match language.as_str() {
+        "de" | "fr" | "it" | "pt" | "ru" => language,
+        "es" => "sp".into(),
+        "ja" => "jp".into(),
+        "ko" => "kor".into(),
+        "zh" if matches!(country.as_str(), "TW" | "HK" | "MO") => "zh_hant".into(),
+        "zh" => "cn".into(),
+        _ => "en".into(),
+    }
 }
 
 #[unsafe(no_mangle)]
