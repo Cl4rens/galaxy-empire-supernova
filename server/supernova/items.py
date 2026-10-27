@@ -79,6 +79,10 @@ class Item:
 
 
 # quick-buy lists of the client
+# The two ships have no picture file of their own, only a place in the fleet screen's atlas; the
+# 64-bit app cuts it out ("atlas#left,top,right,bottom"), other clients show their default icon
+DEVOURER_PICTURE = "ShipCityTech_1.png#316,8,568,182"
+FRIGATE_PICTURE = "ShipCityTech_1.png#6,6,304,237"
 SHORTCUT_METAL, SHORTCUT_CRYSTAL, SHORTCUT_DEUTERIUM, SHORTCUT_FIELDS, SHORTCUT_OFFICERS = 1, 2, 3, 4, 11
 SHORTCUT_SHIFT, SHORTCUT_MOON_FIELDS, SHORTCUT_PROJECTION, SHORTCUT_PEACE, SHORTCUT_EXPLORER = 5, 7, 8, 9, 10
 CHOOSE_POSITION = 92  # item_type: the capsule opens the coordinate picker (GameUIDirecMigration)
@@ -224,9 +228,9 @@ CATALOG = [
          f"Builds one Annihilator on the planet you are on. A commander can have at most {MAX_ANNIHILATORS}.",
          "ship_destruction_star.png", 25, unit=28),
     Item(5003, OTHER, "Devourer Interceptor", "One Devourer Interceptor for the planet you are on. "
-         "Its shots pass through shields.", "item_res_14.png", 50, unit=25, picture="ship_devourer_interceptor.png"),
+         "Its shots pass through shields.", DEVOURER_PICTURE, 50, unit=25),
     Item(5004, OTHER, "Titanenergetic Frigate", "One Titanenergetic Frigate for the planet you are on. "
-         "Its armour is immense.", "item_res_15.png", 80, unit=26, picture="ship_titanenergetic_frigate.png"),
+         "Its armour is immense.", FRIGATE_PICTURE, 80, unit=26),
     Item(COMPONENT, OTHER, "Intricate component", f"Left behind by large warships destroyed in battle. "
          f"{REAPER_COMPONENTS:,} build one Reaper.", "box_activity.png", 0, sold=False),
     # code 01401 makes the capsule open the interceptor fusion screen

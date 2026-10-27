@@ -92,8 +92,6 @@ WIKI_FILES = {
     "reformer_gas_1.png": Source("Gas_Reformers.png", cover=(79, 9, 109, 39)),
     "reformer_gas_2.png": Source("Gas_Reformers_Level_2.png", cover=(84, 12, 116, 44)),
     "terraformer.png": "Terraformation@2x.png",
-    "ship_devourer_interceptor.png": Source("Devourer_Interceptor.png"),
-    "ship_titanenergetic_frigate.png": Source("Titanenergetic_Frigate.png"),
     "ecm_chip.png": "Electronic_warfare_chip.png",
     # VIP points items (vip.py): the wiki's level badges, which show the points
     "vip_points_1.png": Source("VIP_100.png"),

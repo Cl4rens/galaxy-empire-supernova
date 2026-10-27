@@ -539,6 +539,24 @@ impl Recent {
     }
 }
 
+/// A part of an atlas picture as a square PNG: "ShipCityTech_1.png#316,8,568,182" names the
+/// rectangle (left, top, right, bottom) of a ship, for item icons the game has no picture of.
+fn atlas_part(atlas: &[u8], rect: &str) -> Option<Vec<u8>> {
+    let n: Vec<u32> = rect.split(',').map(|v| v.trim().parse().ok()).collect::<Option<_>>()?;
+    let [left, top, right, bottom] = n[..] else { return None };
+    let image = image::load_from_memory(atlas).ok()?.to_rgba8();
+    if right <= left || bottom <= top || right > image.width() || bottom > image.height() {
+        return None;
+    }
+    let part = image::imageops::crop_imm(&image, left, top, right - left, bottom - top).to_image();
+    let side = part.width().max(part.height());
+    let mut square = image::RgbaImage::new(side, side);
+    image::imageops::overlay(&mut square, &part, ((side - part.width()) / 2) as i64, ((side - part.height()) / 2) as i64);
+    let mut out = std::io::Cursor::new(Vec::new());
+    square.write_to(&mut out, image::ImageFormat::Png).ok()?;
+    Some(out.into_inner())
+}
+
 impl Converter {
     /// Bytes kept: (pictures, converted screens)
     pub fn cached_bytes(&self) -> (usize, usize) {
@@ -548,6 +566,11 @@ impl Converter {
     pub fn picture(&mut self, assets: &Assets, name: &str) -> Option<Vec<u8>> {
         if let Some(found) = self.pictures.get(name) {
             return Some(found);
+        }
+        if let Some((atlas, rect)) = name.split_once('#') {
+            let data = atlas_part(&self.picture(assets, atlas)?, rect)?;
+            self.pictures.insert(name, data.clone());
+            return Some(data);
         }
         let mut data = assets.file(&format!("data2/{name}")).map(<[u8]>::to_vec);
         if let Some(d) = &data
