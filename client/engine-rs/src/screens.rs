@@ -106,6 +106,8 @@ trait Movie {
     fn center_text(&mut self, target: &str, last_text: Option<&str>, place: Option<(f64, f64)>) -> Option<(String, (f64, f64))>;
     fn text_field_paths(&mut self, marker: &str) -> Vec<String>;
     fn find_button(&mut self, x: f64, y: f64) -> Option<String>;
+    /// whether the object at `target` has the property `name`
+    fn has_property(&mut self, target: &str, name: &str) -> bool;
 }
 
 impl Movie for Player {
@@ -135,6 +137,9 @@ impl Movie for Player {
     }
     fn find_button(&mut self, x: f64, y: f64) -> Option<String> {
         self.find_avm1_button(x, y, BUTTON_PREFIX)
+    }
+    fn has_property(&mut self, target: &str, name: &str) -> bool {
+        !matches!(self.get_avm1_property(target, name), ExternalValue::Undefined | ExternalValue::Null)
     }
 }
 
@@ -167,6 +172,9 @@ impl Movie for UpdateContext<'_> {
     }
     fn find_button(&mut self, x: f64, y: f64) -> Option<String> {
         external::find_avm1_button(self, x, y, BUTTON_PREFIX)
+    }
+    fn has_property(&mut self, target: &str, name: &str) -> bool {
+        !matches!(external::get_avm1_property(self, target, name), ExternalValue::Undefined | ExternalValue::Null)
     }
 }
 
@@ -251,7 +259,25 @@ fn script_path(path: &str) -> String {
 fn play(movie: &mut dyn Movie, (button, label, callback): &ButtonAction) {
     movie.call(button, "gotoAndPlay", vec![ExternalValue::String(label.to_string())]);
     if !callback.is_empty() {
-        movie.call(button, callback, vec![]);
+        let target = callback_owner(movie, button, callback);
+        movie.call(&target, callback, vec![]);
+    }
+}
+
+/// The button whose `callback` a touch on `button` calls: itself, or the nearest enclosing
+/// "btn..." clip that has it (the quest button "btnQuest" holds a clip "btn_finish").
+fn callback_owner(movie: &mut dyn Movie, button: &str, callback: &str) -> String {
+    let mut path = button;
+    loop {
+        if movie.has_property(path, callback) {
+            return path.to_string();
+        }
+        match path.rsplit_once('.') {
+            Some((parent, _)) if parent.rsplit('.').next().is_some_and(|name| name.starts_with(BUTTON_PREFIX)) => {
+                path = parent;
+            }
+            _ => return button.to_string(),
+        }
     }
 }
 
