@@ -16,8 +16,9 @@ def test_gift_pack_contents_and_opening():
     pack = next(i for i in shop["items"] if i["id"] == 4001)
     assert pack["is_gift"] is True
     contents = decrypt_json(c.get("/world/1/gachas/4001"))["data"]
-    assert {"name": "10 ECM chips", "amount": 10, "img": "icons/item_res_12.png"} in contents
-    assert any(x["name"] == f"3 {items.item(2103).name}" and x["amount"] == 3 for x in contents)
+    # the amount is in the name, so the details window does not show it twice
+    assert {"name": "10 ECM chips", "amount": " ", "img": "icons/item_res_12.png"} in contents
+    assert any(x["name"] == f"3 {items.item(2103).name}" for x in contents)
     with db.player_state(uid) as s:
         items.add(s, 4001, 1)
         items.add(s, 4002, 1)

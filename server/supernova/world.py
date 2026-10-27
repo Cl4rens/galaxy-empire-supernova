@@ -2332,7 +2332,9 @@ def package_contents(item_id: int, player_id: int = Depends(current_player)):
             found = items.contents(item_id)
         except planet_rules.GameError as e:
             return error(str(e))
-    return encrypted_json({"data": found})
+    # the names carry the amount (the opening window shows only them); the details window
+    # would show it a second time under the name (an empty piece shows "undefined")
+    return encrypted_json({"data": [dict(c, amount=" ") for c in found]})
 
 
 @router.get("/in_app_purchases/{store}")
