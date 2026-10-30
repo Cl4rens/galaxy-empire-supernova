@@ -115,3 +115,14 @@ def test_email_binding():
     bound = decrypt_json(c.post(f"/world/1/users/{uid}/send_mail_for_authenticate", content="email=a%40b.de"))
     assert bound == {"mail_status": 2, "email": "a@b.de"}
     assert decrypt_json(c.post(f"/world/1/users/{uid}/email_bind_status")) == bound
+
+
+def test_heartbeat_reloads_the_empire_after_a_reward():
+    from supernova import db
+    c = TestClient(app, headers={"openudid": "reward-user"})
+    me = decrypt_json(c.post("/world/1/trials.json", content="username="))
+    beat = lambda: decrypt_json(c.get("/world/1/passive_events"))["empire"]
+    assert beat() == 0
+    with db.player_state(me["user_id"]) as state:  # a reward that did not send the empire back
+        state["empire"]["dark_matter_count"] += 50
+    assert beat() == 1 and beat() == 0

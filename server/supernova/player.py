@@ -180,14 +180,26 @@ def planets_info(empire: dict) -> list[dict]:
 
 HIDDEN_EMPIRE_FIELDS = ("main_planet", "planets", "current_planet_id", "dark_matter_income", "fleet_devices",
                         "officers", "vip")
-PRIVATE_STATE = ("empire", "email", "next_event_id", "quests", "bookmarks", "checkin", "kryptons", "flagships", "ecm",
+PRIVATE_STATE = ("empire", "email", "sent_money", "next_event_id", "quests", "bookmarks", "checkin", "kryptons", "flagships", "ecm",
                  "fortress", "items", "daily", "growth_claimed", "gc_bought", "arena_points", "invited_by",
                  "chest")
+
+
+def money(state: dict) -> list[int]:
+    """Dark matter and credits: what the client shows of the empire besides the planet."""
+    return [state["empire"].get("dark_matter_count", 0), state["empire"].get("gu_count", 0)]
+
+
+def money_changed(state: dict) -> bool:
+    """Whether dark matter or credits changed since the client last got the empire (a reward
+    from a screen that does not send the empire back): the heartbeat then has it reloaded."""
+    return state.get("sent_money") != money(state)
 
 
 def empire_view(state: dict, now: float) -> dict:
     """The empire object as the client expects it."""
     empire = state["empire"]
+    state["sent_money"] = money(state)
     view = {k: v for k, v in empire.items() if k not in HIDDEN_EMPIRE_FIELDS}
     view["vip_info"] = vip.summary_view(state, now)
     view.update(officers.buff_fields(empire, now))
@@ -201,6 +213,7 @@ def empire_view(state: dict, now: float) -> dict:
 def empire_summary(state: dict) -> dict:
     """Empire fields without the planet, for responses that send the planet separately."""
     empire = state["empire"]
+    state["sent_money"] = money(state)
     summary = {k: v for k, v in empire.items() if k not in HIDDEN_EMPIRE_FIELDS}
     summary["vip_info"] = vip.summary_view(state, time.time())
     summary.update(officers.buff_fields(empire, time.time()))

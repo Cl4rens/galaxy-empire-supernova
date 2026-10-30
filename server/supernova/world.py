@@ -196,10 +196,15 @@ def heartbeat(player_id: int = Depends(current_player)):
     """Polled every few seconds. empire/planet = 1 makes the client reload that part.
 
     The client does not count resources up by itself, so it reloads the planet every time.
-    While an attack is on its way, the empire (with the flight list) is reloaded too.
+    While an attack is on its way, the empire (with the flight list) is reloaded too, and so it
+    is when dark matter or credits changed without the client getting the empire (rewards).
     """
     under_attack = bool(fleets.incoming_attacks(player_id))
-    return encrypted_json({"heartBeatRate": HEARTBEAT_SECONDS, "empire": int(under_attack), "planet": 1,
+    reload_empire = under_attack or player.money_changed(db.load_state(player_id))
+    if reload_empire:
+        with db.player_state(player_id) as state:  # written only then: the heartbeat comes often
+            state["sent_money"] = player.money(state)
+    return encrypted_json({"heartBeatRate": HEARTBEAT_SECONDS, "empire": int(reload_empire), "planet": 1,
                            "refresh": {}})
 
 
