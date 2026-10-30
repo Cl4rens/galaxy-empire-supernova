@@ -5,6 +5,7 @@ Everything the client derives from it (costs, production, energy, storage limits
 in `client_view` so it always matches the current rules.
 """
 
+import math
 import time
 
 from . import config, economy as eco
@@ -654,7 +655,8 @@ def client_view(empire: dict, now: float) -> dict:
         **{f"{res}_energy": -round(eco.mine_energy(m, level(planet, m)) * planet[f"{res}_mine_percent"] / 100)
            for res, m in zip(RESOURCES, eco.MINES)},
         "solar_satellite_energy": round(rates["satellite_energy"]),
-        "produce_percent": min(100, round(100 * rates["energy_max"] / rates["energy_used"]))
+        # rounded down: a planet short of energy never shows 100 % (the client colours it red)
+        "produce_percent": min(100, math.floor(100 * rates["energy_max"] / rates["energy_used"]))
         if rates["energy_used"] else 100,
         "radar_energy": radar_energy(planet),
         "radar_fleets": radar_fleets(planet),

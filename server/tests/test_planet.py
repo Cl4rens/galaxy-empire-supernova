@@ -268,3 +268,10 @@ def test_a_timer_that_runs_out_a_moment_early_still_finishes_the_construction():
     assert p["building_events"]  # the regular tick waits for the second
     planet.tick_for_timer(empire, finish - 1)
     assert not p["building_events"] and planet.level(p, eco.METAL_MINE) == 1
+
+
+def test_a_small_energy_shortage_does_not_show_100_percent(monkeypatch):
+    state = new_player()
+    real = planet.production
+    monkeypatch.setattr(planet, "production", lambda p, e: dict(real(p, e), energy_max=996, energy_used=1000))
+    assert planet.client_view(state["empire"], T0)["produce_percent"] == 99
