@@ -114,6 +114,21 @@ def hire(empire: dict, kind: str, lv: int, days: int, now: float) -> str:
     return f"{NAMES[kind]} Lv.{lv} hired for {days} days."
 
 
+# the empire fields the client lights the officer icon of its top bar by (seconds left)
+BUFF_FIELDS = {COMMANDER: "buff_commander", ENGINEER: "buff_engineer", TECHNOCRAT: "buff_tech",
+               GEOLOGIST: "buff_resources", ADMIRAL: "buff_fleet", GUIDER: "buff_fleet"}
+
+
+def buff_fields(empire: dict, now: float) -> dict:
+    """buff_commander, buff_engineer, ...: the seconds an officer of that kind is still hired."""
+    out = dict.fromkeys(BUFF_FIELDS.values(), 0)
+    for kind, field in BUFF_FIELDS.items():
+        o = _hired(empire).get(kind)
+        if o and o["until"] > now:
+            out[field] = max(out[field], int(o["until"] - now))
+    return out
+
+
 def boosts(empire: dict, now: float | None = None) -> dict:
     """What planets need for their timers and production (kept on each planet by tick)."""
     return {"build": percent(empire, COMMANDER, now), "research": percent(empire, TECHNOCRAT, now),

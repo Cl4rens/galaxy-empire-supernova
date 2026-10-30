@@ -116,3 +116,13 @@ def test_client_views():
     shop = decrypt_json(c.post("/world/1/game_items/vip_item", content="type=add_time"))["items"]
     assert [i["sale_price"] for i in shop] == [10, 60, 200]
     assert player.HIDDEN_EMPIRE_FIELDS.count("vip") == 1 and "vip" not in me["empire"]
+
+
+def test_hired_officers_light_the_top_bar_icon():
+    from supernova import officers
+    state = new_player()
+    assert player.empire_view(state, T0)["buff_commander"] == 0
+    officers.hire(state["empire"], officers.GEOLOGIST, 1, 7, T0)
+    view = player.empire_view(state, T0)
+    assert view["buff_resources"] == 7 * DAY and view["buff_commander"] == 0
+    assert player.empire_summary(state)["buff_resources"] == 0  # summary uses the real clock: T0 is long ago

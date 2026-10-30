@@ -10,7 +10,7 @@ import time
 from . import economy as eco
 from . import checkin, config, fleets, fortresses, gifts, growth, mails, ranking
 from . import planet as planet_rules
-from . import specials, universe, vip
+from . import officers, specials, universe, vip
 
 # Planet lots 1-3 are reserved for the mines; free building lots are 4-15.
 MINE_POSITIONS = {eco.METAL_MINE: 1, eco.CRYSTAL_MINE: 2, eco.DEUTERIUM_MINE: 3}
@@ -190,6 +190,7 @@ def empire_view(state: dict, now: float) -> dict:
     empire = state["empire"]
     view = {k: v for k, v in empire.items() if k not in HIDDEN_EMPIRE_FIELDS}
     view["vip_info"] = vip.summary_view(state, now)
+    view.update(officers.buff_fields(empire, now))
     view.update(score=ranking.points(state)["score"], rank=ranking.rank_of(state["user_id"]),
                 gift_id=gifts.pending_id(state["user_id"]))
     return dict(view, main_planet=planet_rules.client_view(empire, now), **planet_rules.researches_view(empire),
@@ -202,6 +203,7 @@ def empire_summary(state: dict) -> dict:
     empire = state["empire"]
     summary = {k: v for k, v in empire.items() if k not in HIDDEN_EMPIRE_FIELDS}
     summary["vip_info"] = vip.summary_view(state, time.time())
+    summary.update(officers.buff_fields(empire, time.time()))
     summary["planets_info"] = planets_info(empire)
     summary.update(planet_rules.researches_view(empire))
     summary["fleet_hanging_events"] = fleets.events_view(empire["user_id"])
