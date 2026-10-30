@@ -50,6 +50,21 @@ function GameUICityUIDown:Init(...)
   return originalMenuInit(self, ...)
 end
 
+-- the bar's icons go to the frame named after the entry; the strip of pressed icons has no
+-- "gift" frame (its frame 11, the chest, is mislabelled "fleetup"), so a pressed chest showed
+-- whatever icon the slot had before: both strips have the chest at frame 11
+local originalCallAS = GameUICityUIDown.CallAS
+function GameUICityUIDown:CallAS(target, name, ...)
+  if name == "setItemText" then
+    local args = {...}
+    if type(args[2]) == "string" then
+      args[2] = string.gsub("\001" .. args[2], "\001gift\001", "\00111\001"):sub(2)
+    end
+    return originalCallAS(self, target, name, unpack(args))
+  end
+  return originalCallAS(self, target, name, ...)
+end
+
 function GameUIFacebookChests:OnAddToGameState()
   if not self:GetFlashObject() then
     self:LoadFlashObject()

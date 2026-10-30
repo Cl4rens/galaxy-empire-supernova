@@ -105,6 +105,17 @@ fn main() -> Result<()> {
             shot(&mut engine, &out, &format!("5-tap{}", n + 1))?;
             continue;
         }
+        // "hold:x,y" takes the picture while a finger is still down on x,y, then lets go
+        if let Some(point) = tap.strip_prefix("hold:") {
+            let (x, y) = point.split_once(',').unwrap_or_default();
+            let (x, y) = (x.trim().parse()?, y.trim().parse()?);
+            engine.touch(Touch::Pressed, x, y)?;
+            engine.run(1.0, |_| false)?;
+            shot(&mut engine, &out, &format!("5-tap{}", n + 1))?;
+            engine.touch(Touch::Released, x, y)?;
+            engine.run(2.0, |_| false)?;
+            continue;
+        }
         // "drag:x1,y1,x2,y2" moves a finger from one point to the other
         if let Some(points) = tap.strip_prefix("drag:") {
             let p: Vec<f64> = points.split(',').map(|v| v.trim().parse()).collect::<Result<_, _>>()?;
