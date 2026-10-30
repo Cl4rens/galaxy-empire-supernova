@@ -350,7 +350,7 @@ def research_info(research_id: int, player_id: int = Depends(current_player)):
     """Requested when a research timer runs out on the client."""
     now = time.time()
     with db.player_state(player_id) as state:
-        planet_rules.tick(state["empire"], now)
+        planet_rules.tick_for_timer(state["empire"], now)
         research = next((r for r in state["empire"]["researches"] if r["research_id"] == research_id), None)
         if research is None:
             return error("Unknown research", 404)
@@ -532,7 +532,7 @@ def build_info(planet_id: int, bid: int, player_id: int = Depends(current_player
     """Requested when a construction timer runs out on the client."""
     now = time.time()
     with db.player_state(player_id) as state:
-        planet_rules.tick(state["empire"], now)
+        planet_rules.tick_for_timer(state["empire"], now)
         changed = next((b for b in state["empire"]["main_planet"]["buildings"] if b["building_id"] == bid), None)
         if changed is None:
             return error("Unknown building", 404)

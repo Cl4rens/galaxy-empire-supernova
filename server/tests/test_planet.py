@@ -255,3 +255,16 @@ def test_shipyard_rules():
     shipyard = planet.building(empire["main_planet"], eco.SHIPYARD)["building_id"]
     with pytest.raises(planet.GameError, match="shipyard is working"):
         planet.start_building_event(empire, state, shipyard, planet.EVENT_UPGRADE, None, T0)
+
+
+def test_a_timer_that_runs_out_a_moment_early_still_finishes_the_construction():
+    state = new_player()
+    empire = state["empire"]
+    p = empire["main_planet"]
+    p.update(metal=10**6, crystal=10**6)
+    planet.start_building_event(empire, state, building_id(state, eco.METAL_MINE), 1, None, T0)
+    finish = p["building_events"][0]["finish_time"]
+    planet.tick(empire, finish - 1)
+    assert p["building_events"]  # the regular tick waits for the second
+    planet.tick_for_timer(empire, finish - 1)
+    assert not p["building_events"] and planet.level(p, eco.METAL_MINE) == 1

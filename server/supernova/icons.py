@@ -27,29 +27,37 @@ VERSIONED = re.compile(r"(?P<stem>[A-Za-z0-9_.-]+)-[0-9a-f]{8}\.png")
 @dataclass(frozen=True)
 class Source:
     """A wiki file and how it becomes an item picture: cut to `crop` (left, top, right, bottom;
-    else the middle square), with the ellipse `cover` (in the cut picture's pixels) painted over
-    from its surroundings."""
+    else the middle square, `inset` pixels in from the edges), with the ellipse `cover` (in the
+    cut picture's pixels) painted over from its surroundings, and with `rounded` corners (radius
+    in the finished picture's pixels) made transparent."""
     wiki: str
     crop: tuple[int, int, int, int] | None = None
     cover: tuple[int, int, int, int] | None = None
+    inset: int = 0
+    rounded: int = 0
+
+
+# the store screenshots of the level 1 officers: rounded corners with the screenshot's
+# background in them, cut off and rounded again like the frames of levels 2 and 3
+STORE_SHOT = {"inset": 4, "rounded": 12}
 
 
 # the name items use -> the wiki's file (the game's own pictures, 108x108)
 WIKI_FILES = {
     # the level 1 officers are only pictured in the store's screenshots (without a frame)
-    "officer_commander_1.png": Source("Commander_store-1.png"),
+    "officer_commander_1.png": Source("Commander_store-1.png", **STORE_SHOT),
     "officer_commander_2.png": "Commander_lv2@2x.png",
     "officer_commander_3.png": "Commander_lv3@2x.png",
-    "officer_engineer_1.png": Source("Engineer_store-1.png"),
+    "officer_engineer_1.png": Source("Engineer_store-1.png", **STORE_SHOT),
     "officer_engineer_2.png": "Engineer_lv2@2x.png",
     "officer_engineer_3.png": "Engineer_lv3@2x.png",
-    "officer_technocrat_1.png": Source("Technocrat_store-1.png"),
+    "officer_technocrat_1.png": Source("Technocrat_store-1.png", **STORE_SHOT),
     "officer_technocrat_2.png": "Technocrat_lv2@2x.png",
     "officer_technocrat_3.png": "Technocrat_lv3@2x.png",
-    "officer_geologist_1.png": Source("Geologist_store-1.png"),
+    "officer_geologist_1.png": Source("Geologist_store-1.png", **STORE_SHOT),
     "officer_geologist_2.png": "Geologist_lv2@2x.png",
     "officer_geologist_3.png": "Geologist_lv3@2x.png",
-    "officer_admiral_1.png": Source("Admiral_store-1.png"),
+    "officer_admiral_1.png": Source("Admiral_store-1.png", **STORE_SHOT),
     "officer_admiral_2.png": "Admiral_lv2@2x.png",
     "officer_admiral_3.png": "Admiral_lv3@2x.png",
     "officer_guider_1.png": "Navigator@2x.png",  # the guider's pictures are named navigator
@@ -160,7 +168,7 @@ def picture(data: bytes, source: Source) -> bytes:
 
     image = Image.open(io.BytesIO(data)).convert("RGBA")
     w, h = image.size
-    side = min(w, h)
+    side = min(w, h) - 2 * source.inset
     image = image.crop(source.crop or ((w - side) // 2, (h - side) // 2, (w + side) // 2, (h + side) // 2))
     if source.cover:
         mask = Image.new("L", image.size, 0)
@@ -174,6 +182,11 @@ def picture(data: bytes, source: Source) -> bytes:
             image.paste(image.filter(ImageFilter.GaussianBlur(2)), mask=mask)
     if image.size != (SIZE, SIZE):
         image = image.resize((SIZE, SIZE), Image.LANCZOS)
+    if source.rounded:
+        corners = Image.new("L", image.size, 0)
+        ImageDraw.Draw(corners).rounded_rectangle((0, 0, SIZE - 1, SIZE - 1), source.rounded, fill=255)
+        alpha = image.getchannel("A")
+        image.putalpha(Image.composite(alpha, corners, corners))
     out = io.BytesIO()
     image.save(out, "PNG")
     return out.getvalue()

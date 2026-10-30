@@ -268,6 +268,23 @@ def tick(empire: dict, now: float | None = None) -> None:
                                              if e["finish_time"] > now]
 
 
+TIMER_GRACE = 3  # seconds a client's timer may run ahead of the server's clock
+
+
+def tick_for_timer(empire: dict, now: float) -> None:
+    """tick, when a client's timer ran out: a construction or research ending within a few
+    seconds is finished now (a client that asks a moment too early would otherwise show it
+    stuck at 1 second, as it does not ask again)."""
+    for planet in bodies(empire):
+        for event in planet["building_events"]:
+            if event["finish_time"] - now <= TIMER_GRACE:
+                event["finish_time"] = min(event["finish_time"], now)
+    for event in empire["research_upgrading_events"]:
+        if event["finish_time"] - now <= TIMER_GRACE:
+            event["finish_time"] = min(event["finish_time"], now)
+    tick(empire, now)
+
+
 def _dark_matter_income(empire: dict, now: float) -> None:
     """config.DARK_MATTER_PER_DAY, paid out in whole units as time passes."""
     income = empire.setdefault("dark_matter_income", {"time": now, "fraction": 0.0})
