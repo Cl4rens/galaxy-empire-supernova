@@ -275,6 +275,7 @@ def create_player(username_for_id, udid: str, new_state) -> tuple[int, str, dict
             "UPDATE players SET username = ?, state = ? WHERE id = ?",
             (username, _encode(state), player_id),
         )
+        _state_versions[player_id] = _state_versions.get(player_id, 0) + 1
     return player_id, username, state
 
 
@@ -309,10 +310,20 @@ def find_player(username: str) -> tuple[int, dict] | None:
     return (row["id"], _decode(row["state"])) if row else None
 
 
+# How often each player's state was saved in this process: lets a module cache what it computes
+# from a state (the ranking's points) until the state changes.
+_state_versions: dict[int, int] = {}
+
+
+def state_version(player_id: int) -> int:
+    return _state_versions.get(player_id, 0)
+
+
 def save_state(player_id: int, state: dict) -> None:
     conn = connect()
     with _lock, conn:
         conn.execute("UPDATE players SET state = ? WHERE id = ?", (_encode(state), player_id))
+        _state_versions[player_id] = _state_versions.get(player_id, 0) + 1
 
 
 def load_state(player_id: int) -> dict:

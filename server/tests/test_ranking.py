@@ -36,3 +36,19 @@ def test_battle_stats():
     ranking.record_battle(424242, "draw")
     row = db.connect().execute("SELECT * FROM battle_stats WHERE player_id = 424242").fetchone()
     assert (row["wins"], row["losses"], row["draws"]) == (1, 0, 1)
+
+
+def test_points_are_cached_until_the_state_is_saved(monkeypatch):
+    c = TestClient(app)
+    me = decrypt_json(c.post("/world/1/trials.json", content="username="))
+    ranking._players()  # fills the cache
+    loads = []
+    real_load = db.load_state
+    monkeypatch.setattr(db, "load_state", lambda pid: loads.append(pid) or real_load(pid))
+    ranking._players()
+    assert loads == []  # nothing changed: no state is loaded
+    with db.player_state(me["user_id"]) as state:
+        planet_rules.fleet(state["empire"]["main_planet"], 3)["amount"] = 1000
+    loads.clear()
+    mine = next(p for p in ranking._players() if p["id"] == me["user_id"])
+    assert loads == [me["user_id"]] and mine["power"] == 29_000

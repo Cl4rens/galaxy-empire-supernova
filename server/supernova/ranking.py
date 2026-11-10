@@ -2,7 +2,8 @@
 
 Score is OGame's: one point per 1,000 resources spent on buildings, research and units
 (all planets). Fleet power counts only ships and defense. Rankings are computed when asked
-for, which is fine for community-sized servers.
+for; each player's points are cached until their state is saved again, so a ranking does not
+load every player's state.
 """
 
 from . import db
@@ -43,18 +44,30 @@ def record_battle(player_id: int, outcome: str) -> None:
         conn.execute(f"UPDATE battle_stats SET {column} = {column} + 1 WHERE player_id = ?", (player_id,))
 
 
+_cached: dict[int, tuple[int, dict]] = {}  # player id -> (state version, points and alliance)
+
+
+def _points_of(player_id: int) -> dict:
+    version = db.state_version(player_id)
+    hit = _cached.get(player_id)
+    if hit is None or hit[0] != version:
+        state = db.load_state(player_id)
+        hit = (version, dict(points(state), alliance_name=state["empire"].get("alliance_name", "")))
+        _cached[player_id] = hit
+    return hit[1]
+
+
 def _players() -> list[dict]:
     conn = db.connect()
     stats = {r["player_id"]: r for r in conn.execute("SELECT * FROM battle_stats")}
     players = []
     for row in conn.execute("SELECT id, username FROM players"):
-        state = db.load_state(row["id"])
-        p = points(state)
+        p = _points_of(row["id"])
         s = stats.get(row["id"])
         players.append({
             "id": row["id"],
             "username": row["username"],
-            "alliance_name": state["empire"].get("alliance_name", ""),
+            "alliance_name": p["alliance_name"],
             "score": p["score"],
             "power": p["power"],
             "fight_win_count": s["wins"] if s else 0,
