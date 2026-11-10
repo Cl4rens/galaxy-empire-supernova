@@ -78,8 +78,11 @@ def main() -> None:
 
     OUT.mkdir(parents=True, exist_ok=True)
     unsigned = OUT / "unsigned.apk"
+    # the launcher icon: Supernova's placeholder, replaced by the game's own when patching
+    resources = OUT / "resources.zip"
+    run(tool(build_tools, "aapt2"), "compile", "--dir", str(HERE / "res"), "-o", str(resources))
     run(tool(build_tools, "aapt2"), "link", "-o", str(unsigned), "--manifest", str(HERE / "AndroidManifest.xml"),
-        "-I", str(platform / "android.jar"))
+        "-I", str(platform / "android.jar"), str(resources))
     with zipfile.ZipFile(unsigned, "a", zipfile.ZIP_DEFLATED) as apk:
         for abi in abis:
             lib = libs / abi / "libsupernova.so"

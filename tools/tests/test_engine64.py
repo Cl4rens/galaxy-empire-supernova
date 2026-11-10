@@ -78,3 +78,20 @@ def test_engine_app_with_game_files_is_refused(tmp_path):
 ])
 def test_server_url(given, url):
     assert engine64.server_url(given) == url
+
+
+def test_app_gets_the_games_launcher_icon(tmp_path):
+    ge = original_apk(tmp_path / "ge.apk")
+    with zipfile.ZipFile(ge, "a") as z:
+        z.writestr("res/drawable-mdpi-v4/ge_old.png", b"game icon mdpi")
+        z.writestr("res/drawable-xhdpi-v4/ge_old.png", b"game icon xhdpi")
+    engine = engine_app(tmp_path / "engine.apk")
+    with zipfile.ZipFile(engine, "a") as z:
+        for density in ("mdpi", "hdpi", "xxxhdpi"):
+            z.writestr(f"res/mipmap-{density}-v4/ic_launcher.png", b"placeholder")
+    out = tmp_path / "app.apk"
+    engine64.build(ge, engine, "host:8000", b"", out)
+    with zipfile.ZipFile(out) as z:
+        assert z.read("res/mipmap-mdpi-v4/ic_launcher.png") == b"game icon mdpi"
+        assert z.read("res/mipmap-hdpi-v4/ic_launcher.png") == b"game icon xhdpi"  # the next larger one
+        assert z.read("res/mipmap-xxxhdpi-v4/ic_launcher.png") == b"game icon xhdpi"  # the largest there is
